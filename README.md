@@ -49,12 +49,10 @@ Use your own domain. Copilot requires HTTPS for OTLP export.
 
 ### 3. Configure your CLI
 
-Merge the linked example into the indicated configuration file, replace the endpoint and token, then restart the CLI. Use the same token as Agentlog.
-
 | CLI | Configuration file | Example |
 | --- | --- | --- |
 | Codex | `~/.codex/config.toml` | [TOML](docs/examples/codex.config.toml) |
 | Claude Code | `~/.claude/settings.json` (`env`) | [JSON](docs/examples/claude.settings.json) |
 | Copilot | OS-specific `managed-settings.json` (`telemetry`) | [JSON](docs/examples/copilot.managed-settings.json) |
 
-Copilot managed settings require administrator access and apply machine-wide. See [file locations and content-capture settings](docs/senders.md). Claude's exporter settings belong in the user-level file, not a repository-local file. Prompt and output capture is opt-in; the guide lists the settings.
+Examples include conversation and tool content. [Paths and complete settings](docs/senders.md). Copilot managed settings require administrator access.

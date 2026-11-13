@@ -5,6 +5,12 @@
     "protocol": "http/protobuf",
     "headers": {
       "Authorization": "Bearer REPLACE_WITH_TOKEN"
+    },
+    "capture": {
+      "prompts": true,
+      "responses": true,
+      "toolArguments": true,
+      "toolOutput": true
     }
   }
 }
