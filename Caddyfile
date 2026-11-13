@@ -1,3 +1,0 @@
-{$AGENTLOG_DOMAIN} {
-    reverse_proxy agentlog:4318
-}

@@ -1,10 +1,3 @@
-# v0.3.1 validation
-
-- Added an optional Caddy sidecar (`compose.https.yaml`, `Caddyfile`) with persistent certificate/config volumes and an optional commented domain setting. The base HTTP Compose configuration remains independently usable.
-- `scripts/https_smoke.py` used the actual Docker Compose stack and Caddy local CA to verify certificate-validated HTTPS, authenticated OTLP ingestion, Secure login cookies, and unchanged CA/SQLite data after forced container recreation. Tests use isolated disposable volumes and random host ports. Internal proxy routing is excluded from outbound proxy handling via Caddy's `NO_PROXY` setting.
-- Public-domain ACME issuance/renewal is provided by Caddy and requires working public DNS and reachable ports; no real public-domain ACME certificate was requested in this environment.
-- Both HTTPS setup files are included in release archives; README documents the Docker-only setup and the separate client trust step needed for localhost certificates.
-
 # v0.3.0 validation
 
 - Added a local `agentlog import` command with repeatable folder/file selection, default-root scanning, working-directory filtering, project/tag labels and dry-run parsing. Supported transcript records are converted into OTLP logs and sent through authenticated HTTP ingestion.
