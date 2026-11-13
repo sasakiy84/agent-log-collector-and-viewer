@@ -35,17 +35,21 @@ Open http://127.0.0.1:4318 and sign in with that token. SQLite data persists in 
 
 Without Docker, download a binary from [Releases](https://github.com/sasakiy84/agent-log-collector-and-viewer/releases) and run `AGENTLOG_TOKEN=YOUR_TOKEN ./agentlog`.
 
-### 2. Set up HTTPS for remote access
+### 2. HTTPS with Docker
 
-Keep port 4318 on loopback and put an HTTPS reverse proxy in front. Example Caddy configuration on the same host:
+Add your domain to `.env`:
 
-```caddyfile
-agents.example.com {
-    reverse_proxy 127.0.0.1:4318
-}
+```dotenv
+AGENTLOG_DOMAIN=agents.example.com
 ```
 
-Use your own domain. Copilot requires HTTPS for OTLP export.
+Point its DNS records at the server and allow inbound TCP 80/443. Then:
+
+```sh
+docker compose -f compose.yaml -f compose.https.yaml up -d --build
+```
+
+Caddy obtains and renews the certificate automatically. Open `https://agents.example.com` and use that base URL in Copilot's `telemetry.endpoint`. Certificates persist in a Docker volume. [Localhost HTTPS](docs/https.md#localhost).
 
 ### 3. Configure your CLI
 

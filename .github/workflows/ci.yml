@@ -29,3 +29,4 @@ jobs:
           AGENTLOG_TOKEN: ci-build-placeholder-at-least-16
         run: docker compose build
       - run: python3 scripts/docker_smoke.py
+      - run: python3 scripts/https_smoke.py
