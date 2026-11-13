@@ -15,6 +15,12 @@ import (
 var version = "dev"
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "import" {
+		if e := importMain(os.Args[2:]); e != nil {
+			log.Fatal(e)
+		}
+		return
+	}
 	addr := flag.String("listen", "127.0.0.1:4318", "HTTP listen address")
 	db := flag.String("db", "agentlog.db", "SQLite path")
 	v := flag.Bool("version", false, "Print version")

@@ -8,7 +8,7 @@ A personal OpenTelemetry collector and session viewer for Codex CLI, Claude Code
 
 ## Features
 
-- Collect logs, traces and metrics over OTLP/HTTP (JSON or Protobuf).
+- Collect logs, traces and metrics over OTLP/HTTP (JSON or Protobuf), or import saved CLI sessions.
 - Read session timelines, tool calls, outputs and errors; inspect attributes/JSON and export sessions.
 - One Go binary with an embedded UI, SQLite storage and token authentication. No automatic log expiry.
 
@@ -56,3 +56,11 @@ Use your own domain. Copilot requires HTTPS for OTLP export.
 | Copilot | OS-specific `managed-settings.json` (`telemetry`) | [JSON](docs/examples/copilot.managed-settings.json) |
 
 Examples include conversation and tool content. [Paths and complete settings](docs/senders.md). Copilot managed settings require administrator access.
+
+### 4. Import existing sessions
+
+```sh
+AGENTLOG_TOKEN=YOUR_TOKEN ./agentlog import --dir /path/to/sessions --endpoint https://agents.example.com --project shop --tag backend
+```
+
+[Import arguments](docs/import.md) · [Projects and tags for live OTEL](docs/projects.md)

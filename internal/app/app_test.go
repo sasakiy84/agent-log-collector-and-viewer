@@ -12,6 +12,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -275,5 +276,54 @@ func TestSessionPageMetadataAndSearch(t *testing.T) {
 	a.Handler().ServeHTTP(w, r)
 	if w.Code != 401 {
 		t.Fatal("metadata exposed")
+	}
+}
+
+func TestProjectQueryAllSignals(t *testing.T) {
+	a := setup(t)
+	for _, signal := range []string{"logs", "traces", "metrics"} {
+		body := "{}"
+		switch signal {
+		case "logs":
+			body = logBody("codex", "project", "", "")
+		case "traces":
+			body = `{"resourceSpans":[{"scopeSpans":[{"spans":[{"name":"test"}]}]}]}`
+		case "metrics":
+			body = `{"resourceMetrics":[{"scopeMetrics":[{"metrics":[{"name":"test","gauge":{"dataPoints":[{"asInt":"1"}]}}]}]}]}`
+		}
+		w := request(a, "/v1/"+signal+"?project=shop&tag=backend&tag=go", body, token)
+		if w.Code != 200 {
+			t.Fatal(signal, w.Body.String())
+		}
+	}
+	rows, e := a.DB.Query("SELECT raw FROM events")
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer rows.Close()
+	n := 0
+	for rows.Next() {
+		var raw string
+		rows.Scan(&raw)
+		if !strings.Contains(raw, "service.namespace") || !strings.Contains(raw, "shop") || !strings.Contains(raw, "backend,go") {
+			t.Fatal(raw)
+		}
+		n++
+	}
+	if n != 3 {
+		t.Fatal(n)
+	}
+}
+func TestProjectResourcePrecedence(t *testing.T) {
+	root := map[string]any{"resourceLogs": []any{map[string]any{"resource": map[string]any{"attributes": []any{map[string]any{"key": "service.namespace", "value": map[string]any{"stringValue": "explicit"}}}}}}}
+	if e := applyProjectQuery(root, "logs", url.Values{"project": []string{"query"}}); e != nil {
+		t.Fatal(e)
+	}
+	b, _ := json.Marshal(root)
+	if strings.Contains(string(b), `"query"`) {
+		t.Fatal(string(b))
+	}
+	if e := applyProjectQuery(root, "logs", url.Values{"project": []string{"one", "two"}}); e == nil {
+		t.Fatal("ambiguous project accepted")
 	}
 }

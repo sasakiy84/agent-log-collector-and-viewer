@@ -1,3 +1,11 @@
+# Session import and project labels (unreleased)
+
+- Added a local `agentlog import` command with repeatable folder/file selection, default-root scanning, working-directory filtering, project/tag labels and dry-run parsing. Supported transcript records are converted into OTLP logs and sent through authenticated HTTP ingestion.
+- Tests cover Codex canonical messages vs duplicate event messages, Claude content/tool/usage blocks and subagent files, Copilot message/tool events and linked journals, stable replay IDs, metadata relabeling, updated records, exact integer usage, working-directory filtering, malformed input and unsupported linked Codex histories. Import HTTP redirects do not forward the access token.
+- Added Resource attribute project display/search and per-signal query defaults. Explicit resource values take precedence. Tests cover logs/traces/metrics and ambiguous query rejection.
+- Go race tests, vet and parser checks passed. The CLI/browser integration test exercises folder import, replay, native OTEL labels, shared sessions, origin filters, typed message/usage rendering, project search, inspector and mobile. The 206-session pagination/hostile-text browser suite also passed. Fixtures are synthetic; transcript version coverage remains limited to the documented shapes.
+- Imported records have stable IDs and sequence ordering; existing databases receive an additive ordering column. Imported and live records are not heuristically deduplicated against each other. A dedicated source selector separates them.
+
 # v0.2.1 validation
 
 - Removed automatic event expiry, its startup/hourly pruning, CLI flag, and Compose/environment setting. Stored events now persist until explicit database/volume removal.

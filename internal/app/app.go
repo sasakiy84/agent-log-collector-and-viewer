@@ -22,6 +22,7 @@ import (
 var assets embed.FS
 
 type Event struct {
+	Sequence   int             `json:"sequence,omitempty"`
 	ID         string          `json:"id"`
 	Session    string          `json:"session"`
 	Parent     string          `json:"parent,omitempty"`
@@ -66,6 +67,38 @@ func Open(path, token string) (*App, error) {
 		db.Close()
 		return nil, err
 	}
+	// Preserve databases created before import ordering was introduced.
+	rows, err := db.Query("PRAGMA table_info(events)")
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	hasSequence := false
+	for rows.Next() {
+		var cid, notnull, pk int
+		var name, typ string
+		var def any
+		if err = rows.Scan(&cid, &name, &typ, &notnull, &def, &pk); err != nil {
+			rows.Close()
+			db.Close()
+			return nil, err
+		}
+		if name == "sequence" {
+			hasSequence = true
+		}
+	}
+	if err = rows.Err(); err != nil {
+		rows.Close()
+		db.Close()
+		return nil, err
+	}
+	rows.Close()
+	if !hasSequence {
+		if _, err = db.Exec("ALTER TABLE events ADD COLUMN sequence INTEGER NOT NULL DEFAULT 0"); err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
 	a := &App{DB: db, token: token}
 	return a, nil
 }
@@ -76,9 +109,11 @@ func (a *App) Save(events []Event) error {
 	}
 	defer tx.Rollback()
 	for _, e := range events {
-		sum := sha256.Sum256(append([]byte(e.Source+e.Signal), e.Raw...))
-		e.ID = hex.EncodeToString(sum[:])
-		_, err = tx.Exec("INSERT OR IGNORE INTO events VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", e.ID, e.Session, e.Parent, e.Source, e.Signal, e.Time, e.Name, e.Trace, e.Span, e.ParentSpan, []byte(e.Raw), time.Now().Unix())
+		if e.ID == "" {
+			sum := sha256.Sum256(append([]byte(e.Source+e.Signal), e.Raw...))
+			e.ID = hex.EncodeToString(sum[:])
+		}
+		_, err = tx.Exec("INSERT OR IGNORE INTO events(id,session,parent,source,signal,time,name,trace,span,parent_span,raw,received,sequence) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET session=excluded.session,parent=excluded.parent,time=excluded.time,name=excluded.name,trace=excluded.trace,span=excluded.span,parent_span=excluded.parent_span,raw=excluded.raw,sequence=excluded.sequence WHERE events.id LIKE 'import:%'", e.ID, e.Session, e.Parent, e.Source, e.Signal, e.Time, e.Name, e.Trace, e.Span, e.ParentSpan, []byte(e.Raw), time.Now().Unix(), e.Sequence)
 		if err != nil {
 			return err
 		}
@@ -174,7 +209,7 @@ func (a *App) Handler() http.Handler {
 	})
 }
 func (a *App) sessions(w http.ResponseWriter, r *http.Request) {
-	rows, err := a.DB.Query(`SELECT session,MAX(source),MAX(parent),COUNT(*),MIN(time),MAX(time), (SELECT p.raw FROM events p WHERE p.session=events.session ORDER BY (instr(lower(p.raw), 'prompt')>0) DESC,p.time,p.id LIMIT 1) FROM events WHERE (?='' OR source=?) AND (?='' OR session IN (SELECT session FROM events WHERE instr(lower(session||' '||name||' '||CAST(raw AS TEXT)),lower(?))>0)) GROUP BY session ORDER BY MAX(time) DESC LIMIT 201 OFFSET ?`, r.URL.Query().Get("source"), r.URL.Query().Get("source"), r.URL.Query().Get("q"), r.URL.Query().Get("q"), offset(r))
+	rows, err := a.DB.Query(`SELECT session,MAX(source),MAX(parent),COUNT(*),MIN(time),MAX(time), (SELECT p.raw FROM events p WHERE p.session=events.session ORDER BY (instr(lower(p.raw), 'user_prompt')>0 OR instr(lower(p.raw),'gen_ai.user.message')>0 OR instr(lower(p.raw),'gen_ai.input.messages')>0) DESC,p.time,p.sequence,p.id LIMIT 1) FROM events WHERE (?='' OR source=?) AND (?='' OR session IN (SELECT session FROM events WHERE instr(lower(session||' '||name||' '||CAST(raw AS TEXT)),lower(?))>0)) GROUP BY session ORDER BY MAX(time) DESC LIMIT 201 OFFSET ?`, r.URL.Query().Get("source"), r.URL.Query().Get("source"), r.URL.Query().Get("q"), r.URL.Query().Get("q"), offset(r))
 	if err != nil {
 		http.Error(w, "Database error", 500)
 		return
@@ -208,7 +243,7 @@ func offset(r *http.Request) int {
 	return n
 }
 func (a *App) readEvents(session string, limit, off int) ([]Event, error) {
-	rows, err := a.DB.Query("SELECT id,session,parent,source,signal,time,name,trace,span,parent_span,raw FROM events WHERE session=? ORDER BY time,id LIMIT ? OFFSET ?", session, limit, off)
+	rows, err := a.DB.Query("SELECT id,session,parent,source,signal,time,name,trace,span,parent_span,raw,sequence FROM events WHERE session=? ORDER BY time,sequence,id LIMIT ? OFFSET ?", session, limit, off)
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +251,7 @@ func (a *App) readEvents(session string, limit, off int) ([]Event, error) {
 	out := []Event{}
 	for rows.Next() {
 		var e Event
-		if err := rows.Scan(&e.ID, &e.Session, &e.Parent, &e.Source, &e.Signal, &e.Time, &e.Name, &e.Trace, &e.Span, &e.ParentSpan, &e.Raw); err != nil {
+		if err := rows.Scan(&e.ID, &e.Session, &e.Parent, &e.Source, &e.Signal, &e.Time, &e.Name, &e.Trace, &e.Span, &e.ParentSpan, &e.Raw, &e.Sequence); err != nil {
 			return nil, err
 		}
 		out = append(out, e)
@@ -255,7 +290,7 @@ func (a *App) session(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var preview json.RawMessage
-	if err = a.DB.QueryRow("SELECT raw FROM events WHERE session=? ORDER BY (instr(lower(raw), 'prompt')>0) DESC,time,id LIMIT 1", id).Scan(&preview); err != nil {
+	if err = a.DB.QueryRow("SELECT raw FROM events WHERE session=? ORDER BY (instr(lower(raw), 'user_prompt')>0 OR instr(lower(raw),'gen_ai.user.message')>0 OR instr(lower(raw),'gen_ai.input.messages')>0) DESC,time,sequence,id LIMIT 1", id).Scan(&preview); err != nil {
 		http.Error(w, "Database error", 500)
 		return
 	}

@@ -2,6 +2,7 @@ package app
 
 import (
 	"compress/gzip"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -86,6 +87,10 @@ func (a *App) receive(w http.ResponseWriter, r *http.Request) {
 	var root map[string]any
 	json.Unmarshal(b, &root)
 	convertIDs(root, false)
+	if e = applyProjectQuery(root, signal, r.URL.Query()); e != nil {
+		http.Error(w, e.Error(), 400)
+		return
+	}
 	events, e := normalize(root, signal)
 	if e != nil {
 		http.Error(w, e.Error(), 400)
@@ -221,6 +226,9 @@ func normalize(root map[string]any, signal string) ([]Event, error) {
 					}
 					trace, span := str(rec["traceId"]), str(rec["spanId"])
 					parent := ""
+					if at["parent.session.id"] != "" {
+						parent = source + ":" + at["parent.session.id"]
+					}
 					if sid != "" {
 						sid = source + ":" + sid
 						if source == "claude" && at["agent_id"] != "" {
@@ -266,7 +274,13 @@ func normalize(root map[string]any, signal string) ([]Event, error) {
 					if normalizedBytes > maxBody {
 						return nil, fmt.Errorf("normalized batch exceeds 16 MiB")
 					}
-					out = append(out, Event{Session: sid, Parent: parent, Source: source, Signal: signal, Time: tm, Name: name, Trace: trace, Span: span, ParentSpan: str(rec["parentSpanId"]), Raw: raw})
+					ev := Event{Session: sid, Parent: parent, Source: source, Signal: signal, Time: tm, Name: name, Trace: trace, Span: span, ParentSpan: str(rec["parentSpanId"]), Raw: raw}
+					if importID := at["agentlog.import.id"]; importID != "" {
+						sum := sha256.Sum256([]byte(source + "|" + importID))
+						ev.ID = "import:" + hex.EncodeToString(sum[:])
+						ev.Sequence, _ = strconv.Atoi(at["agentlog.import.sequence"])
+					}
+					out = append(out, ev)
 					if len(out) > 10000 {
 						return nil, fmt.Errorf("maximum 10000 records per request")
 					}

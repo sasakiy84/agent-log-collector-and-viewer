@@ -27,12 +27,12 @@ function parseEvent(e) {
       block(m.role || label,content);
     }
   };
-  if (/user_prompt|interaction$/.test(name)) {
+  if (name==='gen_ai.user.message' || /user_prompt|interaction$/.test(name)) {
     p.kind='user';p.title='User';block('Request',get('prompt_text','prompt','user_prompt'));
-    if(!p.blocks.length) block('Request','Content not exported');
-  } else if (/assistant_response/.test(name)) {
+    if(!p.blocks.length && !get('gen_ai.input.messages')) block('Request','Content not exported');
+  } else if (name==='gen_ai.assistant.message' || /assistant_response/.test(name)) {
     p.kind='assistant';p.title='Assistant';block('Response',get('response','response_text','assistant_response','text'));
-    if(!p.blocks.length) block('Response','Content not exported');
+    if(!p.blocks.length && !get('gen_ai.output.messages')) block('Response','Content not exported');
   } else if (/tool/.test(name) || get('gen_ai.operation.name')==='execute_tool') {
     p.kind='tool';p.title=text(get('gen_ai.tool.name','tool_name','tool_name_safe') || name);
     const input=decoded(get('gen_ai.tool.call.arguments','tool_input','arguments'));
@@ -57,7 +57,7 @@ function parseEvent(e) {
     if(r.bucketCounts) block('Buckets',{bounds:r.explicitBounds,counts:r.bucketCounts},true);
   }
   if(!p.blocks.length && p.kind==='event') { const body=anyValue(r.body); if(body) { if(text(body)===name) p.title='Log'; block('Message',body); } }
-  field('Model',p.model);
+  field('Model',p.model);p.project=get('service.namespace','project.name');p.tags=get('project.tags');p.origin=get('agentlog.origin');
   for(const [label,keys] of [
     ['Input tokens',['gen_ai.usage.input_tokens','input_tokens','input_token_count']],
     ['Output tokens',['gen_ai.usage.output_tokens','output_tokens','output_token_count']],
