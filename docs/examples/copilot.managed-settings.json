@@ -1,0 +1,10 @@
+{
+  "telemetry": {
+    "enabled": true,
+    "endpoint": "https://agents.example.com",
+    "protocol": "http/protobuf",
+    "headers": {
+      "Authorization": "Bearer REPLACE_WITH_TOKEN"
+    }
+  }
+}
