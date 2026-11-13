@@ -35,12 +35,11 @@ type Event struct {
 	Raw        json.RawMessage `json:"raw"`
 }
 type App struct {
-	DB        *sql.DB
-	token     string
-	retention int
+	DB    *sql.DB
+	token string
 }
 
-func Open(path, token string, retention int) (*App, error) {
+func Open(path, token string) (*App, error) {
 	if len(token) < 16 {
 		return nil, fmt.Errorf("AGENTLOG_TOKEN must contain at least 16 characters")
 	}
@@ -62,20 +61,13 @@ func Open(path, token string, retention int) (*App, error) {
  CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY, session TEXT NOT NULL, parent TEXT NOT NULL, source TEXT NOT NULL, signal TEXT NOT NULL, time TEXT NOT NULL, name TEXT NOT NULL, trace TEXT NOT NULL, span TEXT NOT NULL, parent_span TEXT NOT NULL, raw BLOB NOT NULL, received INTEGER NOT NULL);
  CREATE INDEX IF NOT EXISTS events_session ON events(session,time);
  CREATE INDEX IF NOT EXISTS events_trace ON events(source,trace,span);
- CREATE INDEX IF NOT EXISTS events_received ON events(received);`)
+ DROP INDEX IF EXISTS events_received;`)
 	if err != nil {
 		db.Close()
 		return nil, err
 	}
-	a := &App{db, token, retention}
+	a := &App{DB: db, token: token}
 	return a, nil
-}
-func (a *App) Prune() error {
-	if a.retention <= 0 {
-		return nil
-	}
-	_, e := a.DB.Exec("DELETE FROM events WHERE received < ?", time.Now().Add(-time.Duration(a.retention)*24*time.Hour).Unix())
-	return e
 }
 func (a *App) Save(events []Event) error {
 	tx, err := a.DB.Begin()

@@ -1,3 +1,9 @@
+# v0.2.1 validation
+
+- Removed automatic event expiry, its startup/hourly pruning, CLI flag, and Compose/environment setting. Stored events now persist until explicit database/volume removal.
+- The environment template requires only the access token. The optional port is commented with its default; the container version is no longer an environment setting.
+- Database compatibility tests reopen a legacy-shaped database with year-old receipt timestamps and confirm all 205 events survive. The legacy receipt column remains for database compatibility; its unused expiry index is removed without deleting events.
+
 # v0.2.0 validation
 
 This version includes the revised UI and Docker Compose deployment. The v0.1.0 validation record is retained below.

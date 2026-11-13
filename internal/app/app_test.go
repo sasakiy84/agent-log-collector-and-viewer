@@ -22,7 +22,7 @@ const token = "test-token-at-least-16"
 
 func setup(t *testing.T) *App {
 	t.Helper()
-	a, e := Open(filepath.Join(t.TempDir(), "test.db"), token, 30)
+	a, e := Open(filepath.Join(t.TempDir(), "test.db"), token)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -157,13 +157,13 @@ func TestMetricsAndValidation(t *testing.T) {
 			t.Fatal(w.Code)
 		}
 	}
-	if _, e := Open(":memory:", "short", 30); e == nil {
+	if _, e := Open(":memory:", "short"); e == nil {
 		t.Fatal("short token accepted")
 	}
 }
-func TestPersistencePaginationRetention(t *testing.T) {
+func TestPersistencePagination(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "persist.db")
-	a, e := Open(p, token, 30)
+	a, e := Open(p, token)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -175,7 +175,7 @@ func TestPersistencePaginationRetention(t *testing.T) {
 		t.Fatal(e)
 	}
 	a.DB.Close()
-	a, e = Open(p, token, 30)
+	a, e = Open(p, token)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -184,13 +184,22 @@ func TestPersistencePaginationRetention(t *testing.T) {
 	if e != nil || len(v) != 5 || v[0].Time != "0200" {
 		t.Fatal(e, v)
 	}
-	a.DB.Exec("UPDATE events SET received=?", time.Now().Add(-31*24*time.Hour).Unix())
-	if e = a.Prune(); e != nil {
+	if _, e = a.DB.Exec("UPDATE events SET received=?", time.Now().Add(-365*24*time.Hour).Unix()); e != nil {
 		t.Fatal(e)
 	}
-	v, _ = a.readEvents("s", 200, 0)
-	if len(v) != 0 {
-		t.Fatal("pruning failed")
+	// A database from an older version may still have the expiry index.
+	if _, e = a.DB.Exec("CREATE INDEX events_received ON events(received)"); e != nil {
+		t.Fatal(e)
+	}
+	a.DB.Close()
+	a, e = Open(p, token)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer a.DB.Close()
+	v, e = a.readEvents("s", 300, 0)
+	if e != nil || len(v) != 205 {
+		t.Fatal("old records lost after restart", e, len(v))
 	}
 }
 

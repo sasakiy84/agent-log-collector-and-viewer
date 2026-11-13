@@ -28,7 +28,7 @@ docker compose down                  # Stop; keep the data volume
 docker compose up -d --build
 ```
 
-`AGENTLOG_PORT`, `AGENTLOG_RETENTION_DAYS` (0 keeps forever), and the optional build label `AGENTLOG_VERSION` are configured in `.env`. Rotate the token there and run `docker compose up -d` to recreate the service. `docker compose down --volumes` **deletes stored sessions**. Back up the named volume while the service is stopped, or use SQLite's online backup API.
+Only `AGENTLOG_TOKEN` is required in `.env`. The optional `AGENTLOG_PORT` defaults to 4318 and is commented out in the template. Container versions are build metadata, not runtime environment settings. Rotate the token there and run `docker compose up -d` to recreate the service. `docker compose down --volumes` **deletes stored sessions**. Back up the named volume while the service is stopped, or use SQLite's online backup API.
 
 The provided configuration builds locally; no prebuilt container registry image is published. `Dockerfile` and `compose.yaml` are included in the release archives. Use `docker compose build --pull` when you want updated base images. A reverse proxy running in a separate container must join the same Docker network and proxy to `agentlog:4318`, rather than to its own loopback address.
 
@@ -49,7 +49,7 @@ Download an archive from [Releases](https://github.com/sasakiy84/agent-log-colle
 ```sh
 # Generate a random token, then store it in your service manager's secret configuration.
 export AGENTLOG_TOKEN="$(openssl rand -hex 32)"
-./agentlog --listen 127.0.0.1:4318 --db ./agentlog.db --retention-days 30
+./agentlog --listen 127.0.0.1:4318 --db ./agentlog.db
 ```
 
 Open http://127.0.0.1:4318 and sign in with the token. `AGENTLOG_TOKEN` must be at least 16 characters. The same token authorizes OTLP ingestion and viewing; this is a single-user tool. Browser login issues an HttpOnly, SameSite=Strict cookie valid for 12 hours. Ingestion accepts only `Authorization: Bearer TOKEN`, never the viewing cookie. Rotating the token and restarting invalidates existing sessions.
@@ -117,7 +117,7 @@ Use HTTPS with Copilot. Its documented signals are traces and metrics; content c
 - Claude `agent_id` splits a session into agent timelines. `parent_agent_id` links nested agents; per the Claude schema, its absence on a subagent means the parent is the main session. Parent links can exist before parent data arrives.
 - A record with no session ID falls back to `trace:SOURCE:TRACE_ID`, or `unassigned:SOURCE` when no trace exists. Across batches, trace records move into an explicitly identified session when the parent span matches or the trace has exactly one known session. Ambiguous traces stay separate. Trace parent links appear in the event inspector; targets outside the current event page require navigating to that page. No relationships are inferred from text or timing.
 - Sessions and events paginate in groups of 200. Search matches session IDs and received attributes/content while retaining the full session counts and dates. Sessions open on a dedicated, bookmarkable page. The viewer polls every 5 seconds, can pause on the detail page, and retains the selected event and detail/JSON tab in the event inspector. Event type filters apply to the current 200-event page. Claude prompts, responses and tool parameters, Codex tool results and usage, and Copilot GenAI messages/tool spans render as structured event cards. Selecting a card opens a side inspector with full content, attributes, trace/span metadata, and a JSON tab with copying. On narrow screens the inspector opens full width; Escape closes it. Missing content stays explicitly missing. Export downloads all stored events for the selected session as JSON; large sessions can require substantial memory.
-- Default retention is 30 days since receipt, pruned at startup and hourly; `--retention-days 0` disables expiry. Retention applies to server receipt time, including old imported events. Database pages may retain deleted data until SQLite reuses them. Stop the service before copying the database and its WAL files, or use SQLite's online backup API. Keep the database on a local filesystem and run one collector process per database.
+- Stored events are kept until you explicitly remove the database or volume; there is no automatic expiry or retention-period setting. Stop the service before copying the database and its WAL files, or use SQLite's online backup API. Keep the database on a local filesystem and run one collector process per database.
 
 No local session-log import, hooks, forwarding, arbitrary processors/exporters, multi-user roles, full-text index, or vendor-specific dashboard aggregations are included.
 
