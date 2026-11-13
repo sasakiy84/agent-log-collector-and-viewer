@@ -1,4 +1,4 @@
-# Session import and project labels (unreleased)
+# v0.3.0 validation
 
 - Added a local `agentlog import` command with repeatable folder/file selection, default-root scanning, working-directory filtering, project/tag labels and dry-run parsing. Supported transcript records are converted into OTLP logs and sent through authenticated HTTP ingestion.
 - Tests cover Codex canonical messages vs duplicate event messages, Claude content/tool/usage blocks and subagent files, Copilot message/tool events and linked journals, stable replay IDs, metadata relabeling, updated records, exact integer usage, working-directory filtering, malformed input and unsupported linked Codex histories. Import HTTP redirects do not forward the access token.

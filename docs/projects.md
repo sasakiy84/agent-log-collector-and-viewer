@@ -7,6 +7,14 @@
 
 Resource attributes appear in the session header and inspector. Project names and tags are included in session search.
 
+## Codex
+
+```sh
+OTEL_RESOURCE_ATTRIBUTES='service.namespace=shop,project.tags=backend' codex
+```
+
+Current Codex uses these Resource attributes for logs and traces. `config.toml` has no arbitrary Resource-attribute table; `otel.span_attributes` adds attributes only to trace spans.
+
 ## Claude Code
 
 `~/.claude/settings.json` → `env`:
@@ -30,7 +38,7 @@ Resource attributes appear in the session header and inspector. Project names an
 }
 ```
 
-## Codex / endpoint query
+## Endpoint query
 
 Agentlog also accepts `project` and repeated `tag` parameters on each full signal endpoint:
 
@@ -44,4 +52,4 @@ For Codex, set the first two URLs in the `exporter` and `trace_exporter` endpoin
 
 OTEL resource attributes apply to the process/resource, not automatically to a repository. Fixed labels in global or machine-wide settings apply to all sessions using them. For live per-project labels, use the CLI's supported launch environment or separate configurations; managed policy may override local values. For historical imports, use `--cwd`, `--project` and `--tag` as described in [Import](import.md).
 
-[OTEL service namespace](https://opentelemetry.io/docs/specs/semconv/resource/#service) · [Claude resource attributes](https://code.claude.com/docs/en/monitoring-usage#multi-team-organization-support) · [Copilot resource attributes](https://docs.github.com/en/copilot/reference/enterprise-administrators/enterprise-managed-settings#telemetry)
+[Codex implementation](https://github.com/openai/codex/blob/main/codex-rs/otel/src/provider.rs#L411) · [OTEL service namespace](https://opentelemetry.io/docs/specs/semconv/resource/#service) · [Claude resource attributes](https://code.claude.com/docs/en/monitoring-usage#multi-team-organization-support) · [Copilot resource attributes](https://docs.github.com/en/copilot/reference/enterprise-administrators/enterprise-managed-settings#telemetry)

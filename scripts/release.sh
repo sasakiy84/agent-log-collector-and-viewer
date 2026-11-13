@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-version="${1:?Usage: scripts/release.sh v0.2.0}"
+version="${1:?Usage: scripts/release.sh vX.Y.Z}"
 mkdir -p dist
 for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
   platform="${target%/*}"; arch="${target#*/}"; name="agentlog_${version}_${platform}_${arch}"
