@@ -15,6 +15,7 @@ jobs:
           cache: true
       - run: go test -race ./...
       - run: go vet ./...
+      - run: node scripts/parse_test.cjs
       - run: scripts/release.sh "${GITHUB_REF_NAME}"
       - env:
           GH_TOKEN: ${{ github.token }}

@@ -219,3 +219,52 @@ func TestSubsecondOrderingAndAtomicRejection(t *testing.T) {
 		t.Fatal("partial batch stored", n)
 	}
 }
+
+func TestSessionPageMetadataAndSearch(t *testing.T) {
+	a := setup(t)
+	for _, body := range []string{logBody("claude", "parent", "", ""), logBody("claude", "parent", "child", "")} {
+		if w := request(a, "/v1/logs", body, token); w.Code != 200 {
+			t.Fatal(w.Code, w.Body.String())
+		}
+	}
+	get := func(path string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("GET", path, nil)
+		r.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		a.Handler().ServeHTTP(w, r)
+		return w
+	}
+	w := get("/api/session?id=claude:parent")
+	if w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	var m struct {
+		Count    int             `json:"count"`
+		Children []string        `json:"children"`
+		Preview  json.RawMessage `json:"preview"`
+	}
+	if e := json.Unmarshal(w.Body.Bytes(), &m); e != nil {
+		t.Fatal(e)
+	}
+	if m.Count != 1 || len(m.Children) != 1 || m.Children[0] != "claude:parent/agent:child" || len(m.Preview) == 0 {
+		t.Fatal(m)
+	}
+	if w = get("/api/session?id=missing"); w.Code != 404 {
+		t.Fatal(w.Code)
+	}
+	w = get("/api/sessions?q=alert")
+	var sessions []map[string]any
+	if e := json.Unmarshal(w.Body.Bytes(), &sessions); e != nil || len(sessions) != 2 {
+		t.Fatal(e, w.Body.String())
+	}
+	w = get("/sessions/claude%3Aparent%2Fagent%3Achild")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "detailpage") {
+		t.Fatal(w.Code)
+	}
+	r := httptest.NewRequest("GET", "/api/session?id=claude:parent", nil)
+	w = httptest.NewRecorder()
+	a.Handler().ServeHTTP(w, r)
+	if w.Code != 401 {
+		t.Fatal("metadata exposed")
+	}
+}

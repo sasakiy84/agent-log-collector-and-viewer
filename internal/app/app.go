@@ -152,6 +152,7 @@ func (a *App) Handler() http.Handler {
 	})
 	mux.HandleFunc("GET /api/sessions", a.sessions)
 	mux.HandleFunc("GET /api/events", a.events)
+	mux.HandleFunc("GET /api/session", a.session)
 	mux.HandleFunc("GET /api/export", a.export)
 	mux.HandleFunc("GET /api/stats", func(w http.ResponseWriter, r *http.Request) {
 		var n, s int
@@ -163,6 +164,11 @@ func (a *App) Handler() http.Handler {
 	})
 	sub, _ := fs.Sub(assets, "static")
 	mux.Handle("GET /", http.FileServer(http.FS(sub)))
+	mux.HandleFunc("GET /sessions/{id}", func(w http.ResponseWriter, r *http.Request) {
+		b, _ := assets.ReadFile("static/index.html")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(b)
+	})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'; object-src 'none'")
@@ -176,24 +182,25 @@ func (a *App) Handler() http.Handler {
 	})
 }
 func (a *App) sessions(w http.ResponseWriter, r *http.Request) {
-	rows, err := a.DB.Query(`SELECT session,MAX(source),MAX(parent),COUNT(*),MIN(time),MAX(time) FROM events WHERE (?='' OR source=?) AND (?='' OR instr(lower(session||' '||name),lower(?))>0) GROUP BY session ORDER BY MAX(time) DESC LIMIT 201 OFFSET ?`, r.URL.Query().Get("source"), r.URL.Query().Get("source"), r.URL.Query().Get("q"), r.URL.Query().Get("q"), offset(r))
+	rows, err := a.DB.Query(`SELECT session,MAX(source),MAX(parent),COUNT(*),MIN(time),MAX(time), (SELECT p.raw FROM events p WHERE p.session=events.session ORDER BY (instr(lower(p.raw), 'prompt')>0) DESC,p.time,p.id LIMIT 1) FROM events WHERE (?='' OR source=?) AND (?='' OR session IN (SELECT session FROM events WHERE instr(lower(session||' '||name||' '||CAST(raw AS TEXT)),lower(?))>0)) GROUP BY session ORDER BY MAX(time) DESC LIMIT 201 OFFSET ?`, r.URL.Query().Get("source"), r.URL.Query().Get("source"), r.URL.Query().Get("q"), r.URL.Query().Get("q"), offset(r))
 	if err != nil {
 		http.Error(w, "Database error", 500)
 		return
 	}
 	defer rows.Close()
 	type session struct {
-		ID     string `json:"id"`
-		Source string `json:"source"`
-		Parent string `json:"parent"`
-		Count  int    `json:"count"`
-		Start  string `json:"start"`
-		End    string `json:"end"`
+		ID      string          `json:"id"`
+		Source  string          `json:"source"`
+		Parent  string          `json:"parent"`
+		Count   int             `json:"count"`
+		Start   string          `json:"start"`
+		End     string          `json:"end"`
+		Preview json.RawMessage `json:"preview"`
 	}
 	out := []session{}
 	for rows.Next() {
 		var s session
-		if err := rows.Scan(&s.ID, &s.Source, &s.Parent, &s.Count, &s.Start, &s.End); err != nil {
+		if err := rows.Scan(&s.ID, &s.Source, &s.Parent, &s.Count, &s.Start, &s.End, &s.Preview); err != nil {
 			http.Error(w, "Database error", 500)
 			return
 		}
@@ -240,4 +247,40 @@ func (a *App) export(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Disposition", `attachment; filename="session.json"`)
 	write(w, v)
+}
+
+func (a *App) session(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	var source, parent, start, end string
+	var count int
+	err := a.DB.QueryRow("SELECT MAX(source),MAX(parent),MIN(time),MAX(time),COUNT(*) FROM events WHERE session=? HAVING COUNT(*)>0", id).Scan(&source, &parent, &start, &end, &count)
+	if err == sql.ErrNoRows {
+		http.Error(w, "Session not found", 404)
+		return
+	}
+	if err != nil {
+		http.Error(w, "Database error", 500)
+		return
+	}
+	var preview json.RawMessage
+	if err = a.DB.QueryRow("SELECT raw FROM events WHERE session=? ORDER BY (instr(lower(raw), 'prompt')>0) DESC,time,id LIMIT 1", id).Scan(&preview); err != nil {
+		http.Error(w, "Database error", 500)
+		return
+	}
+	rows, err := a.DB.Query("SELECT DISTINCT session FROM events WHERE parent=? ORDER BY session", id)
+	if err != nil {
+		http.Error(w, "Database error", 500)
+		return
+	}
+	defer rows.Close()
+	children := []string{}
+	for rows.Next() {
+		var child string
+		if err = rows.Scan(&child); err != nil {
+			http.Error(w, "Database error", 500)
+			return
+		}
+		children = append(children, child)
+	}
+	write(w, map[string]any{"id": id, "source": source, "parent": parent, "start": start, "end": end, "count": count, "children": children, "preview": preview})
 }

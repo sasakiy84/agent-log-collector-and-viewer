@@ -34,7 +34,7 @@ with tempfile.TemporaryDirectory() as temp:
    page.wait_for_function("() => document.querySelectorAll('.session').length===1")
    page.locator('.session').click()
    page.wait_for_function("() => document.querySelectorAll('.event').length===200")
-   assert page.locator('.event h3').first.inner_text()==attack
+   assert page.locator('.event .prose').first.inner_text()==attack
    assert page.evaluate('() => !window.xss')
    assert page.evaluate('() => document.documentElement.scrollWidth <= innerWidth'),'long content overflow'
    page.locator('#nextevents').click()

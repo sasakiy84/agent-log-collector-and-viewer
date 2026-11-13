@@ -1,0 +1,13 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+vm.runInThisContext(fs.readFileSync('internal/app/static/parse.js','utf8'));
+const {parseEvent,anyValue}=AgentlogParse;
+const event=(source,name,a,extra={})=>({source,name,signal:'logs',raw:{record:{attributes:Object.entries(a).map(([key,value])=>({key,value:{stringValue:typeof value==='object'?JSON.stringify(value):value}})),...extra}}});
+let p=parseEvent(event('claude','logs',{'event.name':'user_prompt',prompt_text:'Review API'}));assert.equal(p.kind,'user');assert.equal(p.blocks[0].text,'Review API');
+p=parseEvent(event('claude','logs',{'event.name':'tool_result',tool_name:'Bash',tool_parameters:{full_command:'go test ./...'},success:'false',error:'failed',duration_ms:'1200'}));assert.equal(p.title,'Bash');assert.equal(p.blocks[0].text,'go test ./...');assert.equal(p.error,true);assert(p.fields.some(([k,v])=>k==='Duration'&&v==='1.20 s'));
+p=parseEvent(event('codex','logs',{'event.name':'codex.tool_result',tool_name:'exec_command',arguments:{cmd:'ls'},output:'README.md',success:'true'}));assert.equal(p.kind,'tool');assert(p.blocks.some(b=>b.label==='Output'&&b.text==='README.md'));
+p=parseEvent(event('copilot','chat',{'gen_ai.operation.name':'chat','gen_ai.input.messages':[{role:'user',parts:[{type:'text',content:'hello'}]}],'gen_ai.usage.input_tokens':'0','github.copilot.cost':'2'}));assert.equal(p.blocks[0].text,'hello');assert(p.fields.some(([k,v])=>k==='Input tokens'&&v==='0'));assert(p.fields.some(([k])=>k==='Billing multiplier'));assert(!p.fields.some(([k])=>k==='Cost (USD)'));
+p=parseEvent(event('claude','assistant_response',{}));assert.equal(p.blocks[0].text,'Content not exported');
+p=parseEvent({signal:'metrics',raw:{record:{name:'tokens',asInt:'300',aggregationTemporality:'AGGREGATION_TEMPORALITY_CUMULATIVE'}}});assert(p.fields.some(([k,v])=>k==='Temporality'&&v==='Cumulative'));
+assert.deepEqual(anyValue({arrayValue:{values:[{intValue:'42'},{boolValue:false}]}}),['42',false]);
+p=parseEvent(event('copilot','execute_tool',{'gen_ai.tool.name':'read_file'}, {events:[{name:'tool.output',attributes:[{key:'tool.output',value:{stringValue:'file content'}}]}]}));assert(p.blocks.some(b=>b.text==='file content'));
+console.log('PASS: per-agent schemas, OTLP values, absent content, errors, token zero, multiplier semantics, metric temporality, span events');

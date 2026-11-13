@@ -1,0 +1,31 @@
+services:
+  agentlog:
+    image: agentlog:${AGENTLOG_VERSION:-local}
+    build:
+      context: .
+      args:
+        VERSION: ${AGENTLOG_VERSION:-dev}
+    environment:
+      AGENTLOG_TOKEN: ${AGENTLOG_TOKEN:?Set AGENTLOG_TOKEN in .env (at least 16 characters)}
+    command: ["--listen", "0.0.0.0:4318", "--db", "/data/agentlog.db", "--retention-days", "${AGENTLOG_RETENTION_DAYS:-30}"]
+    ports:
+      - "127.0.0.1:${AGENTLOG_PORT:-4318}:4318"
+    volumes:
+      - agentlog-data:/data
+    restart: unless-stopped
+    stop_grace_period: 15s
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  agentlog-data:

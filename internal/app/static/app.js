@@ -1,11 +1,112 @@
 'use strict';
-const $=s=>document.querySelector(s);let source='',query='',selected='',sessionOffset=0,eventOffset=0,sessions=[],events=[],generation=0,busy=false;
+const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const label=s=>({codex:'Codex CLI',claude:'Claude Code',copilot:'GitHub Copilot',other:'Other'}[s]||s);
-const api=async path=>{const r=await fetch(path);if(r.status===401){$('#login').hidden=false;$('#workspace').hidden=true;throw Error('Sign in to continue.')}if(!r.ok)throw Error('Could not load data. Retrying automatically.');return r.json()};
-function choose(id){selected=id;eventOffset=0;generation++;refresh()}
-function renderSessions(){const hasMore=sessions.length>200;$('#listcount').textContent=sessions.length?`${sessionOffset+1}–${sessionOffset+Math.min(sessions.length,200)}`:'0 sessions';$('#sessions').innerHTML=sessions.length?sessions.slice(0,200).map(s=>`<button class="session ${s.id===selected?'selected':''}" data-id="${esc(s.id)}"><div class="top"><span class="badge ${esc(s.source)}">${esc(label(s.source))}</span><time>${esc(new Date(s.end).toLocaleDateString(undefined,{month:'short',day:'numeric'}))}</time></div><strong>${esc(s.id.replace(/^(codex|claude|copilot):/,''))}</strong><small>${s.count} events · ${s.parent?'Subagent session':'Session timeline'}</small></button>`).join(''):'<p class="muted">No sessions yet. Send OTLP data to get started.</p>';$('#prevsessions').disabled=sessionOffset===0;$('#nextsessions').disabled=!hasMore;document.querySelectorAll('.session').forEach(b=>b.onclick=()=>choose(b.dataset.id))}
-function renderEvents(){const opened=new Set([...document.querySelectorAll('details[open]')].map(e=>e.dataset.id));if(!selected)return;const s=sessions.find(s=>s.id===selected),first=events[0];$('#detailhead').innerHTML=`<a href="/api/export?session=${encodeURIComponent(selected)}">Export JSON →</a><span class="badge ${esc(s?.source||first?.source||'other')}">${esc(label(s?.source||first?.source||'Session'))}</span><h2>${esc(selected)}</h2><p class="muted">${s?.count??'—'} events · Original signals, in chronological order</p>`;let parent=s?.parent||first?.parent;$('#relations').innerHTML=(parent?`Parent session: <a href="#" data-parent="${esc(parent)}">${esc(parent)} →</a>`:'')+sessions.filter(x=>x.parent===selected).map(x=>`<br>Subagent: <a href="#" data-parent="${esc(x.id)}">${esc(x.id)} →</a>`).join('');document.querySelectorAll('[data-parent]').forEach(a=>a.onclick=e=>{e.preventDefault();choose(a.dataset.parent)});$('#timeline').innerHTML='<p class="timeline-label">EVENT TIMELINE</p>'+events.slice(0,200).map(e=>`<article class="event" id="span-${esc(e.span||e.id)}"><div class="eventhead"><time>${esc(new Date(e.time).toISOString().replace('T',' ').replace('Z',' UTC'))}</time><span class="signal">${esc(e.signal)}</span></div><h3>${esc(e.name)}</h3>${e.parent_span?`<a href="#span-${esc(e.parent_span)}">Parent span: ${esc(e.parent_span)}</a>`:''}<details data-id="${esc(e.id)}" ${opened.has(e.id)?'open':''}><summary>View original record</summary><pre>${esc(JSON.stringify(e.raw,null,2))}</pre></details></article>`).join('');$('#prevevents').disabled=eventOffset===0;$('#nextevents').disabled=events.length<=200}
-async function refresh(){const g=generation;if(busy)return;busy=true;try{const [stats,list]=await Promise.all([api('/api/stats'),api(`/api/sessions?source=${encodeURIComponent(source)}&q=${encodeURIComponent(query)}&offset=${sessionOffset}`)]);if(g!==generation)return;sessions=list;$('#login').hidden=true;$('#workspace').hidden=false;$('#eventcount').textContent=stats.events.toLocaleString();$('#sessioncount').textContent=stats.sessions.toLocaleString();$('#allcount').textContent=stats.sessions;if(!selected&&sessions.length)selected=sessions[0].id;renderSessions();if(selected){const data=await api(`/api/events?session=${encodeURIComponent(selected)}&offset=${eventOffset}`);if(g!==generation)return;events=data;renderEvents()}$('#error').textContent=''}catch(e){$('#error').textContent=e.message}finally{busy=false;if(g!==generation)refresh()}}
+const label=s=>({codex:'Codex',claude:'Claude Code',copilot:'Copilot',other:'Other'}[s]||s);
+const link=id=>'/sessions/'+encodeURIComponent(id);
+const date=s=>new Date(s).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
+const clock=s=>new Date(s).toLocaleTimeString(undefined,{hour12:false});
+let generation=0,busy=false,sessionOffset=0,eventOffset=0,source='',query='',kind='',events=[],meta=null;
+let inspectedID='', inspectedSnapshot='', inspectorTab='details';
+let selected=location.pathname.startsWith('/sessions/')?decodeURIComponent(location.pathname.slice(10)):'';
+const listURL=new URL(location.href);
+source=listURL.searchParams.get('source')||'';query=listURL.searchParams.get('q')||'';sessionOffset=Number(listURL.searchParams.get('offset'))||0;
+$('#search').value=query;
+if(!selected) sessionStorage.setItem('sessionsURL',location.pathname+location.search);
+$('.back').href=sessionStorage.getItem('sessionsURL')||'/';
+async function api(path){const r=await fetch(path);if(r.status===401){closeInspector(false);$('#login').hidden=false;$('#workspace').hidden=true;throw Error('Sign in required.')}if(!r.ok)throw Error(r.status===404?'Session not found.':'Unable to load. Retrying automatically.');return r.json()}
+function titleFor(id,raw,source){if(raw){const p=parseEvent({raw,source});const prompt=p.blocks.find(b=>/request|user/i.test(b.label));if(prompt&&prompt.text!=='Content not exported')return prompt.text.split('\n')[0].slice(0,150)}return id.includes('/agent:')?'Subagent · '+id.split('/agent:').pop():id.replace(/^(codex|claude|copilot|other):/,'')}
+function listState(){const p=new URLSearchParams();if(source)p.set('source',source);if(query)p.set('q',query);if(sessionOffset)p.set('offset',sessionOffset);history.replaceState(null,'','/'+(p.size?'?'+p:''));sessionStorage.setItem('sessionsURL',location.pathname+location.search)}
+function renderSessions(rows){
+ $('#listcount').textContent=rows.length?`${sessionOffset+1}–${sessionOffset+Math.min(rows.length,200)}`:'0';
+ $('#sessions').innerHTML=rows.length?rows.slice(0,200).map(s=>`<a class="session" href="${esc(link(s.id))}" data-session="${esc(s.id)}"><div><h2>${esc(titleFor(s.id,s.preview,s.source))}</h2><small>${esc(s.id)}${s.parent?' · Subagent':''}</small></div><span class="source">${esc(label(s.source))}</span><time>${esc(date(s.end))}</time><span class="count">${s.count}</span></a>`).join(''):'<p class="empty">No sessions</p>';
+ $('#prevsessions').disabled=sessionOffset===0;$('#nextsessions').disabled=rows.length<=200;
+}
+function renderEvents(){
+ const focusedID=document.activeElement?.dataset.event;
+ const slice=events.slice(0,200),parsed=slice.map(e=>[e,parseEvent(e)]);
+ const visible=parsed.filter(([,p])=>!kind||(kind==='conversation'?(['user','assistant'].includes(p.kind)||(['model','agent'].includes(p.kind)&&p.blocks.some(b=>['user','assistant','Input','Output'].includes(b.label)))):kind==='error'?p.error:p.kind===kind));
+ $('#sessiontitle').textContent=titleFor(selected,meta.preview,meta.source);
+ $('#export').href='/api/export?session='+encodeURIComponent(selected);
+ const context=parsed.map(([,p])=>p).find(p=>p.model||p.cwd||p.host)||{};
+ $('#sessionmeta').innerHTML=`<strong>${esc(label(meta.source))}</strong><span>${esc(date(meta.start))}</span>${context.model?`<span>${esc(context.model)}</span>`:''}${context.cwd?`<span>${esc(context.cwd)}</span>`:''}${context.host?`<span>${esc(context.host)}</span>`:''}<span class="sessionid">${esc(selected)}</span>`;
+ $('#relations').innerHTML=(meta.parent?`<a href="${esc(link(meta.parent))}">Parent session</a>`:'')+meta.children.map(id=>`<a href="${esc(link(id))}">Subagent: ${esc(id.split('/agent:').pop())}</a>`).join('');
+ $('#pageinfo').textContent=meta.count?`${eventOffset+1}–${eventOffset+slice.length} / ${meta.count}${kind?' · '+visible.length+' matching on this page':''}`:'0 events';
+ $('#timeline').innerHTML=visible.length?visible.map(([e,p])=>`<article class="event ${esc(p.kind)} ${p.error?'error':''}" id="span-${esc(e.span||e.id)}" data-event="${esc(e.id)}" role="button" tabindex="0" aria-label="${esc(p.title+' · '+clock(e.time))}" aria-expanded="${e.id===inspectedID}" aria-controls="inspector"><div class="eventcontent"><div class="eventheading"><h2>${esc(p.title)}</h2>${['tool','metric'].includes(p.kind)?`<span class="kind">${esc(p.kind)}</span>`:''}${p.error?'<span class="status failed">Failed</span>':String(p.attributes.success)==='true'?'<span class="status succeeded">Succeeded</span>':''}<time datetime="${esc(e.time)}" title="${esc(date(e.time))}">${esc(clock(e.time))}</time></div>${p.blocks.map(b=>`<div class="block ${b.label==='Error'?'failure-detail':''}">${['Request','Response','Message'].includes(b.label)?'':`<div class="blocklabel">${esc(b.label)}</div>`}<${b.code?'pre':'div'} class="${b.code?'code':'prose'}">${esc(b.text)}</${b.code?'pre':'div'}></div>`).join('')}${p.fields.length?`<dl class="fields">${p.fields.filter(([k])=>k!=='Result').map(([k,v])=>`<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>`:''}</div></article>`).join(''):'<p class="empty">No matching events on this page</p>';
+ if(inspectedID && !visible.some(([e])=>e.id===inspectedID)) closeInspector(false);
+ document.querySelectorAll('[data-event]').forEach(card=>{
+  card.classList.toggle('selected',card.dataset.event===inspectedID);
+  card.onclick=()=>{if(!window.getSelection()?.toString()) openInspector(card.dataset.event)};
+  card.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openInspector(card.dataset.event)}};
+ });
+ if(focusedID) document.querySelector(`[data-event="${CSS.escape(focusedID)}"]`)?.focus({preventScroll:true});
+ if(inspectedID) renderInspector();
+ $('#prevevents').disabled=eventOffset===0;$('#nextevents').disabled=events.length<=200;
+}
+
+function setInspectorTab(tab){
+ inspectorTab=tab;
+ for(const name of ['details','json']){
+  const button=$(name==='details'?'#detailtab':'#jsontab');
+  button.setAttribute('aria-selected',String(name===tab));button.tabIndex=name===tab?0:-1;
+  $('#inspect'+name).hidden=name!==tab;
+ }
+}
+function syncInspectorMode(){
+ const modal=!!inspectedID&&matchMedia('(max-width: 900px)').matches;
+ $('#inspector').setAttribute('role',modal?'dialog':'region');
+ if(modal) $('#inspector').setAttribute('aria-modal','true');else $('#inspector').removeAttribute('aria-modal');
+ document.body.classList.toggle('inspector-modal',modal);
+ for(const el of [...$('#detailpage').children].filter(x=>!x.classList.contains('eventlayout'))) el.inert=modal;
+ $('#eventlist').inert=modal;$('.topbar').inert=modal;
+ if(modal&&!$('#inspector').contains(document.activeElement)) $('#closeinspector').focus({preventScroll:true});
+}
+function openInspector(id){
+ inspectedID=id;$('#inspector').hidden=false;$('#detailpage').classList.add('inspector-open');
+ document.querySelectorAll('[data-event]').forEach(card=>{const active=card.dataset.event===id;card.classList.toggle('selected',active);card.setAttribute('aria-expanded',String(active))});
+ renderInspector();syncInspectorMode();$('#closeinspector').focus({preventScroll:true});
+}
+function closeInspector(restore=true){
+ const id=inspectedID;inspectedID='';inspectedSnapshot='';$('#inspector').hidden=true;$('#detailpage').classList.remove('inspector-open');syncInspectorMode();
+ document.querySelectorAll('[data-event]').forEach(card=>{card.classList.remove('selected');card.setAttribute('aria-expanded','false')});
+ if(restore&&id) document.querySelector(`[data-event="${CSS.escape(id)}"]`)?.focus({preventScroll:true});
+}
+function renderInspector(){
+ const e=events.find(e=>e.id===inspectedID);if(!e)return;
+ const snapshot=JSON.stringify(e);if(snapshot===inspectedSnapshot)return;inspectedSnapshot=snapshot;
+ const parent=events.find(x=>x.span===e.parent_span&&x.trace===e.trace&&x.source===e.source&&document.getElementById('span-'+x.span));
+ const p=parseEvent(e),value=v=>typeof v==='string'?v:JSON.stringify(v,null,2);
+ $('#inspectortitle').textContent=p.title;$('#inspectortime').textContent=date(e.time)+' · '+label(e.source);
+ const properties=[['Signal',e.signal],['Time',e.time],['Event',p.name],['Trace ID',e.trace],['Span ID',e.span],['Parent span',e.parent_span],['Session',e.session],...p.fields].filter(([,v])=>v!==undefined&&v!=='');
+ $('#inspectdetails').innerHTML=p.blocks.map(b=>`<div class="block ${b.label==='Error'?'failure-detail':''}"><div class="blocklabel">${esc(b.label)}</div><${b.code?'pre':'div'} class="${b.code?'code':'prose'}">${esc(b.text)}</${b.code?'pre':'div'}></div>`).join('')+
+ `<h3>Properties</h3><dl class="propertylist">${properties.map(([k,v])=>`<div><dt>${esc(k)}</dt><dd>${k==='Parent span'&&parent?`<a href="#span-${esc(parent.span)}" id="inspectparent">${esc(value(v))}</a>`:esc(value(v))}</dd></div>`).join('')}</dl>`+
+ `<h3>Attributes</h3><dl class="propertylist">${Object.entries(p.attributes).map(([k,v])=>`<div><dt>${esc(k)}</dt><dd>${esc(value(v))}</dd></div>`).join('')||'<div>No attributes</div>'}</dl>`;
+ if($('#inspectparent')) $('#inspectparent').onclick=ev=>{ev.preventDefault();openInspector(parent.id);document.getElementById('span-'+parent.span)?.scrollIntoView({block:'nearest'})};
+ $('#eventjson').textContent=JSON.stringify(e.raw,null,2);$('#copystatus').textContent='';setInspectorTab(inspectorTab);
+}
+$('#closeinspector').onclick=()=>closeInspector();
+$('#detailtab').onclick=()=>setInspectorTab('details');$('#jsontab').onclick=()=>setInspectorTab('json');
+$('.inspectortabs').onkeydown=e=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(e.key)){e.preventDefault();setInspectorTab(e.key==='Home'?'details':e.key==='End'?'json':inspectorTab==='json'?'details':'json');$(inspectorTab==='json'?'#jsontab':'#detailtab').focus()}};
+$('#copyjson').onclick=async()=>{try{await navigator.clipboard.writeText($('#eventjson').textContent);$('#copystatus').textContent='Copied'}catch{$('#copystatus').textContent='Select the JSON to copy'}};
+addEventListener('resize',syncInspectorMode);
+addEventListener('keydown',e=>{
+ if(!inspectedID)return;
+ if(e.key==='Escape'){e.preventDefault();closeInspector();return}
+ if(e.key==='Tab'&&matchMedia('(max-width: 900px)').matches){
+  const items=[...$('#inspector').querySelectorAll('button,[tabindex="0"]')].filter(el=>el.getClientRects().length&&!el.disabled&&el.tabIndex>=0);
+  const first=items[0],last=items.at(-1);
+  if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}
+ }
+});
+async function refresh(){if(busy)return;busy=true;const g=generation;try{
+ if(selected){const [m,data]=await Promise.all([api('/api/session?id='+encodeURIComponent(selected)),api(`/api/events?session=${encodeURIComponent(selected)}&offset=${eventOffset}`)]);if(g!==generation)return;meta=m;events=data;renderEvents()}
+ else {const rows=await api(`/api/sessions?source=${encodeURIComponent(source)}&q=${encodeURIComponent(query)}&offset=${sessionOffset}`);if(g!==generation)return;renderSessions(rows)}
+ $('#login').hidden=true;$('#workspace').hidden=false;$('#listpage').hidden=!!selected;$('#detailpage').hidden=!selected;$('#error').textContent='';
+ }catch(e){$('#error').textContent=e.message;if($('#login').hidden){$('#workspace').hidden=false;$('#listpage').hidden=!!selected;$('#detailpage').hidden=!selected;$('#timeline').innerHTML=''}}finally{busy=false;if(g!==generation)refresh()}}
 $('#loginform').onsubmit=async e=>{e.preventDefault();try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:$('#token').value})});if(!r.ok)throw Error('Invalid access token.');$('#token').value='';refresh()}catch(e){$('#loginerror').textContent=e.message}};
-$('#logout').onclick=async()=>{await fetch('/api/logout',{method:'POST'});location.reload()};document.querySelectorAll('[data-source]').forEach(b=>b.onclick=()=>{source=b.dataset.source;sessionOffset=0;generation++;document.querySelectorAll('[data-source]').forEach(x=>x.classList.toggle('active',x===b));refresh()});let timer;$('#search').oninput=()=>{clearTimeout(timer);timer=setTimeout(()=>{query=$('#search').value;sessionOffset=0;generation++;refresh()},250)};for(const [id,delta,type]of[['prevsessions',-200,'s'],['nextsessions',200,'s'],['prevevents',-200,'e'],['nextevents',200,'e']]){$('#'+id).onclick=()=>{if(type==='s')sessionOffset=Math.max(0,sessionOffset+delta);else eventOffset=Math.max(0,eventOffset+delta);generation++;refresh()}}setInterval(()=>{if(!document.hidden)refresh()},5000);refresh();
+$('#logout').onclick=async()=>{await fetch('/api/logout',{method:'POST'});location.reload()};
+document.querySelectorAll('[data-source]').forEach(b=>{b.classList.toggle('active',b.dataset.source===source);b.onclick=()=>{source=b.dataset.source;sessionOffset=0;generation++;listState();document.querySelectorAll('[data-source]').forEach(x=>x.classList.toggle('active',x===b));refresh()}});
+document.querySelectorAll('[data-kind]').forEach(b=>b.onclick=()=>{kind=b.dataset.kind;document.querySelectorAll('[data-kind]').forEach(x=>x.classList.toggle('active',x===b));renderEvents()});
+let timer;$('#search').oninput=()=>{clearTimeout(timer);timer=setTimeout(()=>{query=$('#search').value;sessionOffset=0;generation++;listState();refresh()},250)};
+for(const [id,delta,type]of[['prevsessions',-200,'s'],['nextsessions',200,'s'],['prevevents',-200,'e'],['nextevents',200,'e']])$('#'+id).onclick=()=>{if(type==='s'){sessionOffset=Math.max(0,sessionOffset+delta);listState()}else eventOffset=Math.max(0,eventOffset+delta);generation++;refresh();window.scrollTo(0,0)};
+$('#autorefresh').onchange=()=>$('#connection').textContent=$('#autorefresh').checked?'Auto-refresh · 5s':'Paused';
+setInterval(()=>{if(!document.hidden&&(!selected||$('#autorefresh').checked)&&!window.getSelection()?.toString())refresh()},5000);refresh();
