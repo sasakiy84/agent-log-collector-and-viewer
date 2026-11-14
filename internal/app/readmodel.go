@@ -405,7 +405,7 @@ func refreshTimeline(ctx context.Context, tx *sql.Tx, session string) error {
 	if imports+otel == 0 {
 		_, err = tx.ExecContext(ctx, "DELETE FROM session_catalog WHERE session=?", session)
 	} else {
-		preview, e := readTimeline(ctx, tx, session, "", 1, 0, true)
+		preview, e := readTimeline(ctx, tx, session, "", 1, 0, timelinePreview)
 		if e != nil {
 			return e
 		}
@@ -433,15 +433,31 @@ func qualifiedCardColumns(alias string) string {
 	}
 	return strings.Join(cols, ",")
 }
-func readTimeline(ctx context.Context, tx *sql.Tx, session, origin string, limit, off int, preview bool) ([]TimelineEvent, error) {
+
+type timelineOrder int
+
+const (
+	timelineChronological timelineOrder = iota
+	timelinePreview
+	timelineLatest
+)
+
+func readTimeline(ctx context.Context, tx *sql.Tx, session, origin string, limit, off int, mode timelineOrder) ([]TimelineEvent, error) {
 	order := "time,sequence,id"
-	if preview {
+	if mode == timelinePreview {
 		order = "is_user DESC," + order
+	} else if mode == timelineLatest {
+		order = "time DESC,sequence DESC,id DESC"
+		off = 0
 	}
 	var rows *sql.Rows
 	var err error
 	if origin != "" {
-		rows, err = tx.QueryContext(ctx, "SELECT id,"+cardColumns+" FROM event_cards WHERE session=? AND origin=? ORDER BY "+order+" LIMIT ? OFFSET ?", session, origin, limit, off)
+		query := "SELECT id," + cardColumns + " FROM event_cards WHERE session=? AND origin=? ORDER BY " + order + " LIMIT ? OFFSET ?"
+		if mode == timelineLatest {
+			query = "SELECT * FROM (" + query + ") ORDER BY time,sequence,id"
+		}
+		rows, err = tx.QueryContext(ctx, query, session, origin, limit, off)
 	} else {
 		rows, err = tx.QueryContext(ctx, `SELECT p.id,`+qualifiedCardColumns("c")+` FROM (SELECT id,time,sequence,import_id,otel_id FROM timeline_entries WHERE session=? ORDER BY `+order+` LIMIT ? OFFSET ?) p JOIN event_cards c ON c.id=p.import_id OR c.id=p.otel_id ORDER BY p.time,p.sequence,p.id,c.origin,c.id`, session, limit, off)
 	}

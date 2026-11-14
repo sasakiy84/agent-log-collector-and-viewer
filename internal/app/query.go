@@ -20,6 +20,8 @@ type SessionSummary struct {
 }
 type SessionPage struct {
 	SessionSummary
+	Offset   int             `json:"offset"`
+	Limit    int             `json:"limit"`
 	Children []string        `json:"children"`
 	Events   []TimelineEvent `json:"events"`
 }
@@ -121,7 +123,28 @@ func (a *App) session(w http.ResponseWriter, r *http.Request) {
 		databaseError(w, r, err)
 		return
 	}
-	page.Events, err = readTimeline(r.Context(), tx, id, origin, 201, offset(r), false)
+	page.Offset = offset(r)
+	page.Limit = 200
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		n, e := strconv.Atoi(raw)
+		if e != nil || n < 1 || n > 200 {
+			http.Error(w, "Invalid page size", 400)
+			return
+		}
+		page.Limit = n
+	}
+	order, size := timelineChronological, page.Limit+1
+	position := r.URL.Query().Get("position")
+	if position != "" && position != "latest" {
+		http.Error(w, "Invalid position", 400)
+		return
+	}
+	if position == "latest" {
+		page.Offset = max(0, page.Count-page.Limit)
+		order = timelineLatest
+		size = page.Limit
+	}
+	page.Events, err = readTimeline(r.Context(), tx, id, origin, size, page.Offset, order)
 	if err != nil {
 		databaseError(w, r, err)
 		return
@@ -133,7 +156,7 @@ func (a *App) session(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		var rows []TimelineEvent
-		rows, err = readTimeline(r.Context(), tx, id, origin, 1, 0, true)
+		rows, err = readTimeline(r.Context(), tx, id, origin, 1, 0, timelinePreview)
 		if len(rows) > 0 {
 			detail := summaryDetail(rows[0].Detail)
 			page.Preview = &detail

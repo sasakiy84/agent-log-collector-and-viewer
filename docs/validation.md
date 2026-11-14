@@ -1,3 +1,9 @@
+# Timeline entry position (current)
+
+- Session lists retain newest-activity-first ordering with agent and search filters. Detail pages read the latest 200 logical events through a reverse index scan, then display them oldest to newest and land at the bottom.
+- Older/Newer navigation, Latest, origin changes, direct reload and mobile landing are covered. Browser regressions retain the reading anchor on historical refresh and keep the confirmed page intact during delayed/failed navigation and local filtering.
+- `scripts/timeline_browser_test.py`, the updated browser edge suite, full UI/import suites, race tests and vet pass. No database migration or automatic refresh was introduced.
+
 # Japanese full-text search (current)
 
 - Built-in FTS5 contentless-delete indexes, Kagome/IPADIC search-mode analysis and standard Lucene-style Japanese filters; NFKC/case/diacritic normalization and safe literal AND/prefix queries.

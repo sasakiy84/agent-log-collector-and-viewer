@@ -21,3 +21,5 @@ Indexed session summaries and bounded card presentations are maintained in the s
 List/detail requests read their page from these indexes. Full attributes and original JSON load through `/api/event` only when a card is opened; the browser retains at most the latest full card. Search uses a separate FTS5 inverted index; only exports and explicit event inspection read original records. There are no periodic browser requests; **Refresh** reloads the current screen.
 
 Existing databases build the display data once before accepting HTTP requests. Both card batches and completed sessions are committed separately so an interrupted upgrade resumes. These derived tables require additional disk space; original records remain intact.
+
+Session lists are ordered by latest activity. Timelines open at the latest 200 entries, displayed oldest to newest, with the newest entry visible at the bottom. The latest window uses a descending index read instead of skipping the full history. **Older** and **Newer** move between adjacent windows; **Latest** returns to the newest entries. Refreshing an older window preserves the reading position.

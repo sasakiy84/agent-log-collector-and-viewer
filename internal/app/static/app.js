@@ -5,7 +5,7 @@ const label=s=>({codex:'Codex',claude:'Claude Code',copilot:'Copilot',other:'Oth
 const link=id=>'/sessions/'+encodeURIComponent(id);
 const date=s=>new Date(s).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
 const clock=s=>new Date(s).toLocaleTimeString(undefined,{hour12:false});
-let requestSerial=0,activeRequest=null,sessionOffset=0,eventOffset=0,source='',query='',kind='',origin='',events=[],meta=null;
+let requestSerial=0,activeRequest=null,sessionOffset=0,eventOffset=null,eventLimit=200,source='',query='',kind='',origin='',pageOrigin='',events=[],meta=null;
 let inspectedID='', inspectedRecord=null, inspectorTab='details',inspectorEvent=null,inspectorRequest=null,jsonEvent=null;
 const inspectorCache=new Map();
 let selected=location.pathname.startsWith('/sessions/')?decodeURIComponent(location.pathname.slice(10)):'';
@@ -26,16 +26,16 @@ function renderSessions(rows){
 }
 function renderEvents(){
  const focusedID=document.activeElement?.dataset.event;
- const slice=events.slice(0,200),parsed=slice.map(e=>[e,e.detail]);
+ const slice=events.slice(0,meta.limit),parsed=slice.map(e=>[e,e.detail]);
  const inspected=events.find(e=>e.id===inspectedID||e.records.some(r=>r.id===inspectedID));
  if(inspected) inspectedID=inspected.id;
  const visible=parsed.filter(([,p])=>(!kind||(kind==='conversation'?(['user','assistant'].includes(p.kind)||(['model','agent'].includes(p.kind)&&p.blocks.some(b=>['user','assistant','Input','Output'].includes(b.label)))):kind==='error'?p.error:p.kind===kind)));
  $('#sessiontitle').textContent=titleFor(selected,meta.preview);
- $('#export').href='/api/export?session='+encodeURIComponent(selected)+'&origin='+encodeURIComponent(origin);
+ $('#export').href='/api/export?session='+encodeURIComponent(selected)+'&origin='+encodeURIComponent(pageOrigin);
  const context={};for(const key of ['model','cwd','host','project','tags'])context[key]=parsed.map(([,p])=>p).find(p=>p[key])?.[key] ?? meta.preview?.[key];
  $('#sessionmeta').innerHTML=`<strong>${esc(label(meta.source))}</strong>${meta.start?`<span>${esc(date(meta.start))}</span>`:''}${context.model?`<span>${esc(context.model)}</span>`:''}${context.cwd?`<span>${esc(context.cwd)}</span>`:''}${context.host?`<span>${esc(context.host)}</span>`:''}${context.project?`<span>Project: ${esc(context.project)}</span>`:''}${context.tags?`<span>Tags: ${esc(Array.isArray(context.tags)?context.tags.join(', '):context.tags)}</span>`:''}<span class="sessionid">${esc(selected)}</span>`;
  $('#relations').innerHTML=(meta.parent?`<a href="${esc(link(meta.parent))}">Parent session</a>`:'')+meta.children.map(id=>`<a href="${esc(link(id))}">Subagent: ${esc(id.split('/agent:').pop())}</a>`).join('');
- $('#pageinfo').textContent=meta.count?`${eventOffset+1}–${eventOffset+slice.length} / ${meta.count}${kind||origin?' · '+visible.length+' matching on this page':''}`:'0 events';
+ $('#pageinfo').textContent=meta.count?`${meta.offset+1}–${meta.offset+slice.length} / ${meta.count}${kind||pageOrigin?' · '+visible.length+' matching on this page':''}`:'0 events';
  $('#timeline').innerHTML=visible.length?visible.map(([e,p])=>`<article class="event ${esc(p.kind)} ${p.error?'error':''}" id="span-${esc(e.span||e.id)}" data-event="${esc(e.id)}" role="button" tabindex="0" aria-label="${esc(p.title+' · '+clock(e.time))}" aria-expanded="${e.id===inspectedID}" aria-controls="inspector"><div class="eventcontent"><div class="eventheading"><h2>${esc(p.title)}</h2>${e.origins.length>1?'<span class="kind">Imported + OTEL</span>':''}${['tool','metric'].includes(p.kind)?`<span class="kind">${esc(p.kind)}</span>`:''}${p.error?'<span class="status failed">Failed</span>':String(p.attributes.success)==='true'?'<span class="status succeeded">Succeeded</span>':''}<time datetime="${esc(e.time)}" title="${esc(date(e.time))}">${esc(clock(e.time))}</time></div>${p.blocks.map(b=>`<div class="block ${b.label==='Error'?'failure-detail':''}">${['Request','Response','Message',p.kind].includes(b.label)?'':`<div class="blocklabel">${esc(b.label)}</div>`}<${b.code?'pre':'div'} class="${b.code?'code':'prose'}">${esc(b.text)}</${b.code?'pre':'div'}></div>`).join('')}${p.fields.length?`<dl class="fields">${p.fields.filter(([k])=>k!=='Result').map(([k,v])=>`<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>`:''}</div></article>`).join(''):'<p class="empty">No matching events on this page</p>';
  if(inspectedID && !visible.some(([e])=>e.id===inspectedID)) closeInspector(false);
  document.querySelectorAll('[data-event]').forEach(card=>{
@@ -45,7 +45,7 @@ function renderEvents(){
  });
  if(focusedID) document.querySelector(`[data-event="${CSS.escape(focusedID)}"]`)?.focus({preventScroll:true});
  if(inspectedID) renderInspector();
- $('#prevevents').disabled=eventOffset===0;$('#nextevents').disabled=events.length<=200;
+ updateTimelineNavigation();
 }
 
 function setInspectorTab(tab){
@@ -74,7 +74,7 @@ async function openInspector(id){
  $('#inspectstatus').textContent=inspectorEvent?'':'Loading details…';$('#copyjson').disabled=!inspectorEvent;
  renderInspector();syncInspectorMode();$('#closeinspector').focus({preventScroll:true});
  if(inspectorEvent)return;
- try{const event=await api(`/api/event?session=${encodeURIComponent(selected)}&id=${encodeURIComponent(id)}&origin=${encodeURIComponent(origin)}`,controller.signal);if(controller.signal.aborted||inspectedID!==id)return;inspectorCache.clear();inspectorCache.set(id,event);inspectorEvent=event;$('#inspectstatus').textContent='';$('#copyjson').disabled=false;renderInspector()}
+ try{const event=await api(`/api/event?session=${encodeURIComponent(selected)}&id=${encodeURIComponent(id)}&origin=${encodeURIComponent(pageOrigin)}`,controller.signal);if(controller.signal.aborted||inspectedID!==id)return;inspectorCache.clear();inspectorCache.set(id,event);inspectorEvent=event;$('#inspectstatus').textContent='';$('#copyjson').disabled=false;renderInspector()}
  catch(e){if(e.name!=='AbortError'&&inspectedID===id){$('#inspectstatus').textContent=e.message+' ';const retry=document.createElement('button');retry.textContent='Retry';retry.onclick=()=>openInspector(id);$('#inspectstatus').append(retry)}}
 }
 function renderInspectorJSON(){
@@ -114,30 +114,49 @@ addEventListener('keydown',e=>{
   if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}
  }
 });
-async function refresh(){
+function updateTimelineNavigation(loading=$('#workspace').hasAttribute('aria-busy')){
+ $('#prevevents').disabled=loading||!meta||meta.offset===0;
+ $('#nextevents').disabled=loading||!meta||meta.offset+meta.limit>=meta.count;
+ $('#latestevents').disabled=loading;$('#origin').disabled=loading;
+}
+function captureTimelinePosition(){
+ const card=[...document.querySelectorAll('[data-event]')].find(el=>{const r=el.getBoundingClientRect();return r.bottom>0&&r.top<innerHeight});
+ return {id:card?.dataset.event,top:card?.getBoundingClientRect().top,y:scrollY};
+}
+function placeTimeline(mode,anchor,serial){requestAnimationFrame(()=>{
+ if(serial!==requestSerial)return;
+ if(mode==='bottom')window.scrollTo({top:document.documentElement.scrollHeight,behavior:'instant'});
+ else if(mode==='top')$('#pageinfo').scrollIntoView({block:'start',behavior:'instant'});
+ else{const card=anchor?.id?document.querySelector(`[data-event="${CSS.escape(anchor.id)}"]`):null;if(card)window.scrollBy(0,card.getBoundingClientRect().top-anchor.top);else if(anchor)window.scrollTo(0,anchor.y)}
+})}
+async function refresh(scrollMode){
+ let anchor=null;
  activeRequest?.abort();const controller=new AbortController();activeRequest=controller;const serial=++requestSerial;
- $('#refresh').disabled=true;$('#workspace').setAttribute('aria-busy','true');
+ $('#refresh').disabled=true;$('#workspace').setAttribute('aria-busy','true');if(selected)updateTimelineNavigation(true);
  try{
   if(archiveMode){await refreshArchive(controller.signal)}
-  else if(selected){const page=await api(`/api/session?id=${encodeURIComponent(selected)}&origin=${encodeURIComponent(origin)}&offset=${eventOffset}`,controller.signal);if(controller.signal.aborted)return;closeInspector(false);inspectorCache.clear();meta=page;events=page.events;renderEvents()}
+  else if(selected){const latest=eventOffset===null;const paging=latest?'&position=latest':`&offset=${eventOffset}&limit=${eventLimit}`;const page=await api(`/api/session?id=${encodeURIComponent(selected)}&origin=${encodeURIComponent(origin)}${paging}`,controller.signal);if(controller.signal.aborted)return;anchor=captureTimelinePosition();scrollMode??=latest?'bottom':'preserve';closeInspector(false);inspectorCache.clear();meta=page;pageOrigin=origin;events=page.events;eventOffset=page.offset;eventLimit=page.limit;renderEvents()}
   else{const rows=await api(`/api/sessions?source=${encodeURIComponent(source)}&q=${encodeURIComponent(query)}&offset=${sessionOffset}`,controller.signal);if(controller.signal.aborted)return;renderSessions(rows)}
   if(controller.signal.aborted)return;
-  $('#login').hidden=true;$('#workspace').hidden=false;$('#listpage').hidden=!!selected||archiveMode;$('#detailpage').hidden=!selected||archiveMode;$('#archivepage').hidden=!archiveMode;$('#error').textContent='';
- }catch(e){if(e.name==='AbortError')return;$('#error').textContent=e.message;if($('#login').hidden){$('#workspace').hidden=false;$('#listpage').hidden=!!selected||archiveMode;$('#detailpage').hidden=!selected||archiveMode;$('#archivepage').hidden=!archiveMode}}
- finally{if(serial===requestSerial){$('#refresh').disabled=false;$('#workspace').removeAttribute('aria-busy')}}
+  $('#login').hidden=true;$('#workspace').hidden=false;$('#listpage').hidden=!!selected||archiveMode;$('#detailpage').hidden=!selected||archiveMode;$('#archivepage').hidden=!archiveMode;$('#error').textContent='';if(selected)placeTimeline(scrollMode,anchor,serial);
+ }catch(e){if(e.name==='AbortError')return;if(selected&&meta){eventOffset=meta.offset;eventLimit=meta.limit;origin=pageOrigin;$('#origin').value=origin}$('#error').textContent=e.message;if($('#login').hidden){$('#workspace').hidden=false;$('#listpage').hidden=!!selected||archiveMode;$('#detailpage').hidden=!selected||archiveMode;$('#archivepage').hidden=!archiveMode}}
+ finally{if(serial===requestSerial){$('#refresh').disabled=false;$('#workspace').removeAttribute('aria-busy');if(selected)updateTimelineNavigation(false)}}
 }
-$('#refresh').onclick=()=>refresh();
+$('#refresh').onclick=()=>{if(selected&&(!meta||meta.offset+meta.limit>=meta.count)){eventOffset=null;eventLimit=200}refresh()};
 $('#loginform').onsubmit=async e=>{e.preventDefault();try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:$('#token').value})});if(!r.ok)throw Error('Invalid access token.');$('#token').value='';refresh()}catch(e){$('#loginerror').textContent=e.message}};
 $('#logout').onclick=async()=>{await fetch('/api/logout',{method:'POST'});location.reload()};
 document.querySelectorAll('[data-source]').forEach(b=>{b.classList.toggle('active',b.dataset.source===source);b.onclick=()=>{source=b.dataset.source;sessionOffset=0;listState();document.querySelectorAll('[data-source]').forEach(x=>x.classList.toggle('active',x===b));refresh()}});
-document.querySelectorAll('[data-kind]').forEach(b=>b.onclick=()=>{kind=b.dataset.kind;document.querySelectorAll('[data-kind]').forEach(x=>x.classList.toggle('active',x===b));renderEvents()});
+document.querySelectorAll('[data-kind]').forEach(b=>b.onclick=()=>{kind=b.dataset.kind;document.querySelectorAll('[data-kind]').forEach(x=>x.classList.toggle('active',x===b));if(meta)renderEvents()});
 let timer,composingSearch=false;
 function scheduleSearch(){clearTimeout(timer);timer=setTimeout(()=>{query=$('#search').value;sessionOffset=0;listState();refresh()},250)}
 $('#search').addEventListener('compositionstart',()=>{composingSearch=true;clearTimeout(timer)});
 $('#search').addEventListener('compositionend',()=>{composingSearch=false;scheduleSearch()});
 $('#search').oninput=e=>{if(!composingSearch&&!e.isComposing)scheduleSearch()};
-for(const [id,delta,type]of[['prevsessions',-200,'s'],['nextsessions',200,'s'],['prevevents',-200,'e'],['nextevents',200,'e']])$('#'+id).onclick=()=>{if(type==='s'){sessionOffset=Math.max(0,sessionOffset+delta);listState()}else eventOffset=Math.max(0,eventOffset+delta);refresh();window.scrollTo(0,0)};
-$('#origin').onchange=()=>{origin=$('#origin').value;eventOffset=0;closeInspector(false);refresh()};
+for(const [id,delta]of[['prevsessions',-200],['nextsessions',200]])$('#'+id).onclick=()=>{sessionOffset=Math.max(0,sessionOffset+delta);listState();refresh();window.scrollTo(0,0)};
+$('#prevevents').onclick=()=>{if(!meta||meta.offset===0)return;eventLimit=Math.min(200,meta.offset);eventOffset=Math.max(0,meta.offset-200);refresh('bottom')};
+$('#nextevents').onclick=()=>{if(!meta||meta.offset+meta.limit>=meta.count)return;eventOffset=meta.offset+meta.limit;eventLimit=200;refresh('top')};
+$('#latestevents').onclick=()=>{eventOffset=null;eventLimit=200;refresh('bottom')};
+$('#origin').onchange=()=>{origin=$('#origin').value;eventOffset=null;eventLimit=200;closeInspector(false);refresh('bottom')};
 const archiveSelection=new Set();let archiveAll=false,archiveOffset=0,archiveData=null;
 const bytes=n=>{const units=['B','KiB','MiB','GiB','TiB'];let i=0;while(n>=1024&&i<units.length-1){n/=1024;i++}return `${n.toFixed(i?1:0)} ${units[i]}`};
 async function archivePost(path,body){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(r.status===401){$('#login').hidden=false;$('#workspace').hidden=true;throw Error('Sign in required.')}if(!r.ok)throw Error((await r.text()).trim());return r.json()}
