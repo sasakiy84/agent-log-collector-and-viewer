@@ -28,7 +28,7 @@ func setup(t *testing.T) *App {
 	if e != nil {
 		t.Fatal(e)
 	}
-	t.Cleanup(func() { a.DB.Close() })
+	t.Cleanup(func() { a.Close() })
 	return a
 }
 func request(a *App, path, body, auth string) *httptest.ResponseRecorder {
@@ -176,22 +176,22 @@ func TestPersistencePagination(t *testing.T) {
 	if e = a.Save(v); e != nil {
 		t.Fatal(e)
 	}
-	a.DB.Close()
+	a.Close()
 	a, e = Open(p, token)
 	if e != nil {
 		t.Fatal(e)
 	}
-	defer a.DB.Close()
+	defer a.Close()
 	v, e = a.readRecords(context.Background(), "s", "", 200, 200)
 	if e != nil || len(v) != 5 || v[0].Time != "0200" {
 		t.Fatal(e, v)
 	}
-	a.DB.Close()
+	a.Close()
 	a, e = Open(p, token)
 	if e != nil {
 		t.Fatal(e)
 	}
-	defer a.DB.Close()
+	defer a.Close()
 	v, e = a.readRecords(context.Background(), "s", "", 300, 0)
 	if e != nil || len(v) != 205 {
 		t.Fatal("old records lost after restart", e, len(v))
@@ -353,7 +353,7 @@ func TestStandardAgentSessionScope(t *testing.T) {
 
 func TestDatabaseFailureLogsCauseWithoutCredentials(t *testing.T) {
 	a := setup(t)
-	a.DB.Close()
+	a.Close()
 	var logs bytes.Buffer
 	previous := log.Writer()
 	log.SetOutput(&logs)

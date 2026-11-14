@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -13,6 +14,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -20,8 +23,17 @@ import (
 var assets embed.FS
 
 type App struct {
-	DB    *sql.DB
-	token string
+	DB                 *sql.DB
+	token              string
+	dbPath, archiveDir string
+	ctx                context.Context
+	cancel             context.CancelFunc
+	workers            sync.WaitGroup
+	archiveWake        chan struct{}
+	taskMu             sync.Mutex
+	taskID             string
+	taskCancel         context.CancelFunc
+	compacting         atomic.Bool
 }
 
 func (a *App) signature(v string) string {
@@ -79,6 +91,18 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("POST /api/logout", func(w http.ResponseWriter, r *http.Request) {
 		http.SetCookie(w, &http.Cookie{Name: "agentlog", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteStrictMode})
 		write(w, map[string]bool{"ok": true})
+	})
+	mux.HandleFunc("GET /api/archive", a.archiveList)
+	mux.HandleFunc("POST /api/archives", a.archiveCreate)
+	mux.HandleFunc("GET /api/archives/{id}", a.archiveStatus)
+	mux.HandleFunc("GET /api/archives/{id}/download", a.archiveDownload)
+	mux.HandleFunc("POST /api/archives/{id}/delete", a.archiveDelete)
+	mux.HandleFunc("POST /api/archives/{id}/cancel", a.archiveCancel)
+	mux.HandleFunc("POST /api/archives/{id}/compact", a.archiveCompact)
+	mux.HandleFunc("GET /archive", func(w http.ResponseWriter, r *http.Request) {
+		b, _ := assets.ReadFile("static/index.html")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(b)
 	})
 	mux.HandleFunc("GET /api/sessions", a.sessions)
 	mux.HandleFunc("GET /api/session", a.session)

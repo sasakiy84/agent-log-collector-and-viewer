@@ -34,7 +34,7 @@ func setup(t *testing.T) (*app.App, *httptest.Server) {
 		t.Fatal(e)
 	}
 	s := httptest.NewServer(a.Handler())
-	t.Cleanup(func() { s.Close(); a.DB.Close() })
+	t.Cleanup(func() { s.Close(); a.Close() })
 	return a, s
 }
 func TestThreeFormatsAndReplay(t *testing.T) {

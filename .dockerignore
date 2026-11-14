@@ -13,3 +13,5 @@ agentlog.json
 /sessions/
 /data/
 /config.json
+
+/archives/
