@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -88,19 +89,19 @@ func (a *App) Save(events []Event) error {
 	}
 	return tx.Commit()
 }
-func (a *App) readEvents(session string, limit, off int) ([]Event, error) {
-	rows, err := a.DB.Query("SELECT id,session,parent,source,signal,time,name,trace,span,parent_span,raw,sequence,origin FROM events WHERE session=? ORDER BY time,sequence,id LIMIT ? OFFSET ?", session, limit, off)
+func (a *App) readRecords(ctx context.Context, session, origin string, limit, off int) ([]Event, error) {
+	rows, err := a.DB.QueryContext(ctx, "SELECT "+eventColumns+" FROM events WHERE session=? AND (?='' OR origin=?) ORDER BY time,sequence,id LIMIT ? OFFSET ?", session, origin, origin, limit, off)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := []Event{}
 	for rows.Next() {
-		var e Event
-		if err := rows.Scan(&e.ID, &e.Session, &e.Parent, &e.Source, &e.Signal, &e.Time, &e.Name, &e.Trace, &e.Span, &e.ParentSpan, &e.Raw, &e.Sequence, &e.Origin); err != nil {
+		event, err := scanEvent(rows)
+		if err != nil {
 			return nil, err
 		}
-		out = append(out, e)
+		out = append(out, event)
 	}
 	return out, rows.Err()
 }

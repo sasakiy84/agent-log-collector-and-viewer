@@ -5,6 +5,8 @@
 - Tests cover both arrival orders, updated imports, trace-session reassignment, ID namespaces/aliases, ambiguous candidates, agent scopes, phases/completed spans, 205 logical events across page boundaries, list previews/counts/search, origin-specific details/export, missing fields, false/zero values, conflict reporting and message/output preservation.
 - Browser tests exercise actual transcript import plus native OTEL: merged content/timing, original JSON, conflicts, origin isolation, polling selection when an OTEL-first event gains an imported counterpart, labels/usage, pagination, hostile text and mobile bounds. Folder watch process tests cover local and HTTP modes.
 - Projection CTEs materialize metadata only; raw payloads are fetched after page/preview selection, or for explicit content search/export. Review findings are fixed with regression coverage.
+- Two independent reviewers repeated their reviews after fixes and found no remaining P1/P2 issues. A synthetic 3,000-record, roughly 189 MiB database improved session-list reads from 3.50 s to 0.085–0.091 s after removing raw-payload materialization.
+- Final validation passed: `go test -race ./...`, `go vet ./...`, JavaScript syntax, six cross-builds, the full UI/inspector suite, import/OTEL reconciliation and origin-filter browser tests, pagination/hostile-text browser tests, local/HTTP watcher processes, Docker Compose authentication/persistence and mounted per-agent session folders. Only Linux binaries were executed; other targets were cross-compiled.
 
 # Folder watching (unreleased)
 

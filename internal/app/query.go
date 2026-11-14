@@ -170,22 +170,8 @@ func (a *App) export(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid event origin", 400)
 		return
 	}
-	rows, err := a.DB.QueryContext(r.Context(), "SELECT "+eventColumns+" FROM events WHERE session=? AND (?='' OR origin=?) ORDER BY time,sequence,id", r.URL.Query().Get("session"), origin, origin)
+	out, err := a.readRecords(r.Context(), r.URL.Query().Get("session"), origin, -1, 0)
 	if err != nil {
-		http.Error(w, "Database error", 500)
-		return
-	}
-	defer rows.Close()
-	out := []Event{}
-	for rows.Next() {
-		e, err := scanEvent(rows)
-		if err != nil {
-			http.Error(w, "Database error", 500)
-			return
-		}
-		out = append(out, e)
-	}
-	if rows.Err() != nil {
 		http.Error(w, "Database error", 500)
 		return
 	}

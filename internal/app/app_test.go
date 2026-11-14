@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"fmt"
 	logs "go.opentelemetry.io/proto/otlp/collector/logs/v1"
@@ -49,7 +50,7 @@ func TestLogsAndAuth(t *testing.T) {
 		if w.Code != 200 {
 			t.Fatalf("%s %d %s", source, w.Code, w.Body.String())
 		}
-		events, e := a.readEvents(source+":demo", 201, 0)
+		events, e := a.readRecords(context.Background(), source+":demo", "", 201, 0)
 		if e != nil || len(events) != 1 {
 			t.Fatalf("%v %#v", e, events)
 		}
@@ -122,7 +123,7 @@ func TestRelationshipsAcrossBatches(t *testing.T) {
 			t.Fatal(w.Body.String())
 		}
 	}
-	v, _ := a.readEvents("claude:s/agent:child", 200, 0)
+	v, _ := a.readRecords(context.Background(), "claude:s/agent:child", "", 200, 0)
 	if len(v) != 1 || v[0].Parent != "claude:s/agent:root" {
 		t.Fatal(v)
 	}
@@ -133,7 +134,7 @@ func TestRelationshipsAcrossBatches(t *testing.T) {
 			t.Fatal(w.Body.String())
 		}
 	}
-	v, e := a.readEvents("copilot:conversation", 200, 0)
+	v, e := a.readRecords(context.Background(), "copilot:conversation", "", 200, 0)
 	if e != nil || len(v) != 2 {
 		t.Fatal(e, v)
 	}
@@ -144,11 +145,11 @@ func TestMetricsAndValidation(t *testing.T) {
 	if w := request(a, "/v1/metrics", b, token); w.Code != 200 {
 		t.Fatal(w.Body.String())
 	}
-	v, _ := a.readEvents("codex:s", 200, 0)
+	v, _ := a.readRecords(context.Background(), "codex:s", "", 200, 0)
 	if len(v) != 2 || !strings.Contains(string(v[1].Raw), `"asInt":"20"`) {
 		t.Fatal(v)
 	}
-	v, _ = a.readEvents("unassigned:codex", 200, 0)
+	v, _ = a.readRecords(context.Background(), "unassigned:codex", "", 200, 0)
 	if len(v) != 1 {
 		t.Fatal(v)
 	}
@@ -180,7 +181,7 @@ func TestPersistencePagination(t *testing.T) {
 		t.Fatal(e)
 	}
 	defer a.DB.Close()
-	v, e = a.readEvents("s", 200, 200)
+	v, e = a.readRecords(context.Background(), "s", "", 200, 200)
 	if e != nil || len(v) != 5 || v[0].Time != "0200" {
 		t.Fatal(e, v)
 	}
@@ -190,7 +191,7 @@ func TestPersistencePagination(t *testing.T) {
 		t.Fatal(e)
 	}
 	defer a.DB.Close()
-	v, e = a.readEvents("s", 300, 0)
+	v, e = a.readRecords(context.Background(), "s", "", 300, 0)
 	if e != nil || len(v) != 205 {
 		t.Fatal("old records lost after restart", e, len(v))
 	}
@@ -206,7 +207,7 @@ func TestSubsecondOrderingAndAtomicRejection(t *testing.T) {
 	if w := request(a, "/v1/logs", b, token); w.Code != 200 {
 		t.Fatal(w.Body.String())
 	}
-	v, _ := a.readEvents("codex:fraction", 200, 0)
+	v, _ := a.readRecords(context.Background(), "codex:fraction", "", 200, 0)
 	if len(v) != 2 || v[0].Time != "2026-05-28T20:26:40.000000000Z" || v[1].Time != "2026-05-28T20:26:40.100000000Z" {
 		t.Fatal(v)
 	}
@@ -341,7 +342,7 @@ func TestStandardAgentSessionScope(t *testing.T) {
 			if operation == "invoke_agent" {
 				want = "claude:s"
 			}
-			events, err := a.readEvents(want, 10, 0)
+			events, err := a.readRecords(context.Background(), want, "", 10, 0)
 			if err != nil || len(events) != 1 {
 				t.Fatal(want, events, err)
 			}
