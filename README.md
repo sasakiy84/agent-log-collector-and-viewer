@@ -9,6 +9,7 @@ A personal OpenTelemetry collector and session viewer for Codex CLI, Claude Code
 ## Features
 
 - Collect logs, traces and metrics over OTLP/HTTP (JSON or Protobuf), or import and watch saved CLI sessions.
+- Search Japanese and English with built-in SQLite FTS5 and an embedded Japanese dictionary ([search settings](docs/search.md)).
 - Read session timelines, tool calls, outputs and errors; open cards for full attributes/JSON. Refresh manually.
 - Combine imported and OTEL events with shared IDs into one card while keeping both originals.
 - Archive sessions inactive for a month; download a ZIP, confirm it, then delete DB records and reclaim space.
@@ -35,7 +36,7 @@ Set the generated value as `AGENTLOG_TOKEN` in `.env`, then start:
 docker compose up -d --build
 ```
 
-Existing databases build indexed session views once on first startup; the upgrade is logged and interrupted upgrades resume.
+Existing databases build session and full-text indexes once on first startup; the upgrade is logged and interrupted upgrades resume.
 
 Open http://127.0.0.1:4318 and sign in with that token. SQLite data persists in a named volume across container recreation; `docker compose down --volumes` deletes it.
 

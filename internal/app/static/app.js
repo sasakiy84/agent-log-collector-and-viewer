@@ -131,7 +131,11 @@ $('#loginform').onsubmit=async e=>{e.preventDefault();try{const r=await fetch('/
 $('#logout').onclick=async()=>{await fetch('/api/logout',{method:'POST'});location.reload()};
 document.querySelectorAll('[data-source]').forEach(b=>{b.classList.toggle('active',b.dataset.source===source);b.onclick=()=>{source=b.dataset.source;sessionOffset=0;listState();document.querySelectorAll('[data-source]').forEach(x=>x.classList.toggle('active',x===b));refresh()}});
 document.querySelectorAll('[data-kind]').forEach(b=>b.onclick=()=>{kind=b.dataset.kind;document.querySelectorAll('[data-kind]').forEach(x=>x.classList.toggle('active',x===b));renderEvents()});
-let timer;$('#search').oninput=()=>{clearTimeout(timer);timer=setTimeout(()=>{query=$('#search').value;sessionOffset=0;listState();refresh()},250)};
+let timer,composingSearch=false;
+function scheduleSearch(){clearTimeout(timer);timer=setTimeout(()=>{query=$('#search').value;sessionOffset=0;listState();refresh()},250)}
+$('#search').addEventListener('compositionstart',()=>{composingSearch=true;clearTimeout(timer)});
+$('#search').addEventListener('compositionend',()=>{composingSearch=false;scheduleSearch()});
+$('#search').oninput=e=>{if(!composingSearch&&!e.isComposing)scheduleSearch()};
 for(const [id,delta,type]of[['prevsessions',-200,'s'],['nextsessions',200,'s'],['prevevents',-200,'e'],['nextevents',200,'e']])$('#'+id).onclick=()=>{if(type==='s'){sessionOffset=Math.max(0,sessionOffset+delta);listState()}else eventOffset=Math.max(0,eventOffset+delta);refresh();window.scrollTo(0,0)};
 $('#origin').onchange=()=>{origin=$('#origin').value;eventOffset=0;closeInspector(false);refresh()};
 const archiveSelection=new Set();let archiveAll=false,archiveOffset=0,archiveData=null;

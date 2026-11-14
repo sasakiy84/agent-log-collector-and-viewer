@@ -1,3 +1,10 @@
+# Japanese full-text search (current)
+
+- Built-in FTS5 contentless-delete indexes, Kagome/IPADIC search-mode analysis and standard Lucene-style Japanese filters; NFKC/case/diacritic normalization and safe literal AND/prefix queries.
+- Coverage includes one/two-character words, conjugation, width/dakuten, full untruncated content, embedded JSON keys/values and escapes, mixed agent/project labels, updated or moved events, rollback/delete, upgrade resume, archive/replay suppression, incremental posting cleanup and FTS integrity.
+- Query plans use the FTS posting index and document primary keys. The native 3 MiB Japanese regression checks the final word and peak RSS; Chromium verifies composition events commit before issuing a search.
+- [Settings and measurements](search.md) · [Memory regression](../scripts/search_memory_test.py) · [Japanese browser regression](../scripts/search_browser_test.py).
+
 # Session-view performance and manual refresh (current)
 
 - Removed all periodic browser refresh requests, the auto-refresh control, and automatic retry messaging. The Refresh button reloads explicitly, including archive progress.

@@ -108,6 +108,14 @@ try:
  merged=request('/api/event?session=codex:late-merge&id='+urllib.parse.quote(old_id,safe=''))
  assert len(merged['records'])==2 and merged['id']!=old_id
  print('PASS: lazy original JSON and old-card resolution after a late import/OTEL merge.')
+ # A bounded analyzer must handle multi-MiB Japanese without a giant lattice.
+ japanese={'resourceLogs':[{'resource':{'attributes':[{'key':'service.name','value':{'stringValue':'codex'}}]},'scopeLogs':[{'logRecords':[{'eventName':'user_prompt','attributes':[{'key':'session.id','value':{'stringValue':'japanese-large'}},{'key':'prompt','value':{'stringValue':'東京'*500000+'認証エラーとパスワードの確認'}}]}]}]}]}
+ request('/v1/logs',japanese,timeout=90)
+ for term in ['認証','エラー','ﾊﾟｽﾜｰﾄﾞ']:
+  hits=request('/api/sessions?q='+urllib.parse.quote(term))
+  assert len(hits)==1 and hits[0]['id']=='codex:japanese-large',term
+ print('PASS: built-in Japanese FTS, two-character words and width normalization; 3 MiB unpunctuated Japanese in the read-only Docker image.')
+
  if not options.skip_scale:large_history(run('ps','-q','agentlog'))
 finally:
  run('down','--volumes','--remove-orphans')

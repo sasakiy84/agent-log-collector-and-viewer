@@ -18,6 +18,6 @@ The benchmark creates isolated synthetic databases and removes them afterward. I
 
 Indexed session summaries and bounded card presentations are maintained in the same transaction as ingestion. Counts use delta updates; time boundaries use index endpoints. Mixed imported/OTEL updates recalculate only the affected shared-ID component, including former neighbors when identifiers change. Read-only WAL connections keep UI reads independent of the ingestion connection.
 
-List/detail requests read their page from these indexes. Full attributes and original JSON load through `/api/event` only when a card is opened; the browser retains at most the latest full card. Explicit content searches and exports still read original records. There are no periodic browser requests; **Refresh** reloads the current screen.
+List/detail requests read their page from these indexes. Full attributes and original JSON load through `/api/event` only when a card is opened; the browser retains at most the latest full card. Search uses a separate FTS5 inverted index; only exports and explicit event inspection read original records. There are no periodic browser requests; **Refresh** reloads the current screen.
 
 Existing databases build the display data once before accepting HTTP requests. Both card batches and completed sessions are committed separately so an interrupted upgrade resumes. These derived tables require additional disk space; original records remain intact.
