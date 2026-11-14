@@ -4,6 +4,14 @@ import hashlib,json,os,pathlib,socket,sqlite3,subprocess,tempfile,time,urllib.re
 from playwright.sync_api import sync_playwright,expect
 binary=os.environ.get('AGENTLOG_BIN',str(pathlib.Path(__file__).resolve().parents[1]/'agentlog'))
 token='synthetic-archive-test-token'
+def wait_visible(page,selector,text=None):
+ deadline=time.monotonic()+30
+ while time.monotonic()<deadline:
+  locator=page.locator(selector)
+  if locator.count() and locator.is_visible() and (text is None or locator.inner_text()==text):return
+  if page.locator('#refresh').is_enabled():page.locator('#refresh').click()
+  page.wait_for_timeout(100)
+ raise AssertionError(f'Not visible: {selector} {text}')
 with tempfile.TemporaryDirectory() as folder:
  with socket.socket() as sock:
   sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
@@ -29,7 +37,7 @@ with tempfile.TemporaryDirectory() as folder:
    assert page.locator('#listpage').is_hidden()
    page.locator('[data-archive-session]').first.check();assert page.locator('#archiveselected').inner_text()=='1 selected'
    page.locator('#archiveall').click();assert page.locator('#archiveselected').inner_text()=='3 selected';page.locator('#archivecreate').click()
-   page.locator('#archivedownload').wait_for(timeout=15000)
+   wait_visible(page,'#archivedownload')
    assert page.locator('#archivedelete').is_disabled()
    assert api('/api/stats')['events']==3
    with page.expect_download() as capture:page.locator('#archivedownload').click()
@@ -39,21 +47,22 @@ with tempfile.TemporaryDirectory() as folder:
     assert zipped.testzip() is None
     assert len([n for n in zipped.namelist() if n.startswith('sessions/')])==3
    page.locator('#archiveconfirmation').fill('DOWNLOADED')
-   # Polling must preserve the typed confirmation and focused input.
-   page.wait_for_timeout(5500);assert page.locator('#archiveconfirmation').input_value()=='DOWNLOADED'
+   # No timer should trigger background API requests or disturb input.
+   requests=[];page.on('request',lambda r:requests.append(r.url) if '/api/' in r.url else None)
+   page.wait_for_timeout(5500);assert not requests,requests;assert page.locator('#archiveconfirmation').input_value()=='DOWNLOADED'
    assert api('/api/stats')['events']==3
    if os.getenv('AGENTLOG_SCREENSHOT'):page.screenshot(path=os.environ['AGENTLOG_SCREENSHOT'],full_page=True)
    page.set_viewport_size({'width':390,'height':844});assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
-   page.locator('#archivedelete').click();page.get_by_text('Archive complete',exact=True).wait_for(timeout=15000)
+   page.locator('#archivedelete').click();wait_visible(page,'#archivejob h2',text='Archive complete')
    assert api('/api/stats')['events']==0
    if os.getenv('AGENTLOG_TEST_LEGACY'):
     assert api('/api/archive')['job']['rebuild_required']
     page.locator('#archivecompact').click();expect(page.locator('#archivecompact')).to_have_count(0)
-    page.get_by_text('Archive complete',exact=True).wait_for(timeout=15000)
+    wait_visible(page,'#archivejob h2',text='Archive complete')
     assert not api('/api/archive')['job']['rebuild_required']
    api('/v1/logs',{'resourceLogs':logs});assert api('/api/stats')['events']==0
    assert not errors,errors
    browser.close()
  finally:
   server.terminate();server.wait(timeout=20)
-print('PASS: inactive list, selection, native ZIP download/CRC/SHA, polling preserves input, mobile, explicit deletion, replay suppression')
+print('PASS: inactive list, selection, native ZIP download/CRC/SHA, no background refresh, mobile, explicit deletion, replay suppression')

@@ -1,3 +1,12 @@
+# Session-view performance and manual refresh (current)
+
+- Removed all periodic browser refresh requests, the auto-refresh control, and automatic retry messaging. The Refresh button reloads explicitly, including archive progress.
+- Added transactionally maintained indexed session summaries, bounded cards, incremental mixed-origin reconciliation, separate read-only WAL connections, and a lazy full-event endpoint. No original JSON is returned by list/detail pages.
+- Tests compare incremental projections against a full projection after 75 identifier updates, ambiguity changes and session moves; verify original-data preservation, size limits, origin isolation, read/write concurrency, restart and archive cleanup.
+- Race tests, vet, browser suites and manual-refresh/no-background-request checks pass. Updated screenshots use only synthetic telemetry. [Benchmark procedure and measured results](performance.md).
+
+The following sections record earlier validation and may describe behavior that has since changed.
+
 # Large Docker histories (unreleased)
 
 - Reproduced the reported session-list failure with a sampled transcript set scaled to 147,492 stored records. The same image/database returned HTTP 500 with a 64 MiB `/tmp`, and HTTP 200 with 512 MiB. Keeping `/tmp` at 64 MiB and setting `SQLITE_TMPDIR=/data` also returned HTTP 200: SQLite's temporary query files exceeded the tmpfs limit.

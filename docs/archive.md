@@ -3,7 +3,7 @@
 ![Archive download and confirmation, using synthetic sessions](ui-archive.png)
 
 1. Open **Archive**. Sessions whose last recorded activity is over one calendar month old appear here. Sessions with unknown timestamps are excluded.
-2. Select sessions, or **Select all inactive sessions**, then **Create ZIP**.
+2. Select sessions, or **Select all inactive sessions**, then **Create ZIP**. Use **Refresh** to check job progress.
 3. **Download ZIP**, check the local file, then type **DOWNLOADED** and choose **Delete archived DB records**.
 
 Downloading alone never deletes records. Updated sessions require a new archive. Canceling keeps DB records. Source files stay in place; identical archived records are ignored on reimport, while new or changed records can be imported.

@@ -5,8 +5,9 @@ const label=s=>({codex:'Codex',claude:'Claude Code',copilot:'Copilot',other:'Oth
 const link=id=>'/sessions/'+encodeURIComponent(id);
 const date=s=>new Date(s).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
 const clock=s=>new Date(s).toLocaleTimeString(undefined,{hour12:false});
-let generation=0,busy=false,sessionOffset=0,eventOffset=0,source='',query='',kind='',origin='',events=[],meta=null;
-let inspectedID='', inspectedSnapshot='', inspectorTab='details';
+let requestSerial=0,activeRequest=null,sessionOffset=0,eventOffset=0,source='',query='',kind='',origin='',events=[],meta=null;
+let inspectedID='', inspectedRecord=null, inspectorTab='details',inspectorEvent=null,inspectorRequest=null,jsonEvent=null;
+const inspectorCache=new Map();
 let selected=location.pathname.startsWith('/sessions/')?decodeURIComponent(location.pathname.slice(10)):'';
 const archiveMode=location.pathname==='/archive';
 const listURL=new URL(location.href);
@@ -14,7 +15,7 @@ source=listURL.searchParams.get('source')||'';query=listURL.searchParams.get('q'
 $('#search').value=query;
 if(!selected&&!archiveMode) sessionStorage.setItem('sessionsURL',location.pathname+location.search);
 $('.back').href=sessionStorage.getItem('sessionsURL')||'/';
-async function api(path){const r=await fetch(path);if(r.status===401){closeInspector(false);$('#login').hidden=false;$('#workspace').hidden=true;throw Error('Sign in required.')}if(!r.ok)throw Error(r.status===404?'Session not found.':`Unable to load (HTTP ${r.status}). Retrying automatically.`);return r.json()}
+async function api(path,signal){const r=await fetch(path,{signal});if(r.status===401){closeInspector(false);$('#login').hidden=false;$('#workspace').hidden=true;throw Error('Sign in required.')}if(!r.ok)throw Error(r.status===404?'Session not found.':`Unable to load (HTTP ${r.status}).`);return r.json()}
 function titleFor(id,p){if(p){const prompt=p.blocks.find(b=>/request|user/i.test(b.label));if(prompt&&prompt.text!=='Content not exported')return prompt.text.split('\n')[0].slice(0,150)}return id.includes('/agent:')?'Subagent · '+id.split('/agent:').pop():id.replace(/^(codex|claude|copilot|other):/,'')}
 function listState(){const p=new URLSearchParams();if(source)p.set('source',source);if(query)p.set('q',query);if(sessionOffset)p.set('offset',sessionOffset);history.replaceState(null,'','/'+(p.size?'?'+p:''));sessionStorage.setItem('sessionsURL',location.pathname+location.search)}
 function projectLabel(p){return [p?.project,...(Array.isArray(p?.tags)?p.tags:p?.tags?[p.tags]:[])].filter(Boolean).join(' · ')}
@@ -49,6 +50,7 @@ function renderEvents(){
 
 function setInspectorTab(tab){
  inspectorTab=tab;
+ if(tab==='json')renderInspectorJSON();
  for(const name of ['details','json']){
   const button=$(name==='details'?'#detailtab':'#jsontab');
   button.setAttribute('aria-selected',String(name===tab));button.tabIndex=name===tab?0:-1;
@@ -64,19 +66,29 @@ function syncInspectorMode(){
  $('#eventlist').inert=modal;$('.topbar').inert=modal;
  if(modal&&!$('#inspector').contains(document.activeElement)) $('#closeinspector').focus({preventScroll:true});
 }
-function openInspector(id){
- inspectedID=id;$('#inspector').hidden=false;$('#detailpage').classList.add('inspector-open');
+async function openInspector(id){
+ inspectorRequest?.abort();const controller=new AbortController();inspectorRequest=controller;
+ inspectedID=id;inspectorEvent=inspectorCache.get(id)||null;inspectedRecord=null;jsonEvent=null;$('#eventjson').textContent='';
+ $('#inspector').hidden=false;$('#detailpage').classList.add('inspector-open');
  document.querySelectorAll('[data-event]').forEach(card=>{const active=card.dataset.event===id;card.classList.toggle('selected',active);card.setAttribute('aria-expanded',String(active))});
+ $('#inspectstatus').textContent=inspectorEvent?'':'Loading details…';$('#copyjson').disabled=!inspectorEvent;
  renderInspector();syncInspectorMode();$('#closeinspector').focus({preventScroll:true});
+ if(inspectorEvent)return;
+ try{const event=await api(`/api/event?session=${encodeURIComponent(selected)}&id=${encodeURIComponent(id)}&origin=${encodeURIComponent(origin)}`,controller.signal);if(controller.signal.aborted||inspectedID!==id)return;inspectorCache.clear();inspectorCache.set(id,event);inspectorEvent=event;$('#inspectstatus').textContent='';$('#copyjson').disabled=false;renderInspector()}
+ catch(e){if(e.name!=='AbortError'&&inspectedID===id){$('#inspectstatus').textContent=e.message+' ';const retry=document.createElement('button');retry.textContent='Retry';retry.onclick=()=>openInspector(id);$('#inspectstatus').append(retry)}}
+}
+function renderInspectorJSON(){
+ if(!inspectorEvent){$('#eventjson').textContent='Loading JSON…';return}
+ if(jsonEvent===inspectorEvent)return;jsonEvent=inspectorEvent;
+ $('#eventjson').textContent=JSON.stringify(inspectorEvent.records.length===1?inspectorEvent.records[0].raw:{records:inspectorEvent.records},null,2);
 }
 function closeInspector(restore=true){
- const id=inspectedID;inspectedID='';inspectedSnapshot='';$('#inspector').hidden=true;$('#detailpage').classList.remove('inspector-open');syncInspectorMode();
+ inspectorRequest?.abort();const id=inspectedID;inspectedID='';inspectedRecord=null;inspectorEvent=null;jsonEvent=null;$('#inspector').hidden=true;$('#detailpage').classList.remove('inspector-open');syncInspectorMode();
  document.querySelectorAll('[data-event]').forEach(card=>{card.classList.remove('selected');card.setAttribute('aria-expanded','false')});
  if(restore&&id) document.querySelector(`[data-event="${CSS.escape(id)}"]`)?.focus({preventScroll:true});
 }
 function renderInspector(){
- const e=events.find(e=>e.id===inspectedID);if(!e)return;
- const snapshot=JSON.stringify(e);if(snapshot===inspectedSnapshot)return;inspectedSnapshot=snapshot;
+ const e=inspectorEvent||events.find(e=>e.id===inspectedID);if(!e||e===inspectedRecord)return;inspectedRecord=e;
  const parent=events.find(x=>x.span===e.parent_span&&x.trace===e.trace&&x.source===e.source&&document.getElementById('span-'+x.span));
  const p=e.detail,value=v=>typeof v==='string'?v:JSON.stringify(v,null,2);
  $('#inspectortitle').textContent=p.title;$('#inspectortime').textContent=date(e.time)+' · '+label(e.source);
@@ -86,7 +98,7 @@ function renderInspector(){
  (p.conflicts?.length?`<h3>Source differences</h3><dl class="propertylist">${p.conflicts.map(c=>`<div><dt>${esc(c.field)}</dt><dd>${c.values.map(v=>`${v.origin==='import'?'Imported':'OTEL'}: ${esc(v.value)}`).join('\n')}</dd></div>`).join('')}</dl>`:'')+
  `<h3>Attributes</h3><dl class="propertylist">${Object.entries(p.attributes).map(([k,v])=>`<div><dt>${esc(k)}</dt><dd>${esc(value(v))}</dd></div>`).join('')||'<div>No attributes</div>'}</dl>`;
  if($('#inspectparent')) $('#inspectparent').onclick=ev=>{ev.preventDefault();openInspector(parent.id);document.getElementById('span-'+parent.span)?.scrollIntoView({block:'nearest'})};
- $('#eventjson').textContent=JSON.stringify(e.records.length===1?e.records[0].raw:{records:e.records},null,2);$('#copystatus').textContent='';setInspectorTab(inspectorTab);
+ $('#copystatus').textContent='';setInspectorTab(inspectorTab);
 }
 $('#closeinspector').onclick=()=>closeInspector();
 $('#detailtab').onclick=()=>setInspectorTab('details');$('#jsontab').onclick=()=>setInspectorTab('json');
@@ -102,28 +114,34 @@ addEventListener('keydown',e=>{
   if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}
  }
 });
-async function refresh(){if(busy)return;busy=true;const g=generation;try{
- if(archiveMode){await refreshArchive()}
- else if(selected){const page=await api(`/api/session?id=${encodeURIComponent(selected)}&origin=${encodeURIComponent(origin)}&offset=${eventOffset}`);if(g!==generation)return;meta=page;events=page.events;renderEvents()}
- else {const rows=await api(`/api/sessions?source=${encodeURIComponent(source)}&q=${encodeURIComponent(query)}&offset=${sessionOffset}`);if(g!==generation)return;renderSessions(rows)}
- $('#login').hidden=true;$('#workspace').hidden=false;$('#listpage').hidden=!!selected||archiveMode;$('#detailpage').hidden=!selected||archiveMode;$('#archivepage').hidden=!archiveMode;$('#error').textContent='';
- }catch(e){$('#error').textContent=e.message;if($('#login').hidden){$('#workspace').hidden=false;$('#listpage').hidden=!!selected||archiveMode;$('#detailpage').hidden=!selected||archiveMode;$('#archivepage').hidden=!archiveMode;$('#timeline').innerHTML=''}}finally{busy=false;if(g!==generation)refresh()}}
+async function refresh(){
+ activeRequest?.abort();const controller=new AbortController();activeRequest=controller;const serial=++requestSerial;
+ $('#refresh').disabled=true;$('#workspace').setAttribute('aria-busy','true');
+ try{
+  if(archiveMode){await refreshArchive(controller.signal)}
+  else if(selected){const page=await api(`/api/session?id=${encodeURIComponent(selected)}&origin=${encodeURIComponent(origin)}&offset=${eventOffset}`,controller.signal);if(controller.signal.aborted)return;closeInspector(false);inspectorCache.clear();meta=page;events=page.events;renderEvents()}
+  else{const rows=await api(`/api/sessions?source=${encodeURIComponent(source)}&q=${encodeURIComponent(query)}&offset=${sessionOffset}`,controller.signal);if(controller.signal.aborted)return;renderSessions(rows)}
+  if(controller.signal.aborted)return;
+  $('#login').hidden=true;$('#workspace').hidden=false;$('#listpage').hidden=!!selected||archiveMode;$('#detailpage').hidden=!selected||archiveMode;$('#archivepage').hidden=!archiveMode;$('#error').textContent='';
+ }catch(e){if(e.name==='AbortError')return;$('#error').textContent=e.message;if($('#login').hidden){$('#workspace').hidden=false;$('#listpage').hidden=!!selected||archiveMode;$('#detailpage').hidden=!selected||archiveMode;$('#archivepage').hidden=!archiveMode}}
+ finally{if(serial===requestSerial){$('#refresh').disabled=false;$('#workspace').removeAttribute('aria-busy')}}
+}
+$('#refresh').onclick=()=>refresh();
 $('#loginform').onsubmit=async e=>{e.preventDefault();try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:$('#token').value})});if(!r.ok)throw Error('Invalid access token.');$('#token').value='';refresh()}catch(e){$('#loginerror').textContent=e.message}};
 $('#logout').onclick=async()=>{await fetch('/api/logout',{method:'POST'});location.reload()};
-document.querySelectorAll('[data-source]').forEach(b=>{b.classList.toggle('active',b.dataset.source===source);b.onclick=()=>{source=b.dataset.source;sessionOffset=0;generation++;listState();document.querySelectorAll('[data-source]').forEach(x=>x.classList.toggle('active',x===b));refresh()}});
+document.querySelectorAll('[data-source]').forEach(b=>{b.classList.toggle('active',b.dataset.source===source);b.onclick=()=>{source=b.dataset.source;sessionOffset=0;listState();document.querySelectorAll('[data-source]').forEach(x=>x.classList.toggle('active',x===b));refresh()}});
 document.querySelectorAll('[data-kind]').forEach(b=>b.onclick=()=>{kind=b.dataset.kind;document.querySelectorAll('[data-kind]').forEach(x=>x.classList.toggle('active',x===b));renderEvents()});
-let timer;$('#search').oninput=()=>{clearTimeout(timer);timer=setTimeout(()=>{query=$('#search').value;sessionOffset=0;generation++;listState();refresh()},250)};
-for(const [id,delta,type]of[['prevsessions',-200,'s'],['nextsessions',200,'s'],['prevevents',-200,'e'],['nextevents',200,'e']])$('#'+id).onclick=()=>{if(type==='s'){sessionOffset=Math.max(0,sessionOffset+delta);listState()}else eventOffset=Math.max(0,eventOffset+delta);generation++;refresh();window.scrollTo(0,0)};
-$('#origin').onchange=()=>{origin=$('#origin').value;eventOffset=0;generation++;closeInspector(false);refresh()};
-$('#autorefresh').onchange=()=>$('#connection').textContent=$('#autorefresh').checked?'Auto-refresh · 5s':'Paused';
+let timer;$('#search').oninput=()=>{clearTimeout(timer);timer=setTimeout(()=>{query=$('#search').value;sessionOffset=0;listState();refresh()},250)};
+for(const [id,delta,type]of[['prevsessions',-200,'s'],['nextsessions',200,'s'],['prevevents',-200,'e'],['nextevents',200,'e']])$('#'+id).onclick=()=>{if(type==='s'){sessionOffset=Math.max(0,sessionOffset+delta);listState()}else eventOffset=Math.max(0,eventOffset+delta);refresh();window.scrollTo(0,0)};
+$('#origin').onchange=()=>{origin=$('#origin').value;eventOffset=0;closeInspector(false);refresh()};
 const archiveSelection=new Set();let archiveAll=false,archiveOffset=0,archiveData=null;
 const bytes=n=>{const units=['B','KiB','MiB','GiB','TiB'];let i=0;while(n>=1024&&i<units.length-1){n/=1024;i++}return `${n.toFixed(i?1:0)} ${units[i]}`};
 async function archivePost(path,body){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(r.status===401){$('#login').hidden=false;$('#workspace').hidden=true;throw Error('Sign in required.')}if(!r.ok)throw Error((await r.text()).trim());return r.json()}
 function updateArchiveSelection(){const n=archiveAll?archiveData.total_sessions:archiveSelection.size;$('#archiveselected').textContent=`${n} selected`;$('#archivecreate').disabled=!n;document.querySelectorAll('[data-archive-session]').forEach(el=>{el.checked=archiveAll||archiveSelection.has(el.dataset.archiveSession);el.disabled=archiveAll})}
-async function refreshArchive(){
- const data=await api('/api/archive?offset='+archiveOffset);archiveData=data;
+async function refreshArchive(signal){
+ const data=await api('/api/archive?offset='+archiveOffset,signal);if(signal?.aborted)return;archiveData=data;
  const job=data.job,active=job&&['preparing','ready','deleting','compacting'].includes(job.status);
- $('#connection').textContent='Auto-refresh · 5s';$('#archivetotal').textContent=`${data.total_sessions} sessions · ${bytes(data.total_bytes)} uncompressed`;
+ $('#archivetotal').textContent=`${data.total_sessions} sessions · ${bytes(data.total_bytes)} uncompressed`;
  $('#archivecutoff').textContent=`Last activity before ${new Date(data.cutoff).toLocaleDateString()} · DB data only; source files stay in place.`;
  $('#archiveselection').hidden=!!active;
  $('#archiveitems').innerHTML=data.sessions.length?data.sessions.slice(0,200).map(s=>`<label class="archive-row"><input type="checkbox" data-archive-session="${esc(s.id)}" ${active?'disabled checked':''}><span><a href="${esc(link(s.id))}">${esc(s.id)}</a><small>${esc(label(s.source))} · ${esc(new Date(s.last_activity).toLocaleString())}</small></span><span>${s.records.toLocaleString()} ${s.records===1?'record':'records'}</span><span>${bytes(s.raw_bytes)}</span></label>`).join(''):'<p class="empty">No inactive sessions</p>';
@@ -152,4 +170,4 @@ async function archiveAction(path,body){try{await archivePost(path,body);archive
 $('#archiveall').onclick=()=>{archiveAll=true;archiveSelection.clear();updateArchiveSelection()};$('#archiveclear').onclick=()=>{archiveAll=false;archiveSelection.clear();updateArchiveSelection()};
 $('#archivecreate').onclick=async()=>{$('#archivecreate').disabled=true;await archiveAction('/api/archives',{cutoff:archiveData.cutoff,all:archiveAll,sessions:archiveAll?[]:[...archiveSelection]})};
 $('#archiveprev').onclick=()=>{archiveOffset=Math.max(0,archiveOffset-200);refresh()};$('#archivenext').onclick=()=>{archiveOffset+=200;refresh()};
-setInterval(()=>{if(!document.hidden&&(!selected||$('#autorefresh').checked)&&!window.getSelection()?.toString())refresh()},5000);refresh();
+refresh();

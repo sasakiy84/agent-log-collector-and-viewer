@@ -31,7 +31,7 @@ with sync_playwright() as p:
  assert page.locator('#inspectdetails').get_by_text('ShellError',exact=True).is_visible()
  assert page.evaluate('() => !document.querySelector("#eventlist").inert')
  page.screenshot(path=str(OUT/'ui-event-details.png'),full_page=True)
- page.locator('#jsontab').click();page.locator('#eventjson').wait_for()
+ page.locator('#jsontab').click();page.locator('#eventjson').wait_for();page.wait_for_function("() => document.querySelector('#inspectstatus').textContent===''")
  assert 'tool_parameters' in page.locator('#eventjson').inner_text()
  page.context.grant_permissions(['clipboard-read','clipboard-write'],origin=BASE)
  page.locator('#copyjson').click();page.get_by_text('Copied',exact=True).wait_for()
@@ -69,8 +69,8 @@ with sync_playwright() as p:
  assert page.locator('#closeinspector').evaluate('(el) => el===document.activeElement')
  assert page.evaluate('() => document.documentElement.scrollWidth <= innerWidth')
  page.keyboard.press('Escape');assert page.evaluate('() => !document.querySelector("#eventlist").inert')
- page.locator('#autorefresh').uncheck();assert page.get_by_text('Paused',exact=True).is_visible()
- page.locator('#autorefresh').check();page.route('**/api/session?*',lambda r:r.fulfill(status=500,body='failure'));page.get_by_text('Unable to load (HTTP 500). Retrying automatically.').wait_for(timeout=10000);page.unroute('**/api/session?*');page.wait_for_function("() => document.querySelector('#error').textContent===''",timeout=10000)
+ assert page.locator('#autorefresh').count()==0
+ page.route('**/api/session?*',lambda r:r.fulfill(status=500,body='failure'));page.locator('#refresh').click();page.get_by_text('Unable to load (HTTP 500).').wait_for(timeout=10000);page.unroute('**/api/session?*');page.locator('#refresh').click();page.wait_for_function("() => document.querySelector('#error').textContent===''",timeout=10000)
  assert not errors,errors
  browser.close()
-print('PASS: standalone routes/reload, list filters/search, per-agent rendering, subagent navigation, inspector details/JSON, polling selection, keyboard/focus trap, filters, errors, export, pause, mobile; 8 screenshots.')
+print('PASS: standalone routes/reload, list filters/search, per-agent rendering, subagent navigation, inspector details/JSON, manual-refresh behavior, keyboard/focus trap, filters, errors, export, no automatic refresh, mobile; 8 screenshots.')

@@ -41,7 +41,7 @@ with tempfile.TemporaryDirectory() as tmp:
    expect(page.locator('#inspectdetails')).to_contain_text('1.20 s')
    expect(page.locator('#inspectdetails')).to_contain_text('PASS')
    expect(page.locator('#inspectdetails')).to_contain_text('Source differences')
-   page.locator('#jsontab').click()
+   page.locator('#jsontab').click();page.wait_for_function("() => document.querySelector('#inspectstatus').textContent===''")
    data=json.loads(page.locator('#eventjson').inner_text())
    assert len(data['records'])==2
    page.keyboard.press('Escape')
@@ -49,7 +49,7 @@ with tempfile.TemporaryDirectory() as tmp:
    page.locator('#origin').select_option('import');expect(page.locator('.event')).to_have_count(5)
    expect(page.locator('.event.error')).to_have_count(0)
    assert page.locator('.event.assistant .prose').inner_text()=='All tests passed.'
-   page.locator('.event.model').click();page.locator('#jsontab').click()
+   page.locator('.event.model').click();page.locator('#jsontab').click();page.wait_for_function("() => document.querySelector('#inspectstatus').textContent===''")
    assert '"intValue": "2300"' in page.locator('#eventjson').inner_text()
    assert 'project.tags' in page.locator('#eventjson').inner_text()
    page.locator('#detailtab').click()
@@ -59,20 +59,24 @@ with tempfile.TemporaryDirectory() as tmp:
    assert 'PASS' not in page.locator('#timeline').inner_text()
    page.set_viewport_size({'width':390,'height':844});assert page.evaluate('() => document.documentElement.scrollWidth<=innerWidth')
    page.locator('.event.user').filter(has_text='Live OTEL message').click();assert page.locator('#inspector').get_attribute('aria-modal')=='true';page.keyboard.press('Escape')
-   # An OTEL-first card keeps its inspector selection/tab when import arrives.
+   # New ingestion stays invisible until the user explicitly refreshes.
    late={'resourceLogs':[{'resource':{'attributes':[{'key':'service.name','value':{'stringValue':'claude'}}]},'scopeLogs':[{'logRecords':[{'eventName':'claude_code.tool_result','attributes':[{'key':'session.id','value':{'stringValue':'late-import'}},{'key':'tool_use_id','value':{'stringValue':'late'}},{'key':'tool_name','value':{'stringValue':'Bash'}},{'key':'duration_ms','value':{'intValue':'300'}}]}]}]}]}
    fetch('/v1/logs',late)
    page.goto(base+'/sessions/claude%3Alate-import')
-   page.locator('.event').click();page.locator('#jsontab').click()
+   page.locator('.event').wait_for()
    row={'type':'user','uuid':'late-result','sessionId':'late-import','message':{'content':[{'type':'tool_result','tool_use_id':'late','content':'Late output','is_error':False}]}}
    (folder/'late.jsonl').write_text(json.dumps(row)+'\n')
    subprocess.run([binary,'import','--dir',str(folder),'--endpoint',base],env=env,check=True,capture_output=True)
-   expect(page.locator('.event .kind').filter(has_text='Imported + OTEL')).to_have_count(1,timeout=10000)
+   assert page.locator('.event .kind').filter(has_text='Imported + OTEL').count()==0
+   page.locator('.event').click();page.locator('#jsontab').click();expect(page.locator('#eventjson')).to_contain_text('Late output')
+   page.keyboard.press('Escape');page.locator('#refresh').click()
+   expect(page.locator('.event .kind').filter(has_text='Imported + OTEL')).to_have_count(1)
+   page.locator('.event').click()
    assert page.locator('#jsontab').get_attribute('aria-selected')=='true'
    assert page.locator('.event.selected').count()==1
    expect(page.locator('#eventjson')).to_contain_text('Late output')
    assert page.locator('.event h2').inner_text()=='Bash'
    assert not errors,errors
    browser.close()
-  print('PASS: real import/OTEL grouping, original JSON, complement/conflicts, origin isolation, native-first live merge selection, labels, usage, search and mobile.')
+  print('PASS: real import/OTEL grouping, original JSON, complement/conflicts, origin isolation, native-first merge after manual refresh, labels, usage, search and mobile.')
  finally:proc.terminate();proc.wait(timeout=15)

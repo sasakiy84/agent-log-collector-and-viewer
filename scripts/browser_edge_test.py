@@ -34,18 +34,27 @@ with tempfile.TemporaryDirectory() as temp:
    page.wait_for_function("() => document.querySelectorAll('.session').length===1")
    page.locator('.session').click()
    page.wait_for_function("() => document.querySelectorAll('.event').length===200")
-   assert page.locator('.event .prose').first.inner_text()==attack
+   assert page.locator('.event .prose').first.inner_text().startswith(attack[:100])
+   assert len(page.locator('.event .prose').first.inner_text())<2100
+   page.locator('.event').first.click();page.wait_for_function("() => document.querySelector('#inspectstatus').textContent===''")
+   assert page.locator('#inspectdetails .prose').first.inner_text()==attack
+   page.keyboard.press('Escape')
    assert page.evaluate('() => !window.xss')
    assert page.evaluate('() => document.documentElement.scrollWidth <= innerWidth'),'long content overflow'
    page.locator('#nextevents').click()
    page.wait_for_function("() => document.querySelectorAll('.event').length===5")
    send([record('long-session','live update arrived',999)])
-   page.wait_for_function("() => document.querySelectorAll('.event').length===6",timeout=10000)
+   requests=[];page.on('request',lambda r:requests.append(r.url) if '/api/' in r.url else None)
+   page.wait_for_timeout(5500)
+   assert not requests,requests
+   assert page.locator('.event').count()==5
+   page.locator('#refresh').click()
+   page.wait_for_function("() => document.querySelectorAll('.event').length===6")
    assert page.get_by_text('live update arrived',exact=True).count()==1
    page.locator('#prevevents').click()
    page.wait_for_function("() => document.querySelectorAll('.event').length===200")
    assert not errors,errors
    browser.close()
-  print('PASS: 206 sessions, session/event pagination, 5KB hostile text escaped, 390px layout, live ingestion on a paginated timeline.')
+  print('PASS: 206 sessions, session/event pagination, bounded cards and full hostile text escaped, 390px layout, no background requests; manual refresh on a paginated timeline.')
  finally:
   proc.terminate();proc.wait(timeout=15)

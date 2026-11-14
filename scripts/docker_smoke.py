@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Test a locally built Compose image using an isolated, disposable project/volume."""
-import hashlib,json,os,pathlib,secrets,shutil,sqlite3,subprocess,tempfile,time,urllib.error,urllib.request,zipfile
+import argparse,hashlib,json,os,pathlib,secrets,shutil,sqlite3,subprocess,tempfile,time,urllib.error,urllib.request,urllib.parse,zipfile
+parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--skip-scale',action='store_true',help='Run startup, persistence and lazy-inspector checks only');options=parser.parse_args()
 project='agentlog-smoke-'+secrets.token_hex(4)
 token=secrets.token_hex(24)
 env={**os.environ,'AGENTLOG_TOKEN':token,'AGENTLOG_PORT':'0'}
@@ -12,7 +13,8 @@ def request(path,body=None,auth=token,timeout=5):
  req=urllib.request.Request(base()+path,b,headers={'Content-Type':'application/json','Authorization':'Bearer '+auth})
  with urllib.request.urlopen(req,timeout=timeout) as response:return json.load(response)
 def ready():
- for _ in range(100):
+ deadline=time.monotonic()+180
+ while time.monotonic()<deadline:
   try:return request('/api/stats')
   except (OSError,subprocess.CalledProcessError):time.sleep(.2)
  raise RuntimeError('Compose service did not become ready')
@@ -25,6 +27,7 @@ def large_history(cid):
   database=pathlib.Path(tmp)/'agentlog.db'
   subprocess.run([*docker,'cp',cid+':/data/agentlog.db',str(database)],check=True)
   with sqlite3.connect(database) as db:
+   db.execute('PRAGMA foreign_keys=ON')
    db.execute('DELETE FROM event_keys')
    db.execute('DELETE FROM events')
    def rows():
@@ -91,8 +94,20 @@ try:
  assert ready()['events']==1,'Data lost on recreation'
  request('/v1/logs',record)
  assert request('/api/stats')['events']==1,'Replay was not deduplicated'
- assert request('/api/session?id=codex:compose-test')['events'][0]['records'][0]['name']=='compose persistence test'
+ card=request('/api/session?id=codex:compose-test')['events'][0]
+ assert not card['records'][0].get('raw'),'Page eagerly returned original JSON'
+ original=request('/api/event?session=codex:compose-test&id='+urllib.parse.quote(card['id'],safe=''))
+ assert original['records'][0]['name']=='compose persistence test'
  print('PASS: Compose non-root/read-only startup, authenticated ingestion, recreation persistence, replay deduplication.')
- large_history(run('ps','-q','agentlog'))
+ # The originally displayed native card must remain inspectable after merging.
+ native={'resourceLogs':[{'resource':{'attributes':[{'key':'service.name','value':{'stringValue':'codex'}}]},'scopeLogs':[{'logRecords':[{'eventName':'gen_ai.user.message','attributes':[{'key':'session.id','value':{'stringValue':'late-merge'}},{'key':'event.id','value':{'stringValue':'shared'}},{'key':'prompt','value':{'stringValue':'native message'}}]}]}]}]}
+ request('/v1/logs',native)
+ old_id=request('/api/session?id=codex:late-merge')['events'][0]['id']
+ imported=json.loads(json.dumps(native));at=imported['resourceLogs'][0]['scopeLogs'][0]['logRecords'][0]['attributes'];at.append({'key':'agentlog.origin','value':{'stringValue':'import'}})
+ request('/v1/logs',imported)
+ merged=request('/api/event?session=codex:late-merge&id='+urllib.parse.quote(old_id,safe=''))
+ assert len(merged['records'])==2 and merged['id']!=old_id
+ print('PASS: lazy original JSON and old-card resolution after a late import/OTEL merge.')
+ if not options.skip_scale:large_history(run('ps','-q','agentlog'))
 finally:
  run('down','--volumes','--remove-orphans')
