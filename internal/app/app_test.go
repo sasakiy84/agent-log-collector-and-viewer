@@ -11,6 +11,7 @@ import (
 	logsv1 "go.opentelemetry.io/proto/otlp/logs/v1"
 	resource "go.opentelemetry.io/proto/otlp/resource/v1"
 	"google.golang.org/protobuf/proto"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -347,5 +348,28 @@ func TestStandardAgentSessionScope(t *testing.T) {
 				t.Fatal(want, events, err)
 			}
 		})
+	}
+}
+
+func TestDatabaseFailureLogsCauseWithoutCredentials(t *testing.T) {
+	a := setup(t)
+	a.DB.Close()
+	var logs bytes.Buffer
+	previous := log.Writer()
+	log.SetOutput(&logs)
+	defer log.SetOutput(previous)
+	req := httptest.NewRequest("GET", "/api/sessions?q=private-query-value", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	response := httptest.NewRecorder()
+	a.Handler().ServeHTTP(response, req)
+	if response.Code != 500 || response.Body.String() != "Database error\n" {
+		t.Fatal(response.Code, response.Body.String())
+	}
+	output := logs.String()
+	if !strings.Contains(output, "GET /api/sessions") || !strings.Contains(output, "database is closed") {
+		t.Fatalf("underlying error was not logged: %s", output)
+	}
+	if strings.Contains(output, token) || strings.Contains(output, "private-query-value") {
+		t.Fatal("credentials or query leaked to error log")
 	}
 }

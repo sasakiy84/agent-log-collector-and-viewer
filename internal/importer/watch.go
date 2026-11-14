@@ -59,6 +59,10 @@ func sessionFiles(ctx context.Context, o Options, missingOK bool) ([]string, err
 				if missingOK && errors.Is(err, os.ErrNotExist) {
 					return nil
 				}
+				if missingOK {
+					failures = append(failures, fmt.Errorf("scan %s: %w", p, err))
+					return nil
+				}
 				return err
 			}
 			if d.Type()&os.ModeSymlink != 0 {

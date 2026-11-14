@@ -13,7 +13,7 @@ source=listURL.searchParams.get('source')||'';query=listURL.searchParams.get('q'
 $('#search').value=query;
 if(!selected) sessionStorage.setItem('sessionsURL',location.pathname+location.search);
 $('.back').href=sessionStorage.getItem('sessionsURL')||'/';
-async function api(path){const r=await fetch(path);if(r.status===401){closeInspector(false);$('#login').hidden=false;$('#workspace').hidden=true;throw Error('Sign in required.')}if(!r.ok)throw Error(r.status===404?'Session not found.':'Unable to load. Retrying automatically.');return r.json()}
+async function api(path){const r=await fetch(path);if(r.status===401){closeInspector(false);$('#login').hidden=false;$('#workspace').hidden=true;throw Error('Sign in required.')}if(!r.ok)throw Error(r.status===404?'Session not found.':`Unable to load (HTTP ${r.status}). Retrying automatically.`);return r.json()}
 function titleFor(id,p){if(p){const prompt=p.blocks.find(b=>/request|user/i.test(b.label));if(prompt&&prompt.text!=='Content not exported')return prompt.text.split('\n')[0].slice(0,150)}return id.includes('/agent:')?'Subagent · '+id.split('/agent:').pop():id.replace(/^(codex|claude|copilot|other):/,'')}
 function listState(){const p=new URLSearchParams();if(source)p.set('source',source);if(query)p.set('q',query);if(sessionOffset)p.set('offset',sessionOffset);history.replaceState(null,'','/'+(p.size?'?'+p:''));sessionStorage.setItem('sessionsURL',location.pathname+location.search)}
 function projectLabel(p){return [p?.project,...(Array.isArray(p?.tags)?p.tags:p?.tags?[p.tags]:[])].filter(Boolean).join(' · ')}

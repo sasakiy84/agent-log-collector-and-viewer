@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io/fs"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -50,6 +51,10 @@ func write(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(v)
 }
+func databaseError(w http.ResponseWriter, r *http.Request, err error) {
+	log.Printf("%s %s: %v", r.Method, r.URL.Path, err)
+	http.Error(w, "Database error", http.StatusInternalServerError)
+}
 func (a *App) Handler() http.Handler {
 	mux := http.NewServeMux()
 	for _, signal := range []string{"logs", "traces", "metrics"} {
@@ -81,7 +86,7 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("GET /api/stats", func(w http.ResponseWriter, r *http.Request) {
 		var n, s int
 		if err := a.DB.QueryRow("SELECT COUNT(*),COUNT(DISTINCT session) FROM events").Scan(&n, &s); err != nil {
-			http.Error(w, "Database error", 500)
+			databaseError(w, r, err)
 			return
 		}
 		write(w, map[string]int{"events": n, "sessions": s})

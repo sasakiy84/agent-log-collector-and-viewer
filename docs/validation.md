@@ -1,3 +1,10 @@
+# Large Docker histories (unreleased)
+
+- Reproduced the reported session-list failure with a sampled transcript set scaled to 147,492 stored records. The same image/database returned HTTP 500 with a 64 MiB `/tmp`, and HTTP 200 with 512 MiB. Keeping `/tmp` at 64 MiB and setting `SQLITE_TMPDIR=/data` also returned HTTP 200: SQLite's temporary query files exceeded the tmpfs limit.
+- Compose now puts SQLite temporary files on the writable data volume. The non-root user, read-only root filesystem and bounded `/tmp` mount are retained. `scripts/docker_smoke.py` verifies list/detail pagination with 150,000 synthetic records in that configuration; no user transcript content is included in the fixture.
+- Watch scans report unreadable directories while continuing with readable siblings. One-time import still reports scan failures. Database errors now log their underlying cause without authentication headers/query values, and UI errors include the HTTP status.
+- Go race tests, vet, JavaScript syntax, Docker build and the 150,000-record Docker regression pass. The supplied sample also renders list/detail in Chromium, including automatic recovery after an HTTP 500. Independent review found no outstanding major issues.
+
 # Event reconciliation (unreleased)
 
 - Split HTTP/auth, storage, OTLP decoding, semantic display decoding and timeline projection. Removed the duplicate browser-side parser and the old events endpoint; the session API returns metadata and a page from one read transaction. The database uses the current schema directly without compatibility migrations.

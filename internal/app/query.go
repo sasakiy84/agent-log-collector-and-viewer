@@ -2,6 +2,7 @@ package app
 
 import (
 	"database/sql"
+	"errors"
 	"net/http"
 	"strconv"
 )
@@ -24,7 +25,7 @@ type SessionPage struct {
 func (a *App) sessions(w http.ResponseWriter, r *http.Request) {
 	tx, err := a.DB.BeginTx(r.Context(), &sql.TxOptions{ReadOnly: true})
 	if err != nil {
-		http.Error(w, "Database error", 500)
+		databaseError(w, r, err)
 		return
 	}
 	defer tx.Rollback()
@@ -39,7 +40,7 @@ func (a *App) sessions(w http.ResponseWriter, r *http.Request) {
  ) SELECT p.session,p.source,p.parent,p.count,p.start,p.end,p.preview_id,`+qualifiedColumns("r")+`
  FROM previews p JOIN members m ON m.view_id=p.preview_id JOIN events r ON r.id=m.id ORDER BY p.end DESC,p.session,m.origin,m.id`, args...)
 	if err != nil {
-		http.Error(w, "Database error", 500)
+		databaseError(w, r, err)
 		return
 	}
 	type group struct {
@@ -64,21 +65,21 @@ func (a *App) sessions(w http.ResponseWriter, r *http.Request) {
 	rowErr := rows.Err()
 	rows.Close()
 	if err != nil || rowErr != nil {
-		http.Error(w, "Database error", 500)
+		databaseError(w, r, errors.Join(err, rowErr))
 		return
 	}
 	out := make([]SessionSummary, 0, len(groups))
 	for _, g := range groups {
 		preview, err := projectEvent(g.viewID, g.records)
 		if err != nil {
-			http.Error(w, "Database error", 500)
+			databaseError(w, r, err)
 			return
 		}
 		g.summary.Preview = &preview.Detail
 		out = append(out, g.summary)
 	}
 	if err = tx.Commit(); err != nil {
-		http.Error(w, "Database error", 500)
+		databaseError(w, r, err)
 		return
 	}
 	write(w, out)
@@ -103,7 +104,7 @@ func (a *App) session(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
 	tx, err := a.DB.BeginTx(r.Context(), &sql.TxOptions{ReadOnly: true})
 	if err != nil {
-		http.Error(w, "Database error", 500)
+		databaseError(w, r, err)
 		return
 	}
 	defer tx.Rollback()
@@ -116,25 +117,25 @@ func (a *App) session(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		http.Error(w, "Database error", 500)
+		databaseError(w, r, err)
 		return
 	}
 	var start, end sql.NullString
 	err = tx.QueryRowContext(r.Context(), timelineCTE+"SELECT COUNT(*),MIN(time),MAX(end) FROM timeline", projectionArgs(origin, id)...).Scan(&page.Count, &start, &end)
 	if err != nil {
-		http.Error(w, "Database error", 500)
+		databaseError(w, r, err)
 		return
 	}
 	page.Start = start.String
 	page.End = end.String
 	page.Events, err = readProjection(r.Context(), tx, id, origin, 201, offset(r), false)
 	if err != nil {
-		http.Error(w, "Database error", 500)
+		databaseError(w, r, err)
 		return
 	}
 	preview, err := readProjection(r.Context(), tx, id, origin, 1, 0, true)
 	if err != nil {
-		http.Error(w, "Database error", 500)
+		databaseError(w, r, err)
 		return
 	}
 	if len(preview) > 0 {
@@ -142,7 +143,7 @@ func (a *App) session(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := tx.QueryContext(r.Context(), "SELECT DISTINCT session FROM events WHERE parent=? ORDER BY session", id)
 	if err != nil {
-		http.Error(w, "Database error", 500)
+		databaseError(w, r, err)
 		return
 	}
 	for rows.Next() {
@@ -155,11 +156,11 @@ func (a *App) session(w http.ResponseWriter, r *http.Request) {
 	rowErr := rows.Err()
 	rows.Close()
 	if err != nil || rowErr != nil {
-		http.Error(w, "Database error", 500)
+		databaseError(w, r, errors.Join(err, rowErr))
 		return
 	}
 	if err = tx.Commit(); err != nil {
-		http.Error(w, "Database error", 500)
+		databaseError(w, r, err)
 		return
 	}
 	write(w, page)
@@ -172,7 +173,7 @@ func (a *App) export(w http.ResponseWriter, r *http.Request) {
 	}
 	out, err := a.readRecords(r.Context(), r.URL.Query().Get("session"), origin, -1, 0)
 	if err != nil {
-		http.Error(w, "Database error", 500)
+		databaseError(w, r, err)
 		return
 	}
 	w.Header().Set("Content-Disposition", `attachment; filename="session.json"`)

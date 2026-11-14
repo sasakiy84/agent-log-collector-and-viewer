@@ -70,7 +70,7 @@ with sync_playwright() as p:
  assert page.evaluate('() => document.documentElement.scrollWidth <= innerWidth')
  page.keyboard.press('Escape');assert page.evaluate('() => !document.querySelector("#eventlist").inert')
  page.locator('#autorefresh').uncheck();assert page.get_by_text('Paused',exact=True).is_visible()
- page.locator('#autorefresh').check();page.route('**/api/session?*',lambda r:r.fulfill(status=500,body='failure'));page.get_by_text('Unable to load. Retrying automatically.').wait_for(timeout=10000);page.unroute('**/api/session?*');page.wait_for_function("() => document.querySelector('#error').textContent===''",timeout=10000)
+ page.locator('#autorefresh').check();page.route('**/api/session?*',lambda r:r.fulfill(status=500,body='failure'));page.get_by_text('Unable to load (HTTP 500). Retrying automatically.').wait_for(timeout=10000);page.unroute('**/api/session?*');page.wait_for_function("() => document.querySelector('#error').textContent===''",timeout=10000)
  assert not errors,errors
  browser.close()
 print('PASS: standalone routes/reload, list filters/search, per-agent rendering, subagent navigation, inspector details/JSON, polling selection, keyboard/focus trap, filters, errors, export, pause, mobile; 8 screenshots.')
