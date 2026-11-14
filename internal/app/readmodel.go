@@ -201,6 +201,9 @@ func refreshCards(ctx context.Context, tx *sql.Tx) error {
 			if err = storeCard(ctx, tx, e, describe(e, doc)); err != nil {
 				return err
 			}
+			if err = storeSearch(ctx, tx, e, doc); err != nil {
+				return err
+			}
 		}
 	}
 }
@@ -267,6 +270,9 @@ func (a *App) initReadModel() error {
 				break
 			}
 			if err = storeCard(context.Background(), tx, record, describe(record, doc)); err != nil {
+				break
+			}
+			if err = storeSearch(context.Background(), tx, record, doc); err != nil {
 				break
 			}
 		}

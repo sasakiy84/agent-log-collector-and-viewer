@@ -415,7 +415,10 @@ func (a *App) diskBytes() int64 {
 }
 func (a *App) compactArchive(ctx context.Context, job ArchiveJob) error {
 	var mode int
-	err := a.DB.QueryRowContext(ctx, "PRAGMA auto_vacuum").Scan(&mode)
+	err := a.mergeSearchIndex(ctx)
+	if err == nil {
+		err = a.DB.QueryRowContext(ctx, "PRAGMA auto_vacuum").Scan(&mode)
+	}
 	var requested bool
 	if err == nil {
 		err = a.DB.QueryRowContext(ctx, "SELECT rebuild_requested FROM archives WHERE id=?", job.ID).Scan(&requested)
@@ -442,7 +445,7 @@ func (a *App) compactArchive(ctx context.Context, job ArchiveJob) error {
 		if err = a.DB.QueryRowContext(ctx, "PRAGMA freelist_count").Scan(&free); err != nil || free == 0 {
 			break
 		}
-		if _, err = a.DB.ExecContext(ctx, "PRAGMA incremental_vacuum(256)"); err != nil {
+		if err = a.vacuumBatch(ctx); err != nil {
 			break
 		}
 		_, err = a.DB.ExecContext(ctx, "PRAGMA wal_checkpoint(PASSIVE)")
@@ -486,4 +489,17 @@ func (r archiveReader) Read(p []byte) (int, error) {
 		return 0, err
 	}
 	return r.reader.Read(p)
+}
+
+// incremental_vacuum yields a row after every reclaimed page. Exec stops after
+// the first SQLITE_ROW in this driver; drain the result to finish the batch.
+func (a *App) vacuumBatch(ctx context.Context) error {
+	rows, err := a.DB.QueryContext(ctx, "PRAGMA incremental_vacuum(256)")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+	}
+	return rows.Err()
 }

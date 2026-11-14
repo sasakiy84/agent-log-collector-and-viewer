@@ -451,3 +451,26 @@ func TestArchiveRestartMissingVerification(t *testing.T) {
 		})
 	}
 }
+
+func TestVacuumBatchConsumesAllPageResults(t *testing.T) {
+	a := setup(t)
+	if _, err := a.DB.Exec(`CREATE TABLE vacuum_fixture(data BLOB);WITH RECURSIVE items(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM items WHERE n<1024) INSERT INTO vacuum_fixture SELECT zeroblob(4096) FROM items;DELETE FROM vacuum_fixture`); err != nil {
+		t.Fatal(err)
+	}
+	var before, after int
+	if err := a.DB.QueryRow("PRAGMA freelist_count").Scan(&before); err != nil {
+		t.Fatal(err)
+	}
+	if before < 512 {
+		t.Fatal("fixture too small", before)
+	}
+	if err := a.vacuumBatch(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.DB.QueryRow("PRAGMA freelist_count").Scan(&after); err != nil {
+		t.Fatal(err)
+	}
+	if before-after != 256 {
+		t.Fatalf("batch stopped early: before=%d after=%d", before, after)
+	}
+}

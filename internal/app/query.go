@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 )
 
 type SessionSummary struct {
@@ -30,9 +31,18 @@ func (a *App) sessions(w http.ResponseWriter, r *http.Request) {
 		query += " AND source=?"
 		args = append(args, source)
 	}
-	if search := r.URL.Query().Get("q"); search != "" {
-		query += ` AND (instr(lower(s.session||' '||CAST(s.preview AS TEXT)),lower(?))>0 OR EXISTS(SELECT 1 FROM events e WHERE e.session=s.session AND instr(lower(e.name||' '||CAST(e.raw AS TEXT)),lower(?))>0))`
-		args = append(args, search, search)
+	if search := strings.TrimSpace(r.URL.Query().Get("q")); search != "" {
+		match, err := searchMatch(r.Context(), search)
+		if err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		if match == "" {
+			query += " AND 0"
+		} else {
+			query += ` AND s.session IN (SELECT d.session FROM event_search CROSS JOIN search_documents d ON d.rowid=event_search.rowid WHERE event_search MATCH ? GROUP BY d.session)`
+			args = append(args, match)
+		}
 	}
 	query += " ORDER BY end DESC,session LIMIT 201 OFFSET ?"
 	args = append(args, offset(r))

@@ -42,7 +42,13 @@ func Open(path, token string) (*App, error) {
 	a := &App{DB: db, token: token}
 	// The archive schema supplies the small deletion-lock table used by the views.
 	if _, err = db.Exec(archiveSchema); err == nil {
-		err = a.initReadModel()
+		err = a.initSearchSchema()
+		if err == nil {
+			err = a.initReadModel()
+		}
+		if err == nil {
+			err = a.initSearchIndex()
+		}
 	}
 	if err != nil {
 		db.Close()
@@ -93,7 +99,7 @@ func (a *App) Save(events []Event) error {
 		if detail.Attributes["agentlog.origin"] == "import" {
 			e.Origin = "import"
 		}
-		result, err := tx.Exec("INSERT INTO events(id,session,parent,source,signal,time,name,trace,span,parent_span,raw,sequence,origin,kind,tool_name) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET session=excluded.session,parent=excluded.parent,source=excluded.source,signal=excluded.signal,kind=excluded.kind,tool_name=excluded.tool_name,time=excluded.time,name=excluded.name,trace=excluded.trace,span=excluded.span,parent_span=excluded.parent_span,raw=excluded.raw,sequence=excluded.sequence,origin=excluded.origin,kind=excluded.kind,tool_name=excluded.tool_name WHERE events.id LIKE 'import:%' AND events.raw IS NOT excluded.raw", e.ID, e.Session, e.Parent, e.Source, e.Signal, e.Time, e.Name, e.Trace, e.Span, e.ParentSpan, []byte(e.Raw), e.Sequence, e.Origin, detail.Kind, str(firstValue(detail.Attributes, "gen_ai.tool.name", "tool_name", "tool_name_safe")))
+		result, err := tx.Exec("INSERT INTO events(id,session,parent,source,signal,time,name,trace,span,parent_span,raw,sequence,origin,kind,tool_name) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET session=excluded.session,parent=excluded.parent,source=excluded.source,signal=excluded.signal,kind=excluded.kind,tool_name=excluded.tool_name,time=excluded.time,name=excluded.name,trace=excluded.trace,span=excluded.span,parent_span=excluded.parent_span,raw=excluded.raw,sequence=excluded.sequence,origin=excluded.origin WHERE events.id LIKE 'import:%' AND events.raw IS NOT excluded.raw", e.ID, e.Session, e.Parent, e.Source, e.Signal, e.Time, e.Name, e.Trace, e.Span, e.ParentSpan, []byte(e.Raw), e.Sequence, e.Origin, detail.Kind, str(firstValue(detail.Attributes, "gen_ai.tool.name", "tool_name", "tool_name_safe")))
 		if err != nil {
 			return err
 		}
@@ -110,6 +116,9 @@ func (a *App) Save(events []Event) error {
 		if err = storeCard(context.Background(), tx, e, detail); err != nil {
 			return err
 		}
+		if err = storeSearch(context.Background(), tx, e, doc); err != nil {
+			return err
+		}
 		for _, key := range correlationKeys(e, detail, doc) {
 			if _, err = tx.Exec("INSERT INTO event_keys(event_id,namespace,key) VALUES(?,?,?)", e.ID, key.Namespace, key.Key); err != nil {
 				return err
@@ -123,6 +132,9 @@ func (a *App) Save(events []Event) error {
 		return err
 	}
 	if err = refreshCards(context.Background(), tx); err != nil {
+		return err
+	}
+	if err = refreshSearch(context.Background(), tx); err != nil {
 		return err
 	}
 	if err = refreshTimelines(context.Background(), tx); err != nil {
