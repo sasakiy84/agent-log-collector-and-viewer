@@ -9,3 +9,7 @@ agentlog
 dist
 attachments
 __pycache__
+agentlog.json
+/sessions/
+/data/
+/config.json

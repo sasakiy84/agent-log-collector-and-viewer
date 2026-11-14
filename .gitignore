@@ -7,3 +7,8 @@ __pycache__/
 .env
 .env.*
 !.env.example
+/agentlog.json
+/compose.override.yaml
+/config.json
+/sessions/
+/data/

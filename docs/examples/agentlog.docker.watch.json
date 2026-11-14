@@ -1,0 +1,7 @@
+{
+  "watch": [
+    { "dir": "/sessions/codex", "source": "codex" },
+    { "dir": "/sessions/claude", "source": "claude" },
+    { "dir": "/sessions/copilot", "source": "copilot" }
+  ]
+}

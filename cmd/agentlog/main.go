@@ -4,10 +4,12 @@ import (
 	"context"
 	"flag"
 	"github.com/sasakiy84/agent-log-collector-and-viewer/internal/app"
+	"github.com/sasakiy84/agent-log-collector-and-viewer/internal/importer"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -21,30 +23,64 @@ func main() {
 		}
 		return
 	}
+	if e := serverMain(); e != nil {
+		log.Fatal(e)
+	}
+}
+
+func serverMain() error {
 	addr := flag.String("listen", "127.0.0.1:4318", "HTTP listen address")
 	db := flag.String("db", "agentlog.db", "SQLite path")
+	configFile := flag.String("config", "", "JSON configuration file")
 	v := flag.Bool("version", false, "Print version")
 	flag.Parse()
 	if *v {
 		log.Print(version)
-		return
+		return nil
+	}
+	watch, interval, e := loadWatchConfig(*configFile)
+	if e != nil {
+		return e
 	}
 	a, e := app.Open(*db, os.Getenv("AGENTLOG_TOKEN"))
 	if e != nil {
-		log.Fatal(e)
+		return e
 	}
 	defer a.DB.Close()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	srv := &http.Server{Addr: *addr, Handler: a.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
+	var workers sync.WaitGroup
+	if len(watch) > 0 {
+		for i := range watch {
+			watch[i].Sink = a.IngestLogs
+		}
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			if err := importer.Watch(ctx, watch, interval, os.Stderr); err != nil {
+				log.Printf("watch: %v", err)
+				stop()
+			}
+		}()
+	}
+	workers.Add(1)
 	go func() {
+		defer workers.Done()
 		<-ctx.Done()
 		c, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		srv.Shutdown(c)
+		if err := srv.Shutdown(c); err != nil {
+			log.Printf("shutdown: %v", err)
+			srv.Close()
+		}
 	}()
 	log.Printf("agentlog %s listening on %s", version, *addr)
-	if e = srv.ListenAndServe(); e != nil && e != http.ErrServerClosed {
-		log.Fatal(e)
+	e = srv.ListenAndServe()
+	stop()
+	workers.Wait()
+	if e == http.ErrServerClosed {
+		return nil
 	}
+	return e
 }

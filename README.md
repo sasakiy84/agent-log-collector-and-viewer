@@ -8,11 +8,13 @@ A personal OpenTelemetry collector and session viewer for Codex CLI, Claude Code
 
 ## Features
 
-- Collect logs, traces and metrics over OTLP/HTTP (JSON or Protobuf), or import saved CLI sessions.
+- Collect logs, traces and metrics over OTLP/HTTP (JSON or Protobuf), or import and watch saved CLI sessions.
 - Read session timelines, tool calls, outputs and errors; inspect attributes/JSON and export sessions.
 - One Go binary with an embedded UI, SQLite storage and token authentication. No automatic log expiry.
 
 ## Setup
+
+[QuickStart: Docker Compose + folder watching + host Nginx](docs/quickstart.md) (Ubuntu/Debian).
 
 ### 1. Start with Docker Compose
 
@@ -37,15 +39,7 @@ Without Docker, download a binary from [Releases](https://github.com/sasakiy84/a
 
 ### 2. Set up HTTPS for remote access
 
-Keep port 4318 on loopback and put an HTTPS reverse proxy in front. Example Caddy configuration on the same host:
-
-```caddyfile
-agents.example.com {
-    reverse_proxy 127.0.0.1:4318
-}
-```
-
-Use your own domain. Copilot requires HTTPS for OTLP export.
+Keep port 4318 on loopback and put an HTTPS reverse proxy in front. [Nginx configuration](docs/quickstart.md#2-ホスト側のnginx). Copilot requires HTTPS for OTLP export.
 
 ### 3. Configure your CLI
 
@@ -57,10 +51,19 @@ Use your own domain. Copilot requires HTTPS for OTLP export.
 
 Examples include conversation and tool content. [Paths and complete settings](docs/senders.md). Copilot managed settings require administrator access.
 
-### 4. Import existing sessions
+### 4. Import or watch session folders
+
+Local collection and viewer, without CLI telemetry configuration or HTTPS:
 
 ```sh
-AGENTLOG_TOKEN=YOUR_TOKEN ./agentlog import --dir /path/to/sessions --endpoint https://agents.example.com --project shop --tag backend
+cp docs/examples/agentlog.watch.json agentlog.json
+AGENTLOG_TOKEN=YOUR_TOKEN ./agentlog --config agentlog.json
 ```
 
-[Import arguments](docs/import.md) · [Projects and tags for live OTEL](docs/projects.md)
+Send local files to an existing collector (including Docker):
+
+```sh
+AGENTLOG_TOKEN=YOUR_TOKEN ./agentlog import --watch --all --endpoint http://127.0.0.1:4318
+```
+
+Omit `--watch` for a one-time import. [Folders, project tags and settings](docs/import.md) · [Projects and tags for live OTEL](docs/projects.md)

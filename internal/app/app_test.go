@@ -16,7 +16,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 const token = "test-token-at-least-16"
@@ -184,13 +183,6 @@ func TestPersistencePagination(t *testing.T) {
 	v, e = a.readEvents("s", 200, 200)
 	if e != nil || len(v) != 5 || v[0].Time != "0200" {
 		t.Fatal(e, v)
-	}
-	if _, e = a.DB.Exec("UPDATE events SET received=?", time.Now().Add(-365*24*time.Hour).Unix()); e != nil {
-		t.Fatal(e)
-	}
-	// A database from an older version may still have the expiry index.
-	if _, e = a.DB.Exec("CREATE INDEX events_received ON events(received)"); e != nil {
-		t.Fatal(e)
 	}
 	a.DB.Close()
 	a, e = Open(p, token)

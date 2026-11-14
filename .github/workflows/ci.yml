@@ -19,6 +19,7 @@ jobs:
       - run: go vet ./...
       - run: node scripts/parse_test.cjs
       - run: go build ./cmd/agentlog
+      - run: python3 scripts/watch_test.py
       - run: scripts/release.sh ci
   docker:
     runs-on: ubuntu-latest

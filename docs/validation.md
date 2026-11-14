@@ -1,3 +1,10 @@
+# Folder watching (unreleased)
+
+- `agentlog --config` watches folders into local SQLite; `agentlog import --watch` sends the same converted OTLP records to an existing collector. No additional dependencies. Polling defaults to one second.
+- Watch tests cover initial backfill, append, unfinished JSON, new nested/missing folders, file replacement/truncation, retry without another change, Copilot archive dependencies/rotation, unchanged-file suppression, project/tag labels and cancellation. Codex messages retain one identity when their canonical projection arrives later.
+- The current database schema directly includes import ordering. Removed obsolete receipt timestamps and compatibility migrations; old database layouts are not supported.
+- Go race tests, vet, build and parser checks pass. `scripts/watch_test.py` verifies real local/HTTP watcher processes, offline retry, configuration paths, restart deduplication and graceful shutdown. The import/browser suite and Docker Compose startup, authentication and persistence checks also pass. Historical release validations follow below.
+
 # v0.3.0 validation
 
 - Added a local `agentlog import` command with repeatable folder/file selection, default-root scanning, working-directory filtering, project/tag labels and dry-run parsing. Supported transcript records are converted into OTLP logs and sent through authenticated HTTP ingestion.

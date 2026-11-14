@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 )
 
 type listFlag []string
@@ -25,6 +26,8 @@ func importMain(args []string) error {
 	cwd := fs.String("cwd", "", "Only sessions from this working directory (including descendants)")
 	project := fs.String("project", "", "Project namespace; defaults to session working-directory name")
 	endpoint := fs.String("endpoint", "http://127.0.0.1:4318", "Collector base URL or /v1/logs URL")
+	watch := fs.Bool("watch", false, "Import existing sessions and watch for changes")
+	interval := fs.Duration("interval", time.Second, "Watch polling interval")
 	dry := fs.Bool("dry-run", false, "Parse and report without sending")
 	if e := fs.Parse(args); e != nil {
 		if e == flag.ErrHelp {
@@ -37,7 +40,11 @@ func importMain(args []string) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	stats, e := importer.Run(ctx, importer.Options{Dirs: dirs, Files: files, Tags: tags, All: *all, Source: *source, Project: *project, WorkingDir: *cwd, Endpoint: *endpoint, Token: os.Getenv("AGENTLOG_TOKEN"), DryRun: *dry}, os.Stderr)
+	o := importer.Options{Dirs: dirs, Files: files, Tags: tags, All: *all, Source: *source, Project: *project, WorkingDir: *cwd, Endpoint: *endpoint, Token: os.Getenv("AGENTLOG_TOKEN"), DryRun: *dry}
+	if *watch {
+		return importer.Watch(ctx, []importer.Options{o}, *interval, os.Stderr)
+	}
+	stats, e := importer.Run(ctx, o, os.Stderr)
 	fmt.Fprintf(os.Stderr, "Files: %d; records: %d; skipped: %d; failed: %d\n", stats.Files, stats.Records, stats.Skipped, stats.Failed)
 	return e
 }

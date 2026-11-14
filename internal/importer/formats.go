@@ -2,6 +2,7 @@ package importer
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -32,13 +33,12 @@ func (p *state) codex(v map[string]any, line int) error {
 			p.cwd = s(d["cwd"])
 		}
 	case "response_item":
-		id := first(d["id"], d["call_id"], fmt.Sprint(line))
 		typ := s(d["type"])
 		switch typ {
 		case "message":
 			role := s(d["role"])
 			if role == "user" || role == "assistant" {
-				return p.message(role, content(d["content"]), id)
+				return p.codexMessage(role, content(d["content"]), false)
 			}
 		case "function_call", "custom_tool_call":
 			return p.tool(s(d["call_id"]), s(d["name"]), first(d["arguments"], d["input"]), nil, false, false)
@@ -51,14 +51,10 @@ func (p *state) codex(v map[string]any, line int) error {
 		switch s(d["type"]) {
 		case "user_message", "agent_message":
 			role := "user"
-			canonical := p.canonicalUser
 			if s(d["type"]) == "agent_message" {
 				role = "assistant"
-				canonical = p.canonicalAssistant
 			}
-			if !canonical {
-				return p.message(role, first(d["message"], d["text"]), fmt.Sprint(line))
-			}
+			return p.codexMessage(role, first(d["message"], d["text"]), true)
 		case "token_count":
 			u := m(m(d["info"])["last_token_usage"])
 			if len(u) > 0 {
@@ -72,6 +68,23 @@ func (p *state) codex(v map[string]any, line int) error {
 	}
 	return nil
 }
+
+// Content and occurrence identify both Codex message projections, including when
+// a canonical response_item arrives after its event_msg was already imported.
+func (p *state) codexMessage(role, text string, fallback bool) error {
+	key := role + "\x00" + text
+	counts := p.messageCounts
+	if fallback {
+		counts = p.fallbackCounts
+	}
+	counts[key]++
+	n := counts[key]
+	if fallback && n <= p.canonicalMessages[key] {
+		return nil
+	}
+	return p.message(role, text, fmt.Sprintf("message:%x:%d", sha256.Sum256([]byte(key)), n))
+}
+
 func (p *state) claude(v map[string]any, line int) error {
 	if id := s(v["sessionId"]); id != "" {
 		p.session = id

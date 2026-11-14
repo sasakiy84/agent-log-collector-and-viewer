@@ -26,9 +26,10 @@ type Options struct {
 	All, DryRun                                  bool
 	Source, Endpoint, Token, Project, WorkingDir string
 	Client                                       *http.Client
+	// Sink stores converted OTLP batches locally instead of sending HTTP.
+	Sink func([]any) error
 }
 type Stats struct{ Files, Records, Skipped, Failed int }
-type Sender func(map[string]any) error
 
 func m(v any) map[string]any { x, _ := v.(map[string]any); return x }
 func a(v any) []any          { x, _ := v.([]any); return x }
@@ -120,64 +121,17 @@ func roots() []string {
 }
 func Run(ctx context.Context, o Options, progress io.Writer) (Stats, error) {
 	var stats Stats
+	if e := validate(o); e != nil {
+		return stats, e
+	}
 	if o.Source == "" {
 		o.Source = "auto"
 	}
-	if o.Source != "auto" && o.Source != "codex" && o.Source != "claude" && o.Source != "copilot" {
-		return stats, errors.New("source must be auto, codex, claude or copilot")
-	}
-	if len(o.Dirs)+len(o.Files) == 0 && !o.All {
-		return stats, errors.New("specify --dir, --file or --all")
-	}
-	dest, e := endpoint(o.Endpoint)
-	if e != nil && !o.DryRun {
+	dest, _ := endpoint(o.Endpoint)
+	files, e := sessionFiles(ctx, o, false)
+	if e != nil {
 		return stats, e
 	}
-	if !o.DryRun && len(o.Token) < 16 {
-		return stats, errors.New("AGENTLOG_TOKEN must contain at least 16 characters")
-	}
-	paths := map[string]bool{}
-	for _, f := range o.Files {
-		abs, e := filepath.Abs(f)
-		if e != nil {
-			return stats, e
-		}
-		paths[abs] = true
-	}
-	dirs := append([]string{}, o.Dirs...)
-	if o.All {
-		for _, d := range roots() {
-			if info, e := os.Stat(d); e == nil && info.IsDir() {
-				dirs = append(dirs, d)
-			}
-		}
-	}
-	for _, dir := range dirs {
-		e := filepath.WalkDir(dir, func(p string, d os.DirEntry, e error) error {
-			if e != nil {
-				return e
-			}
-			if d.Type()&os.ModeSymlink != 0 {
-				return nil
-			}
-			if !d.IsDir() && strings.HasSuffix(d.Name(), ".jsonl") {
-				abs, e := filepath.Abs(p)
-				if e != nil {
-					return e
-				}
-				paths[abs] = true
-			}
-			return nil
-		})
-		if e != nil {
-			return stats, fmt.Errorf("scan %s: %w", dir, e)
-		}
-	}
-	files := []string{}
-	for f := range paths {
-		files = append(files, f)
-	}
-	sort.Strings(files)
 	if len(files) == 0 {
 		return stats, errors.New("no JSONL session files found")
 	}
@@ -188,6 +142,9 @@ func Run(ctx context.Context, o Options, progress io.Writer) (Stats, error) {
 	send := func(records []any) error {
 		if len(records) == 0 || o.DryRun {
 			return nil
+		}
+		if o.Sink != nil {
+			return o.Sink(records)
 		}
 		body, _ := json.Marshal(map[string]any{"resourceLogs": records})
 		req, e := http.NewRequestWithContext(ctx, "POST", dest, bytes.NewReader(body))
@@ -225,8 +182,7 @@ func Run(ctx context.Context, o Options, progress io.Writer) (Stats, error) {
 			return stats, e
 		}
 		// Rotated Copilot segments are linked from events.jsonl, not independent sessions.
-		base := filepath.Base(file)
-		if strings.HasPrefix(base, "events.") && base != "events.jsonl" {
+		if journalSegment(file) {
 			continue
 		}
 		stats.Files++
@@ -280,12 +236,12 @@ type state struct {
 	emit                                                    func(map[string]any, map[string]any) error
 	tools                                                   map[string]string
 	inferredTime                                            bool
-	canonicalUser, canonicalAssistant                       bool
+	canonicalMessages, messageCounts, fallbackCounts        map[string]int
 	visiting                                                map[string]bool
 }
 
 func newState(o Options, file string, emit func(map[string]any, map[string]any) error) *state {
-	return &state{options: o, source: o.Source, file: file, emit: emit, tools: map[string]string{}, visiting: map[string]bool{}}
+	return &state{options: o, source: o.Source, file: file, emit: emit, tools: map[string]string{}, visiting: map[string]bool{}, canonicalMessages: map[string]int{}, messageCounts: map[string]int{}, fallbackCounts: map[string]int{}}
 }
 func (p *state) output(event string, fields map[string]any, id string) error {
 	if filter := p.options.WorkingDir; filter != "" {
@@ -423,13 +379,9 @@ func (p *state) parse(ctx context.Context, file string) error {
 		}
 		var row map[string]any
 		if decodeObject(b, &row) == nil && s(row["type"]) == "response_item" && s(m(row["payload"])["type"]) == "message" {
-			role := s(m(row["payload"])["role"])
-			if role == "user" {
-				p.canonicalUser = true
-			}
-			if role == "assistant" {
-				p.canonicalAssistant = true
-			}
+			d := m(row["payload"])
+			role := s(d["role"])
+			p.canonicalMessages[role+"\x00"+content(d["content"])]++
 		}
 		if e == io.EOF {
 			break

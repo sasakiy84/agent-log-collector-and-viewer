@@ -1,0 +1,8 @@
+{
+  "watch": [
+    { "dir": "~/.codex/sessions" },
+    { "dir": "~/.codex/archived_sessions" },
+    { "dir": "~/.claude/projects" },
+    { "dir": "~/.copilot/session-state" }
+  ]
+}

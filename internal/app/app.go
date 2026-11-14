@@ -59,45 +59,12 @@ func Open(path, token string) (*App, error) {
 	}
 	db.SetMaxOpenConns(1)
 	_, err = db.Exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
- CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY, session TEXT NOT NULL, parent TEXT NOT NULL, source TEXT NOT NULL, signal TEXT NOT NULL, time TEXT NOT NULL, name TEXT NOT NULL, trace TEXT NOT NULL, span TEXT NOT NULL, parent_span TEXT NOT NULL, raw BLOB NOT NULL, received INTEGER NOT NULL);
+ CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY, session TEXT NOT NULL, parent TEXT NOT NULL, source TEXT NOT NULL, signal TEXT NOT NULL, time TEXT NOT NULL, name TEXT NOT NULL, trace TEXT NOT NULL, span TEXT NOT NULL, parent_span TEXT NOT NULL, raw BLOB NOT NULL, sequence INTEGER NOT NULL DEFAULT 0);
  CREATE INDEX IF NOT EXISTS events_session ON events(session,time);
- CREATE INDEX IF NOT EXISTS events_trace ON events(source,trace,span);
- DROP INDEX IF EXISTS events_received;`)
+ CREATE INDEX IF NOT EXISTS events_trace ON events(source,trace,span);`)
 	if err != nil {
 		db.Close()
 		return nil, err
-	}
-	// Preserve databases created before import ordering was introduced.
-	rows, err := db.Query("PRAGMA table_info(events)")
-	if err != nil {
-		db.Close()
-		return nil, err
-	}
-	hasSequence := false
-	for rows.Next() {
-		var cid, notnull, pk int
-		var name, typ string
-		var def any
-		if err = rows.Scan(&cid, &name, &typ, &notnull, &def, &pk); err != nil {
-			rows.Close()
-			db.Close()
-			return nil, err
-		}
-		if name == "sequence" {
-			hasSequence = true
-		}
-	}
-	if err = rows.Err(); err != nil {
-		rows.Close()
-		db.Close()
-		return nil, err
-	}
-	rows.Close()
-	if !hasSequence {
-		if _, err = db.Exec("ALTER TABLE events ADD COLUMN sequence INTEGER NOT NULL DEFAULT 0"); err != nil {
-			db.Close()
-			return nil, err
-		}
 	}
 	a := &App{DB: db, token: token}
 	return a, nil
@@ -113,7 +80,7 @@ func (a *App) Save(events []Event) error {
 			sum := sha256.Sum256(append([]byte(e.Source+e.Signal), e.Raw...))
 			e.ID = hex.EncodeToString(sum[:])
 		}
-		_, err = tx.Exec("INSERT OR IGNORE INTO events(id,session,parent,source,signal,time,name,trace,span,parent_span,raw,received,sequence) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET session=excluded.session,parent=excluded.parent,time=excluded.time,name=excluded.name,trace=excluded.trace,span=excluded.span,parent_span=excluded.parent_span,raw=excluded.raw,sequence=excluded.sequence WHERE events.id LIKE 'import:%'", e.ID, e.Session, e.Parent, e.Source, e.Signal, e.Time, e.Name, e.Trace, e.Span, e.ParentSpan, []byte(e.Raw), time.Now().Unix(), e.Sequence)
+		_, err = tx.Exec("INSERT INTO events(id,session,parent,source,signal,time,name,trace,span,parent_span,raw,sequence) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET session=excluded.session,parent=excluded.parent,time=excluded.time,name=excluded.name,trace=excluded.trace,span=excluded.span,parent_span=excluded.parent_span,raw=excluded.raw,sequence=excluded.sequence WHERE events.id LIKE 'import:%' AND events.raw IS NOT excluded.raw", e.ID, e.Session, e.Parent, e.Source, e.Signal, e.Time, e.Name, e.Trace, e.Span, e.ParentSpan, []byte(e.Raw), e.Sequence)
 		if err != nil {
 			return err
 		}
@@ -310,4 +277,13 @@ func (a *App) session(w http.ResponseWriter, r *http.Request) {
 		children = append(children, child)
 	}
 	write(w, map[string]any{"id": id, "source": source, "parent": parent, "start": start, "end": end, "count": count, "children": children, "preview": preview})
+}
+
+// IngestLogs uses the same normalization and storage as the OTLP receiver.
+func (a *App) IngestLogs(resources []any) error {
+	events, err := normalize(map[string]any{"resourceLogs": resources}, "logs")
+	if err != nil {
+		return err
+	}
+	return a.Save(events)
 }

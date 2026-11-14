@@ -1,0 +1,8 @@
+services:
+  agentlog:
+    user: "${AGENTLOG_UID:?Set AGENTLOG_UID in .env}:${AGENTLOG_GID:?Set AGENTLOG_GID in .env}"
+    command: ["--listen", "0.0.0.0:4318", "--db", "/data/agentlog.db", "--config", "/config.json"]
+    volumes:
+      - ./config.json:/config.json:ro
+      - ./sessions:/sessions:ro
+      - ./data:/data
