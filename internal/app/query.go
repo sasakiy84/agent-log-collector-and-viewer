@@ -2,6 +2,7 @@ package app
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -23,63 +24,41 @@ type SessionPage struct {
 }
 
 func (a *App) sessions(w http.ResponseWriter, r *http.Request) {
-	tx, err := a.DB.BeginTx(r.Context(), &sql.TxOptions{ReadOnly: true})
+	query := `SELECT session,source,parent,count,start,end,preview FROM session_catalog s WHERE NOT EXISTS(SELECT 1 FROM archive_locks l WHERE l.session=s.session)`
+	args := []any{}
+	if source := r.URL.Query().Get("source"); source != "" {
+		query += " AND source=?"
+		args = append(args, source)
+	}
+	if search := r.URL.Query().Get("q"); search != "" {
+		query += ` AND (instr(lower(s.session||' '||CAST(s.preview AS TEXT)),lower(?))>0 OR EXISTS(SELECT 1 FROM events e WHERE e.session=s.session AND instr(lower(e.name||' '||CAST(e.raw AS TEXT)),lower(?))>0))`
+		args = append(args, search, search)
+	}
+	query += " ORDER BY end DESC,session LIMIT 201 OFFSET ?"
+	args = append(args, offset(r))
+	rows, err := a.readers.QueryContext(r.Context(), query, args...)
 	if err != nil {
 		databaseError(w, r, err)
 		return
 	}
-	defer tx.Rollback()
-	args := append(projectionArgs("", ""), r.URL.Query().Get("source"), r.URL.Query().Get("source"), r.URL.Query().Get("q"), r.URL.Query().Get("q"), offset(r))
-	rows, err := tx.QueryContext(r.Context(), timelineCTE+`, summaries AS (
- SELECT session,MAX(source) AS source,MAX(parent) AS parent,COUNT(*) AS count,MIN(time) AS start,MAX(end) AS end
- FROM timeline t WHERE (?='' OR source=?) AND (?='' OR session IN
- (SELECT m.session FROM members m JOIN events e ON e.id=m.id WHERE instr(lower(m.session||' '||e.name||' '||CAST(e.raw AS TEXT)),lower(?))>0))
- GROUP BY session ORDER BY MAX(end) DESC,session LIMIT 201 OFFSET ?
- ), previews AS (
- SELECT s.*,(SELECT id FROM timeline t WHERE t.session=s.session ORDER BY is_user DESC,time,sequence,id LIMIT 1) AS preview_id FROM summaries s
- ) SELECT p.session,p.source,p.parent,p.count,p.start,p.end,p.preview_id,`+qualifiedColumns("r")+`
- FROM previews p JOIN members m ON m.view_id=p.preview_id JOIN events r ON r.id=m.id ORDER BY p.end DESC,p.session,m.origin,m.id`, args...)
-	if err != nil {
-		databaseError(w, r, err)
-		return
-	}
-	type group struct {
-		summary SessionSummary
-		viewID  string
-		records []Event
-	}
-	groups := []group{}
+	out := []SessionSummary{}
 	for rows.Next() {
-		var s SessionSummary
-		var id string
-		var e Event
-		columns := []any{&s.ID, &s.Source, &s.Parent, &s.Count, &s.Start, &s.End, &id}
-		if err = rows.Scan(append(columns, e.scanArgs()...)...); err != nil {
+		var summary SessionSummary
+		var encoded []byte
+		if err = rows.Scan(&summary.ID, &summary.Source, &summary.Parent, &summary.Count, &summary.Start, &summary.End, &encoded); err != nil {
 			break
 		}
-		if len(groups) == 0 || groups[len(groups)-1].summary.ID != s.ID {
-			groups = append(groups, group{summary: s, viewID: id})
+		var detail Detail
+		if err = json.Unmarshal(encoded, &detail); err != nil {
+			break
 		}
-		groups[len(groups)-1].records = append(groups[len(groups)-1].records, e)
+		summary.Preview = &detail
+		out = append(out, summary)
 	}
 	rowErr := rows.Err()
 	rows.Close()
 	if err != nil || rowErr != nil {
 		databaseError(w, r, errors.Join(err, rowErr))
-		return
-	}
-	out := make([]SessionSummary, 0, len(groups))
-	for _, g := range groups {
-		preview, err := projectEvent(g.viewID, g.records)
-		if err != nil {
-			databaseError(w, r, err)
-			return
-		}
-		g.summary.Preview = &preview.Detail
-		out = append(out, g.summary)
-	}
-	if err = tx.Commit(); err != nil {
-		databaseError(w, r, err)
 		return
 	}
 	write(w, out)
@@ -102,46 +81,59 @@ func (a *App) session(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.URL.Query().Get("id")
-	tx, err := a.DB.BeginTx(r.Context(), &sql.TxOptions{ReadOnly: true})
+	tx, err := a.readers.BeginTx(r.Context(), &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		databaseError(w, r, err)
 		return
 	}
 	defer tx.Rollback()
-	var page SessionPage
-	page.ID = id
-	page.Children = []string{}
-	err = tx.QueryRowContext(r.Context(), "SELECT MAX(source),MAX(parent) FROM events WHERE session=? HAVING COUNT(*)>0", id).Scan(&page.Source, &page.Parent)
-	if err == sql.ErrNoRows {
-		http.Error(w, "Session not found", 404)
+	var locked bool
+	if err = tx.QueryRowContext(r.Context(), "SELECT EXISTS(SELECT 1 FROM archive_locks WHERE session=?)", id).Scan(&locked); err != nil {
+		databaseError(w, r, err)
+		return
+	}
+	if locked {
+		http.Error(w, "Session is being archived", 409)
+		return
+	}
+	columns := "count,start,end"
+	if origin != "" {
+		columns = origin + "_count," + origin + "_start," + origin + "_end"
+	}
+	page := SessionPage{SessionSummary: SessionSummary{ID: id}, Children: []string{}}
+	var preview []byte
+	err = tx.QueryRowContext(r.Context(), "SELECT source,parent,"+columns+",preview FROM session_catalog WHERE session=?", id).Scan(&page.Source, &page.Parent, &page.Count, &page.Start, &page.End, &preview)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.NotFound(w, r)
 		return
 	}
 	if err != nil {
 		databaseError(w, r, err)
 		return
 	}
-	var start, end sql.NullString
-	err = tx.QueryRowContext(r.Context(), timelineCTE+"SELECT COUNT(*),MIN(time),MAX(end) FROM timeline", projectionArgs(origin, id)...).Scan(&page.Count, &start, &end)
+	page.Events, err = readTimeline(r.Context(), tx, id, origin, 201, offset(r), false)
 	if err != nil {
 		databaseError(w, r, err)
 		return
 	}
-	page.Start = start.String
-	page.End = end.String
-	page.Events, err = readProjection(r.Context(), tx, id, origin, 201, offset(r), false)
+	if origin == "" {
+		var detail Detail
+		if err = json.Unmarshal(preview, &detail); err == nil {
+			page.Preview = &detail
+		}
+	} else {
+		var rows []TimelineEvent
+		rows, err = readTimeline(r.Context(), tx, id, origin, 1, 0, true)
+		if len(rows) > 0 {
+			detail := summaryDetail(rows[0].Detail)
+			page.Preview = &detail
+		}
+	}
 	if err != nil {
 		databaseError(w, r, err)
 		return
 	}
-	preview, err := readProjection(r.Context(), tx, id, origin, 1, 0, true)
-	if err != nil {
-		databaseError(w, r, err)
-		return
-	}
-	if len(preview) > 0 {
-		page.Preview = &preview[0].Detail
-	}
-	rows, err := tx.QueryContext(r.Context(), "SELECT DISTINCT session FROM events WHERE parent=? ORDER BY session", id)
+	rows, err := tx.QueryContext(r.Context(), "SELECT session FROM session_catalog WHERE parent=? ORDER BY session", id)
 	if err != nil {
 		databaseError(w, r, err)
 		return
@@ -164,6 +156,81 @@ func (a *App) session(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	write(w, page)
+}
+
+// Full attributes and original JSON are fetched only for the inspected card.
+func (a *App) event(w http.ResponseWriter, r *http.Request) {
+	origin, ok := eventOrigin(r)
+	if !ok {
+		http.Error(w, "Invalid event origin", 400)
+		return
+	}
+	session, id := r.URL.Query().Get("session"), r.URL.Query().Get("id")
+	tx, err := a.readers.BeginTx(r.Context(), &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		databaseError(w, r, err)
+		return
+	}
+	defer tx.Rollback()
+	// A native card may gain an imported counterpart after the page was loaded.
+	// Resolve its old raw ID to the current group without requiring a refresh.
+	if origin == "" {
+		var current string
+		err = tx.QueryRowContext(r.Context(), `SELECT id FROM timeline_entries WHERE id=? AND session=?
+   UNION ALL SELECT id FROM timeline_entries WHERE otel_id=? AND import_id<>'' AND otel_id<>'' AND session=? LIMIT 1`, id, session, id, session).Scan(&current)
+		if errors.Is(err, sql.ErrNoRows) {
+			http.NotFound(w, r)
+			return
+		}
+		if err != nil {
+			databaseError(w, r, err)
+			return
+		}
+		id = current
+	}
+	query := "SELECT " + qualifiedColumns("e") + " FROM events e WHERE e.session=? AND "
+	args := []any{session}
+	if origin != "" {
+		query += "e.id=? AND e.origin=?"
+		args = append(args, id, origin)
+	} else {
+		query += `e.id IN (SELECT import_id FROM timeline_entries WHERE session=? AND id=? UNION ALL SELECT otel_id FROM timeline_entries WHERE session=? AND id=?)`
+		args = append(args, session, id, session, id)
+	}
+	rows, err := tx.QueryContext(r.Context(), query, args...)
+	if err != nil {
+		databaseError(w, r, err)
+		return
+	}
+	records := []Event{}
+	for rows.Next() {
+		e, eErr := scanEvent(rows)
+		if eErr != nil {
+			err = eErr
+			break
+		}
+		records = append(records, e)
+	}
+	rowErr := rows.Err()
+	rows.Close()
+	if err != nil || rowErr != nil {
+		databaseError(w, r, errors.Join(err, rowErr))
+		return
+	}
+	if len(records) == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	event, err := projectEvent(id, records)
+	if err != nil {
+		databaseError(w, r, err)
+		return
+	}
+	if err = tx.Commit(); err != nil {
+		databaseError(w, r, err)
+		return
+	}
+	write(w, event)
 }
 func (a *App) export(w http.ResponseWriter, r *http.Request) {
 	origin, ok := eventOrigin(r)

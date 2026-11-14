@@ -15,5 +15,5 @@ type Event struct {
 	Trace      string          `json:"trace,omitempty"`
 	Span       string          `json:"span,omitempty"`
 	ParentSpan string          `json:"parent_span,omitempty"`
-	Raw        json.RawMessage `json:"raw"`
+	Raw        json.RawMessage `json:"raw,omitempty"`
 }

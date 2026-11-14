@@ -78,7 +78,7 @@ func scanArchive(row scanner) (ArchiveJob, error) {
 	return j, err
 }
 func (a *App) archiveJob(ctx context.Context, id string) (ArchiveJob, error) {
-	return scanArchive(a.DB.QueryRowContext(ctx, "SELECT "+archiveColumns+" FROM archives WHERE id=?", id))
+	return scanArchive(a.readers.QueryRowContext(ctx, "SELECT "+archiveColumns+" FROM archives WHERE id=?", id))
 }
 func activeArchive(status string) bool {
 	return status == "preparing" || status == "ready" || status == "deleting" || status == "compacting"
@@ -108,7 +108,14 @@ func (a *App) wakeArchive() {
 	default:
 	}
 }
-func (a *App) Close() error { a.cancel(); a.workers.Wait(); return a.DB.Close() }
+func (a *App) Close() error {
+	a.cancel()
+	a.workers.Wait()
+	if a.readers != nil && a.readers != a.DB {
+		a.readers.Close()
+	}
+	return a.DB.Close()
+}
 func (a *App) initArchives(path string) error {
 	if path == ":memory:" {
 		a.dbPath = path
@@ -119,9 +126,6 @@ func (a *App) initArchives(path string) error {
 		}
 		a.dbPath = abs
 		a.archiveDir = filepath.Join(filepath.Dir(abs), "archives")
-	}
-	if _, err := a.DB.Exec(archiveSchema); err != nil {
-		return err
 	}
 	a.ctx, a.cancel = context.WithCancel(context.Background())
 	a.archiveWake = make(chan struct{}, 1)

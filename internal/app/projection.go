@@ -1,17 +1,20 @@
 package app
 
 import (
-	"context"
-	"database/sql"
 	"strings"
 )
 
-// Filtering and matching precede every count and page. A candidate is accepted
-// only if both records have exactly one possible counterpart. This prevents
-// repeated IDs or multiple telemetry projections from silently hiding records.
-const timelineCTE = `WITH eligible AS MATERIALIZED (
- SELECT id,session,parent,source,time,sequence,origin,kind,tool_name FROM events WHERE (?='' OR origin=?) AND (?='' OR session=?)
-), candidates AS MATERIALIZED (
+// A pair is accepted only when both originals have exactly one compatible
+// counterpart, so repeated or contradictory identifiers remain visible.
+// Keep changed IDs as the outer loop. A session with millions of unrelated
+// events still requires only primary-key reads for the affected component.
+const componentCTE = `WITH eligible AS MATERIALIZED (
+ SELECT e.id,e.session,e.parent,e.source,e.time,e.sequence,e.origin,e.kind,e.tool_name
+ FROM read_model_dirty d CROSS JOIN events e ON e.id=d.id
+ WHERE d.session=? AND e.session=?
+) ` + timelineProjection
+
+const timelineProjection = `, candidates AS MATERIALIZED (
  SELECT DISTINCT i.id AS imported,o.id AS otel
  FROM eligible i JOIN event_keys ik ON ik.event_id=i.id
  JOIN event_keys ok ON ok.key=ik.key
@@ -32,8 +35,6 @@ const timelineCTE = `WITH eligible AS MATERIALIZED (
  FROM members GROUP BY view_id,session
 ) `
 
-func projectionArgs(origin, session string) []any { return []any{origin, origin, session, session} }
-
 const eventColumns = "id,session,parent,source,signal,time,name,trace,span,parent_span,raw,sequence,origin"
 
 type scanner interface{ Scan(...any) error }
@@ -45,51 +46,6 @@ func scanEvent(row scanner) (Event, error) {
 	var e Event
 	err := row.Scan(e.scanArgs()...)
 	return e, err
-}
-func readProjection(ctx context.Context, tx *sql.Tx, session, origin string, limit, off int, preview bool) ([]TimelineEvent, error) {
-	order := "time,sequence,id"
-	if preview {
-		order = "is_user DESC,time,sequence,id"
-	}
-	args := append(projectionArgs(origin, session), limit, off)
-	rows, err := tx.QueryContext(ctx, timelineCTE+`SELECT m.view_id,`+qualifiedColumns("r")+` FROM members m JOIN
- (SELECT id,time,sequence FROM timeline ORDER BY `+order+` LIMIT ? OFFSET ?) page ON page.id=m.view_id
- JOIN events r ON r.id=m.id
- ORDER BY page.time,page.sequence,page.id,m.origin,m.id`, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	groups := []struct {
-		id      string
-		records []Event
-	}{}
-	for rows.Next() {
-		var id string
-		var e Event
-		if err := rows.Scan(append([]any{&id}, e.scanArgs()...)...); err != nil {
-			return nil, err
-		}
-		if len(groups) == 0 || groups[len(groups)-1].id != id {
-			groups = append(groups, struct {
-				id      string
-				records []Event
-			}{id, nil})
-		}
-		groups[len(groups)-1].records = append(groups[len(groups)-1].records, e)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	out := make([]TimelineEvent, 0, len(groups))
-	for _, g := range groups {
-		event, err := projectEvent(g.id, g.records)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, event)
-	}
-	return out, nil
 }
 func qualifiedColumns(alias string) string {
 	cols := strings.Split(eventColumns, ",")

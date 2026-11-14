@@ -24,6 +24,7 @@ var assets embed.FS
 
 type App struct {
 	DB                 *sql.DB
+	readers            *sql.DB
 	token              string
 	dbPath, archiveDir string
 	ctx                context.Context
@@ -106,10 +107,11 @@ func (a *App) Handler() http.Handler {
 	})
 	mux.HandleFunc("GET /api/sessions", a.sessions)
 	mux.HandleFunc("GET /api/session", a.session)
+	mux.HandleFunc("GET /api/event", a.event)
 	mux.HandleFunc("GET /api/export", a.export)
 	mux.HandleFunc("GET /api/stats", func(w http.ResponseWriter, r *http.Request) {
 		var n, s int
-		if err := a.DB.QueryRow("SELECT COUNT(*),COUNT(DISTINCT session) FROM events").Scan(&n, &s); err != nil {
+		if err := a.readers.QueryRow("SELECT COUNT(*),COUNT(DISTINCT session) FROM events").Scan(&n, &s); err != nil {
 			databaseError(w, r, err)
 			return
 		}

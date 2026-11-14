@@ -48,7 +48,7 @@ func (a *App) archiveList(w http.ResponseWriter, r *http.Request) {
 		offset = 0
 	}
 	cutoff := timestamp(archiveCutoff(time.Now()))
-	tx, err := a.DB.BeginTx(r.Context(), nil)
+	tx, err := a.readers.BeginTx(r.Context(), nil)
 	if err != nil {
 		databaseError(w, r, err)
 		return

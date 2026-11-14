@@ -61,7 +61,15 @@ func (a *App) archiveWorker() {
 						_, e = tx.Exec("UPDATE archives SET status='failed',error=? WHERE id=? AND status IN ('preparing','deleting','compacting')", archiveFailure(err), job.ID)
 					}
 					if e == nil {
-						e = tx.Commit()
+						e = refreshCards(context.Background(), tx)
+						if e == nil {
+							e = refreshTimelines(context.Background(), tx)
+						}
+						if e == nil {
+							e = tx.Commit()
+						} else {
+							tx.Rollback()
+						}
 					} else {
 						tx.Rollback()
 					}
@@ -383,6 +391,9 @@ func (a *App) deleteArchive(ctx context.Context, job ArchiveJob) error {
 	}
 	defer tx.Rollback()
 	if _, err = tx.ExecContext(ctx, "DELETE FROM archive_locks WHERE archive_id=?", job.ID); err != nil {
+		return err
+	}
+	if err = refreshTimelines(ctx, tx); err != nil {
 		return err
 	}
 	if _, err = tx.ExecContext(ctx, "UPDATE archives SET status='compacting' WHERE id=?", job.ID); err != nil {
