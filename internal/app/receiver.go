@@ -290,3 +290,12 @@ func normalize(root map[string]any, signal string) ([]Event, error) {
 	}
 	return out, nil
 }
+
+// IngestLogs uses the same normalization and storage as the OTLP receiver.
+func (a *App) IngestLogs(resources []any) error {
+	events, err := normalize(map[string]any{"resourceLogs": resources}, "logs")
+	if err != nil {
+		return err
+	}
+	return a.Save(events)
+}
