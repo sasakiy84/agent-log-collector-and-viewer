@@ -76,7 +76,6 @@ func (a *App) Handler() http.Handler {
 		write(w, map[string]bool{"ok": true})
 	})
 	mux.HandleFunc("GET /api/sessions", a.sessions)
-	mux.HandleFunc("GET /api/events", a.events)
 	mux.HandleFunc("GET /api/session", a.session)
 	mux.HandleFunc("GET /api/export", a.export)
 	mux.HandleFunc("GET /api/stats", func(w http.ResponseWriter, r *http.Request) {

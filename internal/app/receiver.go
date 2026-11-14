@@ -157,11 +157,8 @@ func str(v any) string {
 }
 func attrs(v any) map[string]string {
 	out := map[string]string{}
-	for _, v := range arr(v) {
-		a := obj(v)
-		for _, v := range obj(a["value"]) {
-			out[str(a["key"])] = str(v)
-		}
+	for k, v := range decodedAttributes(v) {
+		out[k] = str(v)
 	}
 	return out
 }
@@ -231,10 +228,14 @@ func normalize(root map[string]any, signal string) ([]Event, error) {
 					}
 					if sid != "" {
 						sid = source + ":" + sid
-						if source == "claude" && at["agent_id"] != "" {
+						agent := at["agent_id"]
+						if agent == "" && at["gen_ai.operation.name"] != "invoke_agent" {
+							agent = at["gen_ai.agent.id"]
+						}
+						if source == "claude" && agent != "" {
 							base := sid
 							parent = base
-							sid += "/agent:" + at["agent_id"]
+							sid += "/agent:" + agent
 							if at["parent_agent_id"] != "" {
 								parent = base + "/agent:" + at["parent_agent_id"]
 							}

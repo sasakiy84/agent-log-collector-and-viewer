@@ -2,35 +2,84 @@ package app
 
 import (
 	"database/sql"
-	"encoding/json"
 	"net/http"
 	"strconv"
 )
 
+type SessionSummary struct {
+	ID      string  `json:"id"`
+	Source  string  `json:"source"`
+	Parent  string  `json:"parent"`
+	Count   int     `json:"count"`
+	Start   string  `json:"start"`
+	End     string  `json:"end"`
+	Preview *Detail `json:"preview"`
+}
+type SessionPage struct {
+	SessionSummary
+	Children []string        `json:"children"`
+	Events   []TimelineEvent `json:"events"`
+}
+
 func (a *App) sessions(w http.ResponseWriter, r *http.Request) {
-	rows, err := a.DB.Query(`SELECT session,MAX(source),MAX(parent),COUNT(*),MIN(time),MAX(time), (SELECT p.raw FROM events p WHERE p.session=events.session ORDER BY (instr(lower(p.raw), 'user_prompt')>0 OR instr(lower(p.raw),'gen_ai.user.message')>0 OR instr(lower(p.raw),'gen_ai.input.messages')>0) DESC,p.time,p.sequence,p.id LIMIT 1) FROM events WHERE (?='' OR source=?) AND (?='' OR session IN (SELECT session FROM events WHERE instr(lower(session||' '||name||' '||CAST(raw AS TEXT)),lower(?))>0)) GROUP BY session ORDER BY MAX(time) DESC LIMIT 201 OFFSET ?`, r.URL.Query().Get("source"), r.URL.Query().Get("source"), r.URL.Query().Get("q"), r.URL.Query().Get("q"), offset(r))
+	tx, err := a.DB.BeginTx(r.Context(), &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		http.Error(w, "Database error", 500)
 		return
 	}
-	defer rows.Close()
-	type session struct {
-		ID      string          `json:"id"`
-		Source  string          `json:"source"`
-		Parent  string          `json:"parent"`
-		Count   int             `json:"count"`
-		Start   string          `json:"start"`
-		End     string          `json:"end"`
-		Preview json.RawMessage `json:"preview"`
+	defer tx.Rollback()
+	args := append(projectionArgs("", ""), r.URL.Query().Get("source"), r.URL.Query().Get("source"), r.URL.Query().Get("q"), r.URL.Query().Get("q"), offset(r))
+	rows, err := tx.QueryContext(r.Context(), timelineCTE+`, summaries AS (
+ SELECT session,MAX(source) AS source,MAX(parent) AS parent,COUNT(*) AS count,MIN(time) AS start,MAX(end) AS end
+ FROM timeline t WHERE (?='' OR source=?) AND (?='' OR session IN
+ (SELECT m.session FROM members m JOIN events e ON e.id=m.id WHERE instr(lower(m.session||' '||e.name||' '||CAST(e.raw AS TEXT)),lower(?))>0))
+ GROUP BY session ORDER BY MAX(end) DESC,session LIMIT 201 OFFSET ?
+ ), previews AS (
+ SELECT s.*,(SELECT id FROM timeline t WHERE t.session=s.session ORDER BY is_user DESC,time,sequence,id LIMIT 1) AS preview_id FROM summaries s
+ ) SELECT p.session,p.source,p.parent,p.count,p.start,p.end,p.preview_id,`+qualifiedColumns("r")+`
+ FROM previews p JOIN members m ON m.view_id=p.preview_id JOIN events r ON r.id=m.id ORDER BY p.end DESC,p.session,m.origin,m.id`, args...)
+	if err != nil {
+		http.Error(w, "Database error", 500)
+		return
 	}
-	out := []session{}
+	type group struct {
+		summary SessionSummary
+		viewID  string
+		records []Event
+	}
+	groups := []group{}
 	for rows.Next() {
-		var s session
-		if err := rows.Scan(&s.ID, &s.Source, &s.Parent, &s.Count, &s.Start, &s.End, &s.Preview); err != nil {
+		var s SessionSummary
+		var id string
+		var e Event
+		columns := []any{&s.ID, &s.Source, &s.Parent, &s.Count, &s.Start, &s.End, &id}
+		if err = rows.Scan(append(columns, e.scanArgs()...)...); err != nil {
+			break
+		}
+		if len(groups) == 0 || groups[len(groups)-1].summary.ID != s.ID {
+			groups = append(groups, group{summary: s, viewID: id})
+		}
+		groups[len(groups)-1].records = append(groups[len(groups)-1].records, e)
+	}
+	rowErr := rows.Err()
+	rows.Close()
+	if err != nil || rowErr != nil {
+		http.Error(w, "Database error", 500)
+		return
+	}
+	out := make([]SessionSummary, 0, len(groups))
+	for _, g := range groups {
+		preview, err := projectEvent(g.viewID, g.records)
+		if err != nil {
 			http.Error(w, "Database error", 500)
 			return
 		}
-		out = append(out, s)
+		g.summary.Preview = &preview.Detail
+		out = append(out, g.summary)
+	}
+	if err = tx.Commit(); err != nil {
+		http.Error(w, "Database error", 500)
+		return
 	}
 	write(w, out)
 }
@@ -41,29 +90,27 @@ func offset(r *http.Request) int {
 	}
 	return n
 }
-func (a *App) events(w http.ResponseWriter, r *http.Request) {
-	v, e := a.readEvents(r.URL.Query().Get("session"), 201, offset(r))
-	if e != nil {
-		http.Error(w, "Database error", 500)
-		return
-	}
-	write(w, v)
+func eventOrigin(r *http.Request) (string, bool) {
+	origin := r.URL.Query().Get("origin")
+	return origin, origin == "" || origin == "import" || origin == "otel"
 }
-func (a *App) export(w http.ResponseWriter, r *http.Request) {
-	v, e := a.readEvents(r.URL.Query().Get("session"), -1, 0)
-	if e != nil {
-		http.Error(w, "Database error", 500)
-		return
-	}
-	w.Header().Set("Content-Disposition", `attachment; filename="session.json"`)
-	write(w, v)
-}
-
 func (a *App) session(w http.ResponseWriter, r *http.Request) {
+	origin, ok := eventOrigin(r)
+	if !ok {
+		http.Error(w, "Invalid event origin", 400)
+		return
+	}
 	id := r.URL.Query().Get("id")
-	var source, parent, start, end string
-	var count int
-	err := a.DB.QueryRow("SELECT MAX(source),MAX(parent),MIN(time),MAX(time),COUNT(*) FROM events WHERE session=? HAVING COUNT(*)>0", id).Scan(&source, &parent, &start, &end, &count)
+	tx, err := a.DB.BeginTx(r.Context(), &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		http.Error(w, "Database error", 500)
+		return
+	}
+	defer tx.Rollback()
+	var page SessionPage
+	page.ID = id
+	page.Children = []string{}
+	err = tx.QueryRowContext(r.Context(), "SELECT MAX(source),MAX(parent) FROM events WHERE session=? HAVING COUNT(*)>0", id).Scan(&page.Source, &page.Parent)
 	if err == sql.ErrNoRows {
 		http.Error(w, "Session not found", 404)
 		return
@@ -72,25 +119,76 @@ func (a *App) session(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Database error", 500)
 		return
 	}
-	var preview json.RawMessage
-	if err = a.DB.QueryRow("SELECT raw FROM events WHERE session=? ORDER BY (instr(lower(raw), 'user_prompt')>0 OR instr(lower(raw),'gen_ai.user.message')>0 OR instr(lower(raw),'gen_ai.input.messages')>0) DESC,time,sequence,id LIMIT 1", id).Scan(&preview); err != nil {
+	var start, end sql.NullString
+	err = tx.QueryRowContext(r.Context(), timelineCTE+"SELECT COUNT(*),MIN(time),MAX(end) FROM timeline", projectionArgs(origin, id)...).Scan(&page.Count, &start, &end)
+	if err != nil {
 		http.Error(w, "Database error", 500)
 		return
 	}
-	rows, err := a.DB.Query("SELECT DISTINCT session FROM events WHERE parent=? ORDER BY session", id)
+	page.Start = start.String
+	page.End = end.String
+	page.Events, err = readProjection(r.Context(), tx, id, origin, 201, offset(r), false)
+	if err != nil {
+		http.Error(w, "Database error", 500)
+		return
+	}
+	preview, err := readProjection(r.Context(), tx, id, origin, 1, 0, true)
+	if err != nil {
+		http.Error(w, "Database error", 500)
+		return
+	}
+	if len(preview) > 0 {
+		page.Preview = &preview[0].Detail
+	}
+	rows, err := tx.QueryContext(r.Context(), "SELECT DISTINCT session FROM events WHERE parent=? ORDER BY session", id)
+	if err != nil {
+		http.Error(w, "Database error", 500)
+		return
+	}
+	for rows.Next() {
+		var child string
+		if err = rows.Scan(&child); err != nil {
+			break
+		}
+		page.Children = append(page.Children, child)
+	}
+	rowErr := rows.Err()
+	rows.Close()
+	if err != nil || rowErr != nil {
+		http.Error(w, "Database error", 500)
+		return
+	}
+	if err = tx.Commit(); err != nil {
+		http.Error(w, "Database error", 500)
+		return
+	}
+	write(w, page)
+}
+func (a *App) export(w http.ResponseWriter, r *http.Request) {
+	origin, ok := eventOrigin(r)
+	if !ok {
+		http.Error(w, "Invalid event origin", 400)
+		return
+	}
+	rows, err := a.DB.QueryContext(r.Context(), "SELECT "+eventColumns+" FROM events WHERE session=? AND (?='' OR origin=?) ORDER BY time,sequence,id", r.URL.Query().Get("session"), origin, origin)
 	if err != nil {
 		http.Error(w, "Database error", 500)
 		return
 	}
 	defer rows.Close()
-	children := []string{}
+	out := []Event{}
 	for rows.Next() {
-		var child string
-		if err = rows.Scan(&child); err != nil {
+		e, err := scanEvent(rows)
+		if err != nil {
 			http.Error(w, "Database error", 500)
 			return
 		}
-		children = append(children, child)
+		out = append(out, e)
 	}
-	write(w, map[string]any{"id": id, "source": source, "parent": parent, "start": start, "end": end, "count": count, "children": children, "preview": preview})
+	if rows.Err() != nil {
+		http.Error(w, "Database error", 500)
+		return
+	}
+	w.Header().Set("Content-Disposition", `attachment; filename="session.json"`)
+	write(w, out)
 }

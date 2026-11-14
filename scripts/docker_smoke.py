@@ -32,7 +32,7 @@ try:
  assert ready()['events']==1,'Data lost on recreation'
  request('/v1/logs',record)
  assert request('/api/stats')['events']==1,'Replay was not deduplicated'
- assert request('/api/events?session=codex:compose-test')[0]['name']=='compose persistence test'
+ assert request('/api/session?id=codex:compose-test')['events'][0]['records'][0]['name']=='compose persistence test'
  print('PASS: Compose non-root/read-only startup, authenticated ingestion, recreation persistence, replay deduplication.')
 finally:
  run('down','--volumes','--remove-orphans')

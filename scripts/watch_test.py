@@ -73,7 +73,7 @@ with tempfile.TemporaryDirectory() as tmp:
             time.sleep(.2)
             server = start(server_args)
             wait_for(lambda: fetch('/api/stats')['events'] == 2)
-            assert 'backend' in json.dumps(fetch('/api/events?session=claude:local-watch'))
+            assert 'backend' in json.dumps(fetch('/api/session?id=claude:local-watch'))
             # Both watcher modes accept append and new nested sessions.
             with (local / 'session.jsonl').open('a') as f:
                 f.write(row('local-watch', 'second', 'Local append'))

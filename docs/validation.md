@@ -1,3 +1,11 @@
+# Event reconciliation (unreleased)
+
+- Split HTTP/auth, storage, OTLP decoding, semantic display decoding and timeline projection. Removed the duplicate browser-side parser and the old events endpoint; the session API returns metadata and a page from one read transaction. The database uses the current schema directly without compatibility migrations.
+- Preserve native event/message IDs during import and match only a one-to-one import/OTEL pair with a shared typed identifier, matching session/agent/phase, compatible tool name and no conflicting identifier namespace. Raw records are retained, independently exportable and visible in the inspector. Model context, metrics and uncertain matches remain separate.
+- Tests cover both arrival orders, updated imports, trace-session reassignment, ID namespaces/aliases, ambiguous candidates, agent scopes, phases/completed spans, 205 logical events across page boundaries, list previews/counts/search, origin-specific details/export, missing fields, false/zero values, conflict reporting and message/output preservation.
+- Browser tests exercise actual transcript import plus native OTEL: merged content/timing, original JSON, conflicts, origin isolation, polling selection when an OTEL-first event gains an imported counterpart, labels/usage, pagination, hostile text and mobile bounds. Folder watch process tests cover local and HTTP modes.
+- Projection CTEs materialize metadata only; raw payloads are fetched after page/preview selection, or for explicit content search/export. Review findings are fixed with regression coverage.
+
 # Folder watching (unreleased)
 
 - `agentlog --config` watches folders into local SQLite; `agentlog import --watch` sends the same converted OTLP records to an existing collector. No additional dependencies. Polling defaults to one second.

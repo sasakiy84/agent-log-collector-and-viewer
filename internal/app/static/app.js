@@ -14,25 +14,27 @@ $('#search').value=query;
 if(!selected) sessionStorage.setItem('sessionsURL',location.pathname+location.search);
 $('.back').href=sessionStorage.getItem('sessionsURL')||'/';
 async function api(path){const r=await fetch(path);if(r.status===401){closeInspector(false);$('#login').hidden=false;$('#workspace').hidden=true;throw Error('Sign in required.')}if(!r.ok)throw Error(r.status===404?'Session not found.':'Unable to load. Retrying automatically.');return r.json()}
-function titleFor(id,raw,source){if(raw){const p=parseEvent({raw,source});const prompt=p.blocks.find(b=>/request|user/i.test(b.label));if(prompt&&prompt.text!=='Content not exported')return prompt.text.split('\n')[0].slice(0,150)}return id.includes('/agent:')?'Subagent · '+id.split('/agent:').pop():id.replace(/^(codex|claude|copilot|other):/,'')}
+function titleFor(id,p){if(p){const prompt=p.blocks.find(b=>/request|user/i.test(b.label));if(prompt&&prompt.text!=='Content not exported')return prompt.text.split('\n')[0].slice(0,150)}return id.includes('/agent:')?'Subagent · '+id.split('/agent:').pop():id.replace(/^(codex|claude|copilot|other):/,'')}
 function listState(){const p=new URLSearchParams();if(source)p.set('source',source);if(query)p.set('q',query);if(sessionOffset)p.set('offset',sessionOffset);history.replaceState(null,'','/'+(p.size?'?'+p:''));sessionStorage.setItem('sessionsURL',location.pathname+location.search)}
-function projectLabel(raw){const at=AgentlogParse.attributes(raw?.resource?.attributes);return [at['service.namespace']||at['project.name'],...(Array.isArray(at['project.tags'])?at['project.tags']:at['project.tags']?[at['project.tags']]:[])].filter(Boolean).join(' · ')}
+function projectLabel(p){return [p?.project,...(Array.isArray(p?.tags)?p.tags:p?.tags?[p.tags]:[])].filter(Boolean).join(' · ')}
 function renderSessions(rows){
  $('#listcount').textContent=rows.length?`${sessionOffset+1}–${sessionOffset+Math.min(rows.length,200)}`:'0';
- $('#sessions').innerHTML=rows.length?rows.slice(0,200).map(s=>`<a class="session" href="${esc(link(s.id))}" data-session="${esc(s.id)}"><div><h2>${esc(titleFor(s.id,s.preview,s.source))}</h2><small>${projectLabel(s.preview)?esc(projectLabel(s.preview))+' · ':''}${esc(s.id)}${s.parent?' · Subagent':''}</small></div><span class="source">${esc(label(s.source))}</span><time>${esc(date(s.end))}</time><span class="count">${s.count}</span></a>`).join(''):'<p class="empty">No sessions</p>';
+ $('#sessions').innerHTML=rows.length?rows.slice(0,200).map(s=>`<a class="session" href="${esc(link(s.id))}" data-session="${esc(s.id)}"><div><h2>${esc(titleFor(s.id,s.preview))}</h2><small>${projectLabel(s.preview)?esc(projectLabel(s.preview))+' · ':''}${esc(s.id)}${s.parent?' · Subagent':''}</small></div><span class="source">${esc(label(s.source))}</span><time>${esc(date(s.end))}</time><span class="count">${s.count}</span></a>`).join(''):'<p class="empty">No sessions</p>';
  $('#prevsessions').disabled=sessionOffset===0;$('#nextsessions').disabled=rows.length<=200;
 }
 function renderEvents(){
  const focusedID=document.activeElement?.dataset.event;
- const slice=events.slice(0,200),parsed=slice.map(e=>[e,parseEvent(e)]);
- const visible=parsed.filter(([,p])=>(!origin||(p.origin||'otel')===origin)&&(!kind||(kind==='conversation'?(['user','assistant'].includes(p.kind)||(['model','agent'].includes(p.kind)&&p.blocks.some(b=>['user','assistant','Input','Output'].includes(b.label)))):kind==='error'?p.error:p.kind===kind)));
- $('#sessiontitle').textContent=titleFor(selected,meta.preview,meta.source);
- $('#export').href='/api/export?session='+encodeURIComponent(selected);
- const context={};for(const key of ['model','cwd','host','project','tags'])context[key]=parsed.map(([,p])=>p).find(p=>p[key])?.[key];
- $('#sessionmeta').innerHTML=`<strong>${esc(label(meta.source))}</strong><span>${esc(date(meta.start))}</span>${context.model?`<span>${esc(context.model)}</span>`:''}${context.cwd?`<span>${esc(context.cwd)}</span>`:''}${context.host?`<span>${esc(context.host)}</span>`:''}${context.project?`<span>Project: ${esc(context.project)}</span>`:''}${context.tags?`<span>Tags: ${esc(Array.isArray(context.tags)?context.tags.join(', '):context.tags)}</span>`:''}<span class="sessionid">${esc(selected)}</span>`;
+ const slice=events.slice(0,200),parsed=slice.map(e=>[e,e.detail]);
+ const inspected=events.find(e=>e.id===inspectedID||e.records.some(r=>r.id===inspectedID));
+ if(inspected) inspectedID=inspected.id;
+ const visible=parsed.filter(([,p])=>(!kind||(kind==='conversation'?(['user','assistant'].includes(p.kind)||(['model','agent'].includes(p.kind)&&p.blocks.some(b=>['user','assistant','Input','Output'].includes(b.label)))):kind==='error'?p.error:p.kind===kind)));
+ $('#sessiontitle').textContent=titleFor(selected,meta.preview);
+ $('#export').href='/api/export?session='+encodeURIComponent(selected)+'&origin='+encodeURIComponent(origin);
+ const context={};for(const key of ['model','cwd','host','project','tags'])context[key]=parsed.map(([,p])=>p).find(p=>p[key])?.[key] ?? meta.preview?.[key];
+ $('#sessionmeta').innerHTML=`<strong>${esc(label(meta.source))}</strong>${meta.start?`<span>${esc(date(meta.start))}</span>`:''}${context.model?`<span>${esc(context.model)}</span>`:''}${context.cwd?`<span>${esc(context.cwd)}</span>`:''}${context.host?`<span>${esc(context.host)}</span>`:''}${context.project?`<span>Project: ${esc(context.project)}</span>`:''}${context.tags?`<span>Tags: ${esc(Array.isArray(context.tags)?context.tags.join(', '):context.tags)}</span>`:''}<span class="sessionid">${esc(selected)}</span>`;
  $('#relations').innerHTML=(meta.parent?`<a href="${esc(link(meta.parent))}">Parent session</a>`:'')+meta.children.map(id=>`<a href="${esc(link(id))}">Subagent: ${esc(id.split('/agent:').pop())}</a>`).join('');
  $('#pageinfo').textContent=meta.count?`${eventOffset+1}–${eventOffset+slice.length} / ${meta.count}${kind||origin?' · '+visible.length+' matching on this page':''}`:'0 events';
- $('#timeline').innerHTML=visible.length?visible.map(([e,p])=>`<article class="event ${esc(p.kind)} ${p.error?'error':''}" id="span-${esc(e.span||e.id)}" data-event="${esc(e.id)}" role="button" tabindex="0" aria-label="${esc(p.title+' · '+clock(e.time))}" aria-expanded="${e.id===inspectedID}" aria-controls="inspector"><div class="eventcontent"><div class="eventheading"><h2>${esc(p.title)}</h2>${['tool','metric'].includes(p.kind)?`<span class="kind">${esc(p.kind)}</span>`:''}${p.error?'<span class="status failed">Failed</span>':String(p.attributes.success)==='true'?'<span class="status succeeded">Succeeded</span>':''}<time datetime="${esc(e.time)}" title="${esc(date(e.time))}">${esc(clock(e.time))}</time></div>${p.blocks.map(b=>`<div class="block ${b.label==='Error'?'failure-detail':''}">${['Request','Response','Message',p.kind].includes(b.label)?'':`<div class="blocklabel">${esc(b.label)}</div>`}<${b.code?'pre':'div'} class="${b.code?'code':'prose'}">${esc(b.text)}</${b.code?'pre':'div'}></div>`).join('')}${p.fields.length?`<dl class="fields">${p.fields.filter(([k])=>k!=='Result').map(([k,v])=>`<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>`:''}</div></article>`).join(''):'<p class="empty">No matching events on this page</p>';
+ $('#timeline').innerHTML=visible.length?visible.map(([e,p])=>`<article class="event ${esc(p.kind)} ${p.error?'error':''}" id="span-${esc(e.span||e.id)}" data-event="${esc(e.id)}" role="button" tabindex="0" aria-label="${esc(p.title+' · '+clock(e.time))}" aria-expanded="${e.id===inspectedID}" aria-controls="inspector"><div class="eventcontent"><div class="eventheading"><h2>${esc(p.title)}</h2>${e.origins.length>1?'<span class="kind">Imported + OTEL</span>':''}${['tool','metric'].includes(p.kind)?`<span class="kind">${esc(p.kind)}</span>`:''}${p.error?'<span class="status failed">Failed</span>':String(p.attributes.success)==='true'?'<span class="status succeeded">Succeeded</span>':''}<time datetime="${esc(e.time)}" title="${esc(date(e.time))}">${esc(clock(e.time))}</time></div>${p.blocks.map(b=>`<div class="block ${b.label==='Error'?'failure-detail':''}">${['Request','Response','Message',p.kind].includes(b.label)?'':`<div class="blocklabel">${esc(b.label)}</div>`}<${b.code?'pre':'div'} class="${b.code?'code':'prose'}">${esc(b.text)}</${b.code?'pre':'div'}></div>`).join('')}${p.fields.length?`<dl class="fields">${p.fields.filter(([k])=>k!=='Result').map(([k,v])=>`<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>`:''}</div></article>`).join(''):'<p class="empty">No matching events on this page</p>';
  if(inspectedID && !visible.some(([e])=>e.id===inspectedID)) closeInspector(false);
  document.querySelectorAll('[data-event]').forEach(card=>{
   card.classList.toggle('selected',card.dataset.event===inspectedID);
@@ -75,14 +77,15 @@ function renderInspector(){
  const e=events.find(e=>e.id===inspectedID);if(!e)return;
  const snapshot=JSON.stringify(e);if(snapshot===inspectedSnapshot)return;inspectedSnapshot=snapshot;
  const parent=events.find(x=>x.span===e.parent_span&&x.trace===e.trace&&x.source===e.source&&document.getElementById('span-'+x.span));
- const p=parseEvent(e),value=v=>typeof v==='string'?v:JSON.stringify(v,null,2);
+ const p=e.detail,value=v=>typeof v==='string'?v:JSON.stringify(v,null,2);
  $('#inspectortitle').textContent=p.title;$('#inspectortime').textContent=date(e.time)+' · '+label(e.source);
- const properties=[['Signal',e.signal],['Time',e.time],['Event',p.name],['Trace ID',e.trace],['Span ID',e.span],['Parent span',e.parent_span],['Session',e.session],...p.fields].filter(([,v])=>v!==undefined&&v!=='');
+ const properties=[['Sources',e.origins.map(x=>x==='import'?'Imported':'OTEL').join(' + ')],['Signal',e.signal],['Time',e.time],['Event',p.name],['Trace ID',e.trace],['Span ID',e.span],['Parent span',e.parent_span],['Session',e.session],...p.fields].filter(([,v])=>v!==undefined&&v!=='');
  $('#inspectdetails').innerHTML=p.blocks.map(b=>`<div class="block ${b.label==='Error'?'failure-detail':''}"><div class="blocklabel">${esc(b.label)}</div><${b.code?'pre':'div'} class="${b.code?'code':'prose'}">${esc(b.text)}</${b.code?'pre':'div'}></div>`).join('')+
  `<h3>Properties</h3><dl class="propertylist">${properties.map(([k,v])=>`<div><dt>${esc(k)}</dt><dd>${k==='Parent span'&&parent?`<a href="#span-${esc(parent.span)}" id="inspectparent">${esc(value(v))}</a>`:esc(value(v))}</dd></div>`).join('')}</dl>`+
+ (p.conflicts?.length?`<h3>Source differences</h3><dl class="propertylist">${p.conflicts.map(c=>`<div><dt>${esc(c.field)}</dt><dd>${c.values.map(v=>`${v.origin==='import'?'Imported':'OTEL'}: ${esc(v.value)}`).join('\n')}</dd></div>`).join('')}</dl>`:'')+
  `<h3>Attributes</h3><dl class="propertylist">${Object.entries(p.attributes).map(([k,v])=>`<div><dt>${esc(k)}</dt><dd>${esc(value(v))}</dd></div>`).join('')||'<div>No attributes</div>'}</dl>`;
  if($('#inspectparent')) $('#inspectparent').onclick=ev=>{ev.preventDefault();openInspector(parent.id);document.getElementById('span-'+parent.span)?.scrollIntoView({block:'nearest'})};
- $('#eventjson').textContent=JSON.stringify(e.raw,null,2);$('#copystatus').textContent='';setInspectorTab(inspectorTab);
+ $('#eventjson').textContent=JSON.stringify(e.records.length===1?e.records[0].raw:{records:e.records},null,2);$('#copystatus').textContent='';setInspectorTab(inspectorTab);
 }
 $('#closeinspector').onclick=()=>closeInspector();
 $('#detailtab').onclick=()=>setInspectorTab('details');$('#jsontab').onclick=()=>setInspectorTab('json');
@@ -99,7 +102,7 @@ addEventListener('keydown',e=>{
  }
 });
 async function refresh(){if(busy)return;busy=true;const g=generation;try{
- if(selected){const [m,data]=await Promise.all([api('/api/session?id='+encodeURIComponent(selected)),api(`/api/events?session=${encodeURIComponent(selected)}&offset=${eventOffset}`)]);if(g!==generation)return;meta=m;events=data;renderEvents()}
+ if(selected){const page=await api(`/api/session?id=${encodeURIComponent(selected)}&origin=${encodeURIComponent(origin)}&offset=${eventOffset}`);if(g!==generation)return;meta=page;events=page.events;renderEvents()}
  else {const rows=await api(`/api/sessions?source=${encodeURIComponent(source)}&q=${encodeURIComponent(query)}&offset=${sessionOffset}`);if(g!==generation)return;renderSessions(rows)}
  $('#login').hidden=true;$('#workspace').hidden=false;$('#listpage').hidden=!!selected;$('#detailpage').hidden=!selected;$('#error').textContent='';
  }catch(e){$('#error').textContent=e.message;if($('#login').hidden){$('#workspace').hidden=false;$('#listpage').hidden=!!selected;$('#detailpage').hidden=!selected;$('#timeline').innerHTML=''}}finally{busy=false;if(g!==generation)refresh()}}
@@ -109,6 +112,6 @@ document.querySelectorAll('[data-source]').forEach(b=>{b.classList.toggle('activ
 document.querySelectorAll('[data-kind]').forEach(b=>b.onclick=()=>{kind=b.dataset.kind;document.querySelectorAll('[data-kind]').forEach(x=>x.classList.toggle('active',x===b));renderEvents()});
 let timer;$('#search').oninput=()=>{clearTimeout(timer);timer=setTimeout(()=>{query=$('#search').value;sessionOffset=0;generation++;listState();refresh()},250)};
 for(const [id,delta,type]of[['prevsessions',-200,'s'],['nextsessions',200,'s'],['prevevents',-200,'e'],['nextevents',200,'e']])$('#'+id).onclick=()=>{if(type==='s'){sessionOffset=Math.max(0,sessionOffset+delta);listState()}else eventOffset=Math.max(0,eventOffset+delta);generation++;refresh();window.scrollTo(0,0)};
-$('#origin').onchange=()=>{origin=$('#origin').value;renderEvents()};
+$('#origin').onchange=()=>{origin=$('#origin').value;eventOffset=0;generation++;closeInspector(false);refresh()};
 $('#autorefresh').onchange=()=>$('#connection').textContent=$('#autorefresh').checked?'Auto-refresh · 5s':'Paused';
 setInterval(()=>{if(!document.hidden&&(!selected||$('#autorefresh').checked)&&!window.getSelection()?.toString())refresh()},5000);refresh();

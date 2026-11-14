@@ -68,7 +68,7 @@ func TestLogsAndAuth(t *testing.T) {
 	if len(cookies) != 1 || !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteStrictMode {
 		t.Fatal(cookies)
 	}
-	for _, path := range []string{"/api/stats", "/api/sessions", "/api/events?session=codex:demo", "/api/export?session=codex:demo"} {
+	for _, path := range []string{"/api/stats", "/api/sessions", "/api/session?id=codex:demo", "/api/export?session=codex:demo"} {
 		r := httptest.NewRequest("GET", path, nil)
 		r.AddCookie(cookies[0])
 		w := httptest.NewRecorder()
@@ -317,5 +317,34 @@ func TestProjectResourcePrecedence(t *testing.T) {
 	}
 	if e := applyProjectQuery(root, "logs", url.Values{"project": []string{"one", "two"}}); e == nil {
 		t.Fatal("ambiguous project accepted")
+	}
+}
+
+func TestStandardAgentSessionScope(t *testing.T) {
+	for _, operation := range []string{"execute_tool", "invoke_agent"} {
+		t.Run(operation, func(t *testing.T) {
+			a := setup(t)
+			body := strings.Replace(logBody("claude", "s", "child", ""), `"key":"agent_id"`, `"key":"gen_ai.agent.id"`, 1)
+			var root map[string]any
+			if err := json.Unmarshal([]byte(body), &root); err != nil {
+				t.Fatal(err)
+			}
+			resource := obj(arr(root["resourceLogs"])[0])
+			scope := obj(arr(resource["scopeLogs"])[0])
+			record := obj(arr(scope["logRecords"])[0])
+			record["attributes"] = append(arr(record["attributes"]), map[string]any{"key": "gen_ai.operation.name", "value": map[string]any{"stringValue": operation}})
+			encoded, _ := json.Marshal(root)
+			if w := request(a, "/v1/logs", string(encoded), token); w.Code != 200 {
+				t.Fatal(w.Code, w.Body.String())
+			}
+			want := "claude:s/agent:child"
+			if operation == "invoke_agent" {
+				want = "claude:s"
+			}
+			events, err := a.readEvents(want, 10, 0)
+			if err != nil || len(events) != 1 {
+				t.Fatal(want, events, err)
+			}
+		})
 	}
 }

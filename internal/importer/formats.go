@@ -38,7 +38,7 @@ func (p *state) codex(v map[string]any, line int) error {
 		case "message":
 			role := s(d["role"])
 			if role == "user" || role == "assistant" {
-				return p.codexMessage(role, content(d["content"]), false)
+				return p.codexMessage(role, content(d["content"]), false, s(d["id"]))
 			}
 		case "function_call", "custom_tool_call":
 			return p.tool(s(d["call_id"]), s(d["name"]), first(d["arguments"], d["input"]), nil, false, false)
@@ -54,7 +54,7 @@ func (p *state) codex(v map[string]any, line int) error {
 			if s(d["type"]) == "agent_message" {
 				role = "assistant"
 			}
-			return p.codexMessage(role, first(d["message"], d["text"]), true)
+			return p.codexMessage(role, first(d["message"], d["text"]), true, "")
 		case "token_count":
 			u := m(m(d["info"])["last_token_usage"])
 			if len(u) > 0 {
@@ -71,7 +71,7 @@ func (p *state) codex(v map[string]any, line int) error {
 
 // Content and occurrence identify both Codex message projections, including when
 // a canonical response_item arrives after its event_msg was already imported.
-func (p *state) codexMessage(role, text string, fallback bool) error {
+func (p *state) codexMessage(role, text string, fallback bool, nativeID string) error {
 	key := role + "\x00" + text
 	counts := p.messageCounts
 	if fallback {
@@ -82,7 +82,7 @@ func (p *state) codexMessage(role, text string, fallback bool) error {
 	if fallback && n <= p.canonicalMessages[key] {
 		return nil
 	}
-	return p.message(role, text, fmt.Sprintf("message:%x:%d", sha256.Sum256([]byte(key)), n))
+	return p.messageWithIDs(role, text, fmt.Sprintf("message:%x:%d", sha256.Sum256([]byte(key)), n), map[string]any{"gen_ai.message.id": nativeID})
 }
 
 func (p *state) claude(v map[string]any, line int) error {
@@ -110,10 +110,10 @@ func (p *state) claude(v map[string]any, line int) error {
 	}
 	id := first(v["uuid"], msg["id"], fmt.Sprint(line))
 	if str, ok := msg["content"].(string); ok {
-		return p.message(typ, str, id)
+		return p.messageWithIDs(typ, str, id, map[string]any{"event.id": v["uuid"], "gen_ai.message.id": msg["id"]})
 	}
 	// A text projection is emitted once per message, followed by tool blocks in order.
-	if e := p.message(typ, content(msg["content"]), id); e != nil {
+	if e := p.messageWithIDs(typ, content(msg["content"]), id, map[string]any{"event.id": v["uuid"], "gen_ai.message.id": msg["id"]}); e != nil {
 		return e
 	}
 	for _, b := range a(msg["content"]) {
@@ -165,9 +165,9 @@ func (p *state) copilot(v map[string]any, line int) error {
 	// agentId is a runtime identity; keep it as attribution rather than inventing a new session.
 	switch typ {
 	case "user.message":
-		return p.message("user", s(d["content"]), id)
+		return p.messageWithIDs("user", s(d["content"]), id, map[string]any{"event.id": v["id"], "gen_ai.message.id": d["messageId"]})
 	case "assistant.message":
-		return p.message("assistant", s(d["content"]), id)
+		return p.messageWithIDs("assistant", s(d["content"]), id, map[string]any{"event.id": v["id"], "gen_ai.message.id": d["messageId"]})
 	case "tool.execution_start":
 		return p.tool(s(d["toolCallId"]), s(d["toolName"]), d["arguments"], nil, false, false)
 	case "tool.execution_complete":

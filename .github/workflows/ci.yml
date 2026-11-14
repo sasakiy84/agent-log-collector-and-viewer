@@ -17,7 +17,7 @@ jobs:
       - run: test -z "$(gofmt -l cmd internal)"
       - run: go test -race ./...
       - run: go vet ./...
-      - run: node scripts/parse_test.cjs
+      - run: node --check internal/app/static/app.js
       - run: go build ./cmd/agentlog
       - run: python3 scripts/watch_test.py
       - run: scripts/release.sh ci

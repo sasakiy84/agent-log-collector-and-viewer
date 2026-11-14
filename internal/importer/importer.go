@@ -304,7 +304,7 @@ func (p *state) output(event string, fields map[string]any, id string) error {
 	}
 	return p.emit(resource, map[string]any{"timeUnixNano": ns, "eventName": event, "attributes": attrs(fields)})
 }
-func (p *state) message(role, content, id string) error {
+func (p *state) messageWithIDs(role, content, id string, ids map[string]any) error {
 	if strings.TrimSpace(content) == "" {
 		return nil
 	}
@@ -312,7 +312,13 @@ func (p *state) message(role, content, id string) error {
 	if role == "assistant" {
 		event, key = "gen_ai.assistant.message", "gen_ai.output.messages"
 	}
-	return p.output(event, map[string]any{key: []any{map[string]any{"role": role, "parts": []any{map[string]any{"type": "text", "content": content}}}}}, id)
+	fields := map[string]any{key: []any{map[string]any{"role": role, "parts": []any{map[string]any{"type": "text", "content": content}}}}}
+	for key, value := range ids {
+		if value != nil && s(value) != "" {
+			fields[key] = value
+		}
+	}
+	return p.output(event, fields, id)
 }
 func (p *state) tool(id, name string, input, output any, failed bool, result bool) error {
 	if name != "" {

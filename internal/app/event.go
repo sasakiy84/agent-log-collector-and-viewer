@@ -3,6 +3,7 @@ package app
 import "encoding/json"
 
 type Event struct {
+	Origin     string          `json:"origin"`
 	Sequence   int             `json:"sequence,omitempty"`
 	ID         string          `json:"id"`
 	Session    string          `json:"session"`

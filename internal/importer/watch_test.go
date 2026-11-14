@@ -70,6 +70,7 @@ func TestWatchLocalLifecycle(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "not-created-yet")
 	var sends atomic.Int32
 	o := importer.Options{Dirs: []string{dir}, Project: "store", Tags: []string{"backend"}, Sink: func(batch []any) error { sends.Add(1); return db.IngestLogs(batch) }}
+	p := file(t, dir, "nested/session.jsonl", claudeLine("one", "initial"))
 	cancel := startWatcher(t, o)
 	count := func(want int) func() bool {
 		return func() bool {
@@ -78,7 +79,6 @@ func TestWatchLocalLifecycle(t *testing.T) {
 			return err == nil && n == want
 		}
 	}
-	p := file(t, dir, "nested/session.jsonl", claudeLine("one", "initial"))
 	eventually(t, count(1))
 	var raw string
 	if err := db.DB.QueryRow("SELECT raw FROM events LIMIT 1").Scan(&raw); err != nil || !strings.Contains(raw, "store") || !strings.Contains(raw, "backend") {
@@ -216,4 +216,16 @@ func TestWatchCancelsInFlightHTTP(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("HTTP delivery ignored cancellation")
 	}
+}
+
+func TestWatchRootCreatedAfterStart(t *testing.T) {
+	db, _ := setup(t)
+	dir := filepath.Join(t.TempDir(), "missing-root")
+	startWatcher(t, importer.Options{Dirs: []string{dir}, Sink: db.IngestLogs})
+	file(t, dir, "nested/session.jsonl", claudeLine("created", "created after watch start"))
+	eventually(t, func() bool {
+		var n int
+		err := db.DB.QueryRow("SELECT COUNT(*) FROM events").Scan(&n)
+		return err == nil && n == 1
+	})
 }
