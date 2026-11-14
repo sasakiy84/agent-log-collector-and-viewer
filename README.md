@@ -11,6 +11,7 @@ A personal OpenTelemetry collector and session viewer for Codex CLI, Claude Code
 - Collect logs, traces and metrics over OTLP/HTTP (JSON or Protobuf), or import and watch saved CLI sessions.
 - Read session timelines, tool calls, outputs and errors; inspect attributes/JSON and export sessions.
 - Combine imported and OTEL events with shared IDs into one card while keeping both originals.
+- Archive sessions inactive for a month; download a ZIP, confirm it, then delete DB records and reclaim space.
 - One Go binary with an embedded UI, SQLite storage and token authentication. No automatic log expiry.
 
 ## Setup
@@ -66,5 +67,7 @@ Send local files to an existing collector (including Docker):
 ```sh
 AGENTLOG_TOKEN=YOUR_TOKEN ./agentlog import --watch --all --endpoint http://127.0.0.1:4318
 ```
+
+[Archiving inactive sessions](docs/archive.md)
 
 Omit `--watch` for a one-time import. [Folders, project tags and settings](docs/import.md) · [Projects and tags for live OTEL](docs/projects.md)

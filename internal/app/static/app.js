@@ -8,10 +8,11 @@ const clock=s=>new Date(s).toLocaleTimeString(undefined,{hour12:false});
 let generation=0,busy=false,sessionOffset=0,eventOffset=0,source='',query='',kind='',origin='',events=[],meta=null;
 let inspectedID='', inspectedSnapshot='', inspectorTab='details';
 let selected=location.pathname.startsWith('/sessions/')?decodeURIComponent(location.pathname.slice(10)):'';
+const archiveMode=location.pathname==='/archive';
 const listURL=new URL(location.href);
 source=listURL.searchParams.get('source')||'';query=listURL.searchParams.get('q')||'';sessionOffset=Number(listURL.searchParams.get('offset'))||0;
 $('#search').value=query;
-if(!selected) sessionStorage.setItem('sessionsURL',location.pathname+location.search);
+if(!selected&&!archiveMode) sessionStorage.setItem('sessionsURL',location.pathname+location.search);
 $('.back').href=sessionStorage.getItem('sessionsURL')||'/';
 async function api(path){const r=await fetch(path);if(r.status===401){closeInspector(false);$('#login').hidden=false;$('#workspace').hidden=true;throw Error('Sign in required.')}if(!r.ok)throw Error(r.status===404?'Session not found.':`Unable to load (HTTP ${r.status}). Retrying automatically.`);return r.json()}
 function titleFor(id,p){if(p){const prompt=p.blocks.find(b=>/request|user/i.test(b.label));if(prompt&&prompt.text!=='Content not exported')return prompt.text.split('\n')[0].slice(0,150)}return id.includes('/agent:')?'Subagent · '+id.split('/agent:').pop():id.replace(/^(codex|claude|copilot|other):/,'')}
@@ -102,10 +103,11 @@ addEventListener('keydown',e=>{
  }
 });
 async function refresh(){if(busy)return;busy=true;const g=generation;try{
- if(selected){const page=await api(`/api/session?id=${encodeURIComponent(selected)}&origin=${encodeURIComponent(origin)}&offset=${eventOffset}`);if(g!==generation)return;meta=page;events=page.events;renderEvents()}
+ if(archiveMode){await refreshArchive()}
+ else if(selected){const page=await api(`/api/session?id=${encodeURIComponent(selected)}&origin=${encodeURIComponent(origin)}&offset=${eventOffset}`);if(g!==generation)return;meta=page;events=page.events;renderEvents()}
  else {const rows=await api(`/api/sessions?source=${encodeURIComponent(source)}&q=${encodeURIComponent(query)}&offset=${sessionOffset}`);if(g!==generation)return;renderSessions(rows)}
- $('#login').hidden=true;$('#workspace').hidden=false;$('#listpage').hidden=!!selected;$('#detailpage').hidden=!selected;$('#error').textContent='';
- }catch(e){$('#error').textContent=e.message;if($('#login').hidden){$('#workspace').hidden=false;$('#listpage').hidden=!!selected;$('#detailpage').hidden=!selected;$('#timeline').innerHTML=''}}finally{busy=false;if(g!==generation)refresh()}}
+ $('#login').hidden=true;$('#workspace').hidden=false;$('#listpage').hidden=!!selected||archiveMode;$('#detailpage').hidden=!selected||archiveMode;$('#archivepage').hidden=!archiveMode;$('#error').textContent='';
+ }catch(e){$('#error').textContent=e.message;if($('#login').hidden){$('#workspace').hidden=false;$('#listpage').hidden=!!selected||archiveMode;$('#detailpage').hidden=!selected||archiveMode;$('#archivepage').hidden=!archiveMode;$('#timeline').innerHTML=''}}finally{busy=false;if(g!==generation)refresh()}}
 $('#loginform').onsubmit=async e=>{e.preventDefault();try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:$('#token').value})});if(!r.ok)throw Error('Invalid access token.');$('#token').value='';refresh()}catch(e){$('#loginerror').textContent=e.message}};
 $('#logout').onclick=async()=>{await fetch('/api/logout',{method:'POST'});location.reload()};
 document.querySelectorAll('[data-source]').forEach(b=>{b.classList.toggle('active',b.dataset.source===source);b.onclick=()=>{source=b.dataset.source;sessionOffset=0;generation++;listState();document.querySelectorAll('[data-source]').forEach(x=>x.classList.toggle('active',x===b));refresh()}});
@@ -114,4 +116,40 @@ let timer;$('#search').oninput=()=>{clearTimeout(timer);timer=setTimeout(()=>{qu
 for(const [id,delta,type]of[['prevsessions',-200,'s'],['nextsessions',200,'s'],['prevevents',-200,'e'],['nextevents',200,'e']])$('#'+id).onclick=()=>{if(type==='s'){sessionOffset=Math.max(0,sessionOffset+delta);listState()}else eventOffset=Math.max(0,eventOffset+delta);generation++;refresh();window.scrollTo(0,0)};
 $('#origin').onchange=()=>{origin=$('#origin').value;eventOffset=0;generation++;closeInspector(false);refresh()};
 $('#autorefresh').onchange=()=>$('#connection').textContent=$('#autorefresh').checked?'Auto-refresh · 5s':'Paused';
+const archiveSelection=new Set();let archiveAll=false,archiveOffset=0,archiveData=null;
+const bytes=n=>{const units=['B','KiB','MiB','GiB','TiB'];let i=0;while(n>=1024&&i<units.length-1){n/=1024;i++}return `${n.toFixed(i?1:0)} ${units[i]}`};
+async function archivePost(path,body){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(r.status===401){$('#login').hidden=false;$('#workspace').hidden=true;throw Error('Sign in required.')}if(!r.ok)throw Error((await r.text()).trim());return r.json()}
+function updateArchiveSelection(){const n=archiveAll?archiveData.total_sessions:archiveSelection.size;$('#archiveselected').textContent=`${n} selected`;$('#archivecreate').disabled=!n;document.querySelectorAll('[data-archive-session]').forEach(el=>{el.checked=archiveAll||archiveSelection.has(el.dataset.archiveSession);el.disabled=archiveAll})}
+async function refreshArchive(){
+ const data=await api('/api/archive?offset='+archiveOffset);archiveData=data;
+ const job=data.job,active=job&&['preparing','ready','deleting','compacting'].includes(job.status);
+ $('#connection').textContent='Auto-refresh · 5s';$('#archivetotal').textContent=`${data.total_sessions} sessions · ${bytes(data.total_bytes)} uncompressed`;
+ $('#archivecutoff').textContent=`Last activity before ${new Date(data.cutoff).toLocaleDateString()} · DB data only; source files stay in place.`;
+ $('#archiveselection').hidden=!!active;
+ $('#archiveitems').innerHTML=data.sessions.length?data.sessions.slice(0,200).map(s=>`<label class="archive-row"><input type="checkbox" data-archive-session="${esc(s.id)}" ${active?'disabled checked':''}><span><a href="${esc(link(s.id))}">${esc(s.id)}</a><small>${esc(label(s.source))} · ${esc(new Date(s.last_activity).toLocaleString())}</small></span><span>${s.records.toLocaleString()} ${s.records===1?'record':'records'}</span><span>${bytes(s.raw_bytes)}</span></label>`).join(''):'<p class="empty">No inactive sessions</p>';
+ document.querySelectorAll('[data-archive-session]').forEach(el=>el.onchange=()=>{if(el.checked)archiveSelection.add(el.dataset.archiveSession);else archiveSelection.delete(el.dataset.archiveSession);updateArchiveSelection()});if(!active)updateArchiveSelection();
+ $('#archiveprev').disabled=archiveOffset===0;$('#archivenext').disabled=data.sessions.length<=200;
+ const key=job?`${job.id}:${job.status}:${job.compaction_error}`:'';
+ if($('#archivejob').dataset.key===key){const progress=$('#archiveprogress');if(progress)progress.textContent=archiveProgress(job);return}
+ $('#archivejob').dataset.key=key;
+ if(!job){$('#archivejob').innerHTML='';return}
+ const cancel=['preparing','ready'].includes(job.status)?'<button id="archivecancel">Cancel archive</button>':'';
+ let content='';
+ if(job.status==='preparing')content=`<h2>Creating ZIP</h2><p id="archiveprogress">${esc(archiveProgress(job))}</p>${cancel}`;
+ if(job.status==='ready')content=`<h2>Ready to download</h2><p>${job.session_count} sessions · ${job.record_count.toLocaleString()} records · ${bytes(job.archive_bytes)}</p><a id="archivedownload" class="button primary" href="/api/archives/${encodeURIComponent(job.id)}/download" download>Download ZIP</a> ${cancel}<details><summary>SHA-256</summary><code class="archivehash">${esc(job.sha256)}</code></details><form id="archivedeleteform"><label>After checking your downloaded ZIP, type <strong>DOWNLOADED</strong><input id="archiveconfirmation" autocomplete="off" spellcheck="false" required placeholder="DOWNLOADED"></label><button id="archivedelete" class="danger" disabled>Delete archived DB records</button></form><p id="archiveactionerror" role="alert"></p>`;
+ if(job.status==='deleting')content=`<h2>Deleting archived records</h2><p id="archiveprogress">${esc(archiveProgress(job))}</p>`;
+ if(job.status==='compacting')content='<h2>Reclaiming database space</h2><p>Reclaiming free pages. A full rebuild pauses ingestion until it finishes.</p>';
+ if(job.status==='deleted')content=`<h2>Archive complete</h2><p>${job.deleted_records.toLocaleString()} records deleted · ${bytes(job.reclaimed_bytes)} reclaimed</p>${job.compaction_error?`<p class="failure-detail">${esc(job.compaction_error)}</p><button id="archivecompact">${job.rebuild_required?'Rebuild database · pauses ingestion':'Retry compaction'}</button>`:''}`;
+ if(job.status==='failed')content=`<h2 class="failure-detail">Archive failed</h2><p>${esc(job.error)}</p>${job.deleted_records?`<p>${job.deleted_records} records already deleted.</p>`:''}`;
+ if(job.status==='canceled')content='<p>Archive canceled. DB records retained.</p>';
+ $('#archivejob').innerHTML=content;
+ if($('#archivecancel'))$('#archivecancel').onclick=()=>archiveAction('/api/archives/'+job.id+'/cancel',{});
+ if($('#archivecompact'))$('#archivecompact').onclick=()=>archiveAction('/api/archives/'+job.id+'/compact',{rebuild:job.rebuild_required});
+ if($('#archiveconfirmation')){$('#archiveconfirmation').oninput=()=>$('#archivedelete').disabled=$('#archiveconfirmation').value!=='DOWNLOADED';$('#archivedeleteform').onsubmit=async e=>{e.preventDefault();$('#archivedelete').disabled=true;await archiveAction('/api/archives/'+job.id+'/delete',{confirmation:$('#archiveconfirmation').value})}};
+}
+function archiveProgress(job){return job.status==='deleting'?`${job.deleted_records.toLocaleString()} / ${job.record_count.toLocaleString()} records`:`${job.processed_records.toLocaleString()} / ${job.record_count.toLocaleString()} records · ${bytes(job.archive_bytes)}`}
+async function archiveAction(path,body){try{await archivePost(path,body);archiveSelection.clear();archiveAll=false;await refresh()}catch(e){const target=$('#archiveactionerror')||$('#error');target.textContent=e.message;if($('#archiveconfirmation'))$('#archiveconfirmation').oninput()}}
+$('#archiveall').onclick=()=>{archiveAll=true;archiveSelection.clear();updateArchiveSelection()};$('#archiveclear').onclick=()=>{archiveAll=false;archiveSelection.clear();updateArchiveSelection()};
+$('#archivecreate').onclick=async()=>{$('#archivecreate').disabled=true;await archiveAction('/api/archives',{cutoff:archiveData.cutoff,all:archiveAll,sessions:archiveAll?[]:[...archiveSelection]})};
+$('#archiveprev').onclick=()=>{archiveOffset=Math.max(0,archiveOffset-200);refresh()};$('#archivenext').onclick=()=>{archiveOffset+=200;refresh()};
 setInterval(()=>{if(!document.hidden&&(!selected||$('#autorefresh').checked)&&!window.getSelection()?.toString())refresh()},5000);refresh();

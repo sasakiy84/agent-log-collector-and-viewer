@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Test a locally built Compose image using an isolated, disposable project/volume."""
-import json,os,pathlib,secrets,sqlite3,subprocess,tempfile,time,urllib.error,urllib.request
+import hashlib,json,os,pathlib,secrets,shutil,sqlite3,subprocess,tempfile,time,urllib.error,urllib.request,zipfile
 project='agentlog-smoke-'+secrets.token_hex(4)
 token=secrets.token_hex(24)
 env={**os.environ,'AGENTLOG_TOKEN':token,'AGENTLOG_PORT':'0'}
@@ -32,7 +32,7 @@ def large_history(cid):
      sid='codex:scale-'+f'{session:060d}'
      raw=json.dumps({'resource':{'attributes':[{'key':'service.name','value':{'stringValue':'codex'}}]},'record':{'eventName':'gen_ai.user.message','attributes':[{'key':'session.id','value':{'stringValue':sid}},{'key':'agentlog.origin','value':{'stringValue':'import'}},{'key':'prompt','value':{'stringValue':'Synthetic scale fixture'}}]}}).encode()
      for sequence in range(300):
-      yield ('import:'+f'{session*300+sequence:064x}',sid,'','codex','logs','2026-11-14T00:00:00.000000000Z','gen_ai.user.message','','','',raw,sequence,'import','user','')
+      yield ('import:'+f'{session*300+sequence:064x}',sid,'','codex','logs','2025-01-01T00:00:00.000000000Z','gen_ai.user.message','','','',raw,sequence,'import','user','')
    db.executemany('INSERT INTO events(id,session,parent,source,signal,time,name,trace,span,parent_span,raw,sequence,origin,kind,tool_name) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',rows())
   db.close()
   # docker cp writes as root; this disposable fixture must remain writable by
@@ -46,6 +46,33 @@ def large_history(cid):
  page=request('/api/session?id='+summaries[0]['id'],timeout=30)
  assert page['count']==300 and len(page['events'])==201
  print('PASS: 150,000 records with a read-only root and 64 MiB /tmp; SQLite temporary files use the data volume.')
+ # Exercise the same archive worker under the production read-only image.
+ archive=request('/api/archives',{'all':True,'cutoff':'2025-02-01T00:00:00Z'},timeout=30)
+ def wait(status):
+  deadline=time.monotonic()+180
+  while time.monotonic()<deadline:
+   job=request('/api/archives/'+archive['id'])
+   if job['status']==status:return job
+   assert job['status']!='failed',job
+   time.sleep(.2)
+  raise RuntimeError('Archive timed out: '+str(job))
+ job=wait('ready');assert request('/api/stats')['events']==150000
+ with tempfile.TemporaryDirectory() as tmp:
+  output=pathlib.Path(tmp)/'archive.zip'
+  req=urllib.request.Request(base()+'/api/archives/'+archive['id']+'/download',headers={'Authorization':'Bearer '+token})
+  with urllib.request.urlopen(req,timeout=60) as response,output.open('wb') as destination:shutil.copyfileobj(response,destination,128*1024)
+  digest=hashlib.sha256()
+  with output.open('rb') as data:
+   for chunk in iter(lambda:data.read(128*1024),b''):digest.update(chunk)
+  assert digest.hexdigest()==job['sha256']
+  with zipfile.ZipFile(output) as zipped:
+   assert zipped.testzip() is None
+   assert len([name for name in zipped.namelist() if name.startswith('sessions/')])==500
+  request('/api/archives/'+archive['id']+'/delete',{'confirmation':'DOWNLOADED'})
+  done=wait('deleted');assert done['deleted_records']==150000 and not done['compaction_error'],done
+ assert request('/api/stats')=={'events':0,'sessions':0}
+ print('PASS: ZIP streaming, SHA/CRC, explicit deletion, reclamation for 150,000 synthetic records in Docker.')
+
 
 try:
  run('up','-d','--no-build')

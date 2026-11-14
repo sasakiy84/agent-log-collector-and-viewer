@@ -96,6 +96,8 @@ server {
     client_max_body_size 16m;
 
     location / {
+        proxy_read_timeout 300s;
+        send_timeout 300s;
         proxy_pass http://127.0.0.1:4318;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -131,3 +133,5 @@ docker compose logs -f
 # 停止（sessions/とdata/は残る）
 docker compose down
 ```
+
+[1か月動きのないセッションのアーカイブ・DB容量の回収](archive.md)
