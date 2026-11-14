@@ -33,6 +33,8 @@ chmod 600 .env config.json
 docker compose up -d --build
 ```
 
+SQLiteの集計用一時ファイルも`data/`を使います。
+
 コンテナは`.env`のUID/GIDで動きます。ホストのユーザーだけが読めるログも取り込め、`data/`も同じユーザーの所有になります。
 
 `compose.override.yaml`はComposeが自動で読み込みます。`~/agentlog/sessions/`をコンテナの`/sessions`へ読み取り専用でマウントし、既存分・新規ファイル・追記を1秒間隔で取り込みます。
