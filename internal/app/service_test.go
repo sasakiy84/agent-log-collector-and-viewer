@@ -278,6 +278,17 @@ func TestPendingIngestionOnlyBlocksItsOwnArchive(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitArchive(t, a, job.ID, "ready")
+	w = archiveReq(a, "GET", "/api/archives/"+job.ID+"/download", "")
+	if w.Code != 200 {
+		t.Fatal(w.Code)
+	}
+	if w = request(a, "/v1/logs", logBody("codex", "other", "", ""), token); w.Code != 200 {
+		t.Fatal(w.Code)
+	}
+	w = archiveReq(a, "POST", "/api/archives/"+job.ID+"/delete", `{"confirmation":"DOWNLOADED"}`)
+	if w.Code != 409 {
+		t.Fatal("deleted history with unprocessed activity", w.Code, w.Body.String())
+	}
 	w = archiveReq(a, "POST", "/api/archives/"+job.ID+"/cancel", `{}`)
 	if w.Code != 200 {
 		t.Fatal("pending ingestion blocked cancellation", w.Code, w.Body.String())
