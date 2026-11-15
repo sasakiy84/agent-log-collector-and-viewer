@@ -12,6 +12,7 @@ type sessionFilter struct {
 	Source, Search, Skill, Plugin string
 	IDKey, IDValue                string
 	Diagnostics                   bool
+	IncludeLocked                 bool
 	Project, Folder               *string
 }
 
@@ -30,11 +31,14 @@ func parseSessionFilter(q url.Values) sessionFilter {
 
 // The folder cache has dimensions for source, diagnostics and folder only.
 func (f sessionFilter) usesFolderCache() bool {
-	return f.Search == "" && f.Skill == "" && f.Project == nil && f.IDKey == "" && f.IDValue == ""
+	return !f.IncludeLocked && f.Search == "" && f.Skill == "" && f.Project == nil && f.IDKey == "" && f.IDValue == ""
 }
 
 func (f sessionFilter) sql(ctx context.Context) (string, []any, error) {
-	query := ` FROM session_catalog s WHERE NOT EXISTS(SELECT 1 FROM archive_locks l WHERE l.session=s.session)`
+	query := ` FROM session_catalog s WHERE 1`
+	if !f.IncludeLocked {
+		query += ` AND NOT EXISTS(SELECT 1 FROM archive_locks l WHERE l.session=s.session)`
+	}
 	args := []any{}
 	idQuery, idArgs, err := identifierFilter(f.IDKey, f.IDValue)
 	if err != nil {
