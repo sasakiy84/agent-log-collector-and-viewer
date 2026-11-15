@@ -42,6 +42,7 @@ func TestFolderOverviewMatchesFilteredAccountingAfterChanges(t *testing.T) {
 	diagnostic := recorded(t, "diagnostic", "otel", "codex", "unused", "api_request", map[string]any{"cwd": "/work/shared", "input_tokens": "7"})
 	diagnostic.Session = "trace:codex:synthetic"
 	save(t, a, diagnostic)
+	save(t, a, recorded(t, "automatic", "otel", "codex", "automatic", "thread/start", map[string]any{"cwd": "/work/shared", "session_init.ephemeral": true, "rpc.request_id": "temporary-structured-test"}))
 	check()
 	// A changed import moves its contribution and replaces exact usage values.
 	save(t, a, counter("/work/moved", "0", "0.123456789012345678"))

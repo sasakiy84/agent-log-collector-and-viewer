@@ -10,7 +10,9 @@ Links use explicit call IDs, scoped to session, provider, executing agent and th
 
 The counterpart preview uses bounded cached cards. Its full original is fetched only when opened. This reuses the existing call-ID index and adds no historical backfill.
 
-Codex events without a conversation ID can appear as `trace:codex:…` or `unassigned:codex`. These unassigned logs and traces are hidden from normal folder/session lists by default. Enable **Unassigned Codex events** to inspect them. Original records remain stored and accessible, and a trace joins a real conversation when explicit trace ownership becomes available. A real conversation lacking working-directory metadata still belongs to **Folder unavailable**.
+Codex events without a conversation ID can appear as `trace:codex:…` or `unassigned:codex`. These unassigned logs and traces are hidden from normal folder/session lists by default. Enable **Internal Codex sessions** to inspect them. Original records remain stored and accessible, and a trace joins a real conversation when explicit trace ownership becomes available. A real conversation lacking working-directory metadata still belongs to **Folder unavailable**.
+
+Codex-generated temporary sessions, such as automatic task-title generation, are also hidden by default. Classification requires both `session_init.ephemeral=true` and an `rpc.request_id` starting with `temporary-structured-`; explicit `ephemeral=false` keeps the session visible. Model names and prompt text are not classification criteria. Ordinary ephemeral sessions remain visible. Existing records are classified once by a resumable background job.
 
 ```sh
 AGENTLOG_BIN=./agentlog python3 scripts/tool_pairs_browser_test.py

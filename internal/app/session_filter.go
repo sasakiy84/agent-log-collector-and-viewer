@@ -40,7 +40,7 @@ func (f sessionFilter) sql(ctx context.Context) (string, []any, error) {
 		args = append(args, skill, f.Plugin)
 	}
 	if !f.Diagnostics {
-		query += ` AND NOT (s.source='codex' AND (s.session GLOB 'trace:codex:*' OR s.session='unassigned:codex'))`
+		query += ` AND s.internal=0 AND NOT (s.source='codex' AND (s.session GLOB 'trace:codex:*' OR s.session='unassigned:codex'))`
 	}
 	if source := f.Source; source != "" {
 		query += " AND source=?"

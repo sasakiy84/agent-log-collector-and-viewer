@@ -94,6 +94,9 @@ func summaryDetail(d Detail) Detail {
 	return d
 }
 func storeCard(ctx context.Context, tx *sql.Tx, e Event, d Detail, doc document) error {
+	if err := storeSessionFacts(ctx, tx, e, doc); err != nil {
+		return err
+	}
 	if err := storeSkillFacts(ctx, tx, e, d); err != nil {
 		return err
 	}
@@ -275,7 +278,7 @@ func refreshTimeline(ctx context.Context, tx *sql.Tx, session string) error {
 		if e != nil {
 			return e
 		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO session_catalog SELECT ?,MAX(source),MAX(parent),
+		_, err = tx.ExecContext(ctx, `INSERT INTO session_catalog(session,source,parent,count,start,end,import_count,import_start,import_end,otel_count,otel_start,otel_end,preview) SELECT ?,MAX(source),MAX(parent),
  (SELECT count FROM timeline_counts WHERE session=?),
  (SELECT time FROM timeline_entries WHERE session=? ORDER BY time LIMIT 1),
  (SELECT end FROM timeline_entries WHERE session=? ORDER BY end DESC LIMIT 1),?,?,?,?,?,?,? FROM card_counts WHERE session=?

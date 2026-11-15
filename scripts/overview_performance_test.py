@@ -26,7 +26,7 @@ if __name__=='__main__':
     for i in range(args.sessions):
      sid=f'codex:synthetic-{i:08d}';folder=f'/work/project-{i%20:02d}';stamp=f'2026-11-{i%28+1:02d}T12:{i%60:02d}:00Z';detail=json.dumps({'name':'codex.user_prompt','kind':'user','title':'User','blocks':[{'label':'Request','text':'Synthetic investigation '+str(i)}],'fields':[],'attributes':{},'cwd':folder})
      yield(sid,'codex','',100,stamp,stamp,100,stamp,stamp,0,'','',detail)
-   c.executemany('INSERT INTO session_catalog VALUES('+','.join('?'*13)+')',rows())
+   c.executemany('INSERT INTO session_catalog(session,source,parent,count,start,end,import_count,import_start,import_end,otel_count,otel_start,otel_end,preview) VALUES('+','.join('?'*13)+')',rows())
    usage={'sessions':1,'values':{'input_tokens':'9007199254740993','output_tokens':'500','cache_read_tokens':'300','cost_usd':'0.012345678901234567','errors':'0','duration_ms':'1000','duration_samples':'1'},'coverage':{'input_tokens':1,'output_tokens':1,'cache_read_tokens':1,'cost_usd':1,'errors':1},'basis':{'tokens':'otel/traces','cost':'otel/logs','latency':'otel/traces'},'overlap':True,'excluded':0,'legacy':0}
    usage['variants']={'otel':{k:v for k,v in usage.items() if k!='variants'},'import':{k:v for k,v in usage.items() if k!='variants'}}
    c.executemany('INSERT INTO usage_summary VALUES(?,?,?)',((f'codex:synthetic-{i:08d}','',json.dumps(usage)) for i in range(args.sessions)))
