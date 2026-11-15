@@ -142,6 +142,9 @@ func (a *japaneseAnalyzer) tokens(ctx context.Context, text string, emit func(st
 }
 
 func searchMatch(ctx context.Context, query string) (string, error) {
+	return searchMatchMode(ctx, query, "all")
+}
+func searchMatchMode(ctx context.Context, query, mode string) (string, error) {
 	if utf8.RuneCountInString(query) > 512 {
 		return "", fmt.Errorf("Search is limited to 512 characters")
 	}
@@ -163,6 +166,9 @@ func searchMatch(ctx context.Context, query string) (string, error) {
 		return "", nil
 	}
 	terms[len(terms)-1] += "*"
+	if mode == "any" {
+		return strings.Join(terms, " OR "), nil
+	}
 	return strings.Join(terms, " AND "), nil
 }
 

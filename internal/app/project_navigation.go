@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -79,14 +80,48 @@ func (a *App) projects(w http.ResponseWriter, r *http.Request) {
 		filter += " AND instr(lower(project),lower(?))>0"
 		args = append(args, query)
 	}
+
+	projectColumn := "project"
+	// Cached totals handle the common unfiltered navigation. Only explicit
+	// search facets use the much smaller session catalog and indexed predicates.
+	q := r.URL.Query()
+	scopedQuery := url.Values{}
+	for key, values := range q {
+		scopedQuery[key] = append([]string{}, values...)
+	}
+	scopedQuery.Del("project")
+	scopedQuery.Set("q", q.Get("session_q"))
+	facets := parseSearchFacets(scopedQuery)
+	if facets.Err != nil {
+		http.Error(w, facets.Err.Error(), 400)
+		return
+	}
+	if facets.hasEvents() || len(q["source"]) > 1 || q.Get("session_q") != "" || q.Get("exclude") != "" || q.Has("id_key") || q.Has("id_value") || q.Get("skill") != "" {
+		f := parseSessionFilter(scopedQuery)
+		f.IncludeLocked = q.Get("include_children") == "1"
+		var e error
+		filter, args, e = f.sql(r.Context())
+		if e != nil {
+			http.Error(w, e.Error(), 400)
+			return
+		}
+		if !f.IncludeLocked {
+			filter += " AND length(s.parent)=0"
+		}
+		if search := strings.TrimSpace(q.Get("q")); search != "" {
+			filter += " AND instr(lower(s.project_key),lower(?))>0"
+			args = append(args, search)
+		}
+		countColumn, endColumn, projectColumn = "1", "s.end", "s.project_key"
+	}
 	var total, sessions int
-	if err = tx.QueryRowContext(r.Context(), "SELECT COUNT(DISTINCT project),COALESCE(SUM("+countColumn+"),0)"+filter, args...).Scan(&total, &sessions); err != nil {
+	if err = tx.QueryRowContext(r.Context(), "SELECT COUNT(DISTINCT "+projectColumn+"),COALESCE(SUM("+countColumn+"),0)"+filter, args...).Scan(&total, &sessions); err != nil {
 		databaseError(w, r, err)
 		return
 	}
 	offset := pageOffset(offset(r), total, 200)
 	params := append(append([]any{}, args...), offset)
-	rows, err := tx.QueryContext(r.Context(), "SELECT project,SUM("+countColumn+"),MAX("+endColumn+")"+filter+" GROUP BY project ORDER BY MAX("+endColumn+") DESC,lower(project),project LIMIT 200 OFFSET ?", params...)
+	rows, err := tx.QueryContext(r.Context(), "SELECT "+projectColumn+",SUM("+countColumn+"),MAX("+endColumn+")"+filter+" GROUP BY "+projectColumn+" ORDER BY MAX("+endColumn+") DESC,lower("+projectColumn+"),"+projectColumn+" LIMIT 200 OFFSET ?", params...)
 	if err != nil {
 		databaseError(w, r, err)
 		return

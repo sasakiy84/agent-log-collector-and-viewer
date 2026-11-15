@@ -6,7 +6,7 @@ let skillsQuery = "",
   skillsPager = null;
 function skillSessionURL(name, plugin) {
   const params = new URLSearchParams({ skill: name, plugin: plugin || "" });
-  if (project !== null) params.set("project", project);
+  appendSearchScope(params, { kinds: false, text: false });
   return "/?" + params;
 }
 function skillUsesLabel(row) {
@@ -40,14 +40,14 @@ async function refreshSkills(signal) {
     offset: String(skillsOffset),
     sort: skillsSort,
   });
-  if (project !== null) params.set("project", project);
+  appendSearchScope(params, { kinds: false });
   if (skillsQuery) params.set("q", skillsQuery);
   const data = await api("/api/skills?" + params, signal);
   if (signal?.aborted) return;
-  skillsData = { ...data, query: skillsQuery, project };
+  skillsData = { ...data, query: skillsQuery, project, projectSelections: [...projectSelections], searchScope: structuredClone(searchScope) };
   skillsOffset = data.offset;
   $("#skilltitle").textContent =
-    project === null ? "Skills" : projectName(project) + " · Skills";
+    selectedProjects().length ? projectScopeName() + " · Skills" : "Skills";
   $("#skillcount").textContent =
     data.total.toLocaleString() +
     (data.total === 1 ? " skill · " : " skills · ") +
@@ -65,7 +65,7 @@ async function refreshSkills(signal) {
     : '<p class="empty">No skills found</p>';
   skillsPager.update({ total: data.total, offset: data.offset, size: 200 });
   const url = new URLSearchParams();
-  if (project !== null) url.set("project", project);
+  appendSearchScope(url, { kinds: false });
   if (skillsQuery) url.set("q", skillsQuery);
   if (skillsSort !== "uses") url.set("sort", skillsSort);
   if (skillsOffset) url.set("offset", skillsOffset);

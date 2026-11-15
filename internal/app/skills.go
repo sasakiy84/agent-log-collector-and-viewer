@@ -92,28 +92,68 @@ func (a *App) skills(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
-	from := ` FROM skill_events k JOIN session_catalog s ON s.session=k.session WHERE NOT EXISTS(SELECT 1 FROM archive_locks l WHERE l.session=k.session)`
-	args := []any{}
-	if r.URL.Query().Has("project") {
-		from += " AND s.project_key=?"
-		args = append(args, canonicalProjectID(r.URL.Query().Get("project")))
+
+	scope := parseSearchFacets(r.URL.Query())
+	if scope.Err != nil {
+		http.Error(w, scope.Err.Error(), 400)
+		return
 	}
-	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" {
-		if len(q) > 512 {
+	if len(scope.Kinds) > 0 {
+		http.Error(w, "Event types are not supported by the skill catalog", 400)
+		return
+	}
+	mode := r.URL.Query().Get("text_mode")
+	if mode != "" && mode != "all" && mode != "any" {
+		http.Error(w, "Invalid text match mode", 400)
+		return
+	}
+	evidence, evidenceArgs := scope.evidenceSQL("e")
+	cte := `WITH skill_events AS NOT MATERIALIZED (SELECT e.* FROM main.skill_events e WHERE 1` + evidence + `) `
+	from := ` FROM skill_events k JOIN session_catalog s ON s.session=k.session WHERE NOT EXISTS(SELECT 1 FROM archive_locks l WHERE l.session=k.session)`
+	sessionScope, args := scope.sessionSQL()
+	from += sessionScope
+	searchCondition := func(alias, text string, anyWord bool) (string, []any) {
+		parts, values := []string{}, []any{}
+		for _, word := range strings.Fields(skillSearch(text)) {
+			parts = append(parts, "instr("+alias+".search,?)>0")
+			values = append(values, word)
+		}
+		if len(parts) == 0 {
+			return "", nil
+		}
+		join := " AND "
+		if anyWord {
+			join = " OR "
+		}
+		return "(" + strings.Join(parts, join) + ")", values
+	}
+	for _, field := range []string{"q", "exclude"} {
+		text := strings.TrimSpace(r.URL.Query().Get(field))
+		if len(text) > 512 {
 			http.Error(w, "Search is too long", 400)
 			return
 		}
-		from += ` AND (k.name,k.plugin) IN(SELECT matched.name,matched.plugin FROM skill_events matched JOIN session_catalog matched_session ON matched_session.session=matched.session WHERE NOT EXISTS(SELECT 1 FROM archive_locks l WHERE l.session=matched.session) AND instr(matched.search,?)>0`
-		args = append(args, skillSearch(q))
-		if r.URL.Query().Has("project") {
-			from += " AND matched_session.project_key=?"
-			args = append(args, canonicalProjectID(r.URL.Query().Get("project")))
+		if text == "" {
+			continue
 		}
+		condition, terms := searchCondition("matched", text, mode == "any" || field == "exclude")
+		if condition == "" {
+			continue
+		}
+		operator := " IN"
+		if field == "exclude" {
+			operator = " NOT IN"
+		}
+		from += ` AND (k.name,k.plugin)` + operator + `(SELECT matched.name,matched.plugin FROM skill_events matched JOIN session_catalog s ON s.session=matched.session WHERE NOT EXISTS(SELECT 1 FROM archive_locks l WHERE l.session=matched.session) AND ` + condition
+		args = append(args, terms...)
+		from += sessionScope
+		args = append(args, scopeArgs(scope)...)
 		from += ")"
 	}
+	args = append(append([]any{}, evidenceArgs...), args...)
 	grouped := from + " GROUP BY k.name,k.plugin"
 	var total int
-	if err = tx.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM (SELECT k.name"+grouped+")", args...).Scan(&total); err != nil {
+	if err = tx.QueryRowContext(r.Context(), cte+"SELECT COUNT(*) FROM (SELECT k.name"+grouped+")", args...).Scan(&total); err != nil {
 		databaseError(w, r, err)
 		return
 	}
@@ -121,7 +161,7 @@ func (a *App) skills(w http.ResponseWriter, r *http.Request) {
 	params := append(append([]any{}, args...), off)
 	// Window aggregation covers every matching skill before LIMIT, so the
 	// displayed total remains correct on later pages and under project/search filters.
-	rows, err := tx.QueryContext(r.Context(), "WITH totals AS ("+skillRollup("")+grouped+") SELECT name,plugin,sessions,uses,inferred,reference_sessions,last,scopes,SUM(uses) OVER(),SUM(inferred) OVER() FROM totals ORDER BY "+order+" LIMIT 200 OFFSET ?", params...)
+	rows, err := tx.QueryContext(r.Context(), strings.TrimSuffix(cte, " ")+", totals AS ("+skillRollup("")+grouped+") SELECT name,plugin,sessions,uses,inferred,reference_sessions,last,scopes,SUM(uses) OVER(),SUM(inferred) OVER() FROM totals ORDER BY "+order+" LIMIT 200 OFFSET ?", params...)
 	var out []SkillSummary
 	var totals skillUsageTotals
 	if err == nil {
@@ -217,3 +257,5 @@ func attachSkills(ctx context.Context, tx *sql.Tx, events []TimelineEvent) error
 	}
 	return rows.Err()
 }
+
+func scopeArgs(scope searchFacets) []any { _, args := scope.sessionSQL(); return args }
