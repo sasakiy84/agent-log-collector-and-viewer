@@ -85,6 +85,7 @@ func (a *App) prepareDatabase(ctx context.Context) error {
 		{"session views", func() error { return a.prepareReadModel(ctx) }},
 		{"archive metadata", func() error { return a.drainBatches(ctx, "archive metadata", backfillArchiveStats) }},
 		{"event presentation", func() error { return a.runMaintenance(ctx, "presentation.v1", backfillPresentation, 0) }},
+		{"Claude and Copilot presentations", func() error { return a.runMaintenance(ctx, "providers.v1", backfillProviders, 0) }},
 		{"model call ancestry", func() error {
 			return inTransaction(ctx, a.DB, func(tx *sql.Tx) error { return refreshModelCalls(ctx, tx) })
 		}},

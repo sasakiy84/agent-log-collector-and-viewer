@@ -63,7 +63,7 @@ func (f sessionFilter) sql(ctx context.Context) (string, []any, error) {
 		query += " AND length(s.parent)=0"
 	}
 	if !f.Diagnostics {
-		query += ` AND s.internal=0 AND NOT (s.source='codex' AND (s.session GLOB 'trace:codex:*' OR s.session='unassigned:codex'))`
+		query += ` AND s.internal=0 AND NOT (s.source IN('codex','claude','copilot') AND (s.session GLOB ('trace:'||s.source||':*') OR s.session='unassigned:'||s.source))`
 	}
 
 	if f.Facets.Err != nil {

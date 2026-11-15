@@ -234,22 +234,31 @@ func attachModelCalls(ctx context.Context, tx *sql.Tx, events []TimelineEvent, o
 			}
 			continue
 		}
-		if e.Detail.Kind != "assistant" || e.Detail.Turn == "" {
+		invocation := e.Source == "copilot" && e.Detail.Kind == "agent" && e.Trace != "" && e.Span != ""
+		if (e.Detail.Kind != "assistant" && !invocation) || e.Detail.Turn == "" {
 			continue
 		}
-		var latest string
-		err := tx.QueryRowContext(ctx, "SELECT id FROM event_cards WHERE session=? AND turn=? AND kind='assistant' AND (?='' OR origin=?) ORDER BY time DESC,sequence DESC,id DESC LIMIT 1", e.Session, e.Detail.Turn, origin, origin).Scan(&latest)
-		if err != nil {
-			return err
+		if !invocation {
+			var latest string
+			err := tx.QueryRowContext(ctx, "SELECT id FROM event_cards WHERE session=? AND turn=? AND kind='assistant' AND (?='' OR origin=?) ORDER BY time DESC,sequence DESC,id DESC LIMIT 1", e.Session, e.Detail.Turn, origin, origin).Scan(&latest)
+			if err != nil {
+				return err
+			}
+			owns := false
+			for _, record := range e.Records {
+				owns = owns || record.ID == latest
+			}
+			if !owns {
+				continue
+			}
 		}
-		owns := false
-		for _, record := range e.Records {
-			owns = owns || record.ID == latest
+		query := "SELECT m.info FROM model_calls m WHERE m.session=? AND m.turn=? AND (?='' OR m.origin=?)"
+		args := []any{e.Session, e.Detail.Turn, origin, origin}
+		if invocation {
+			query += " AND EXISTS(SELECT 1 FROM events request WHERE request.id=m.id AND request.trace=? AND request.parent_span=?)"
+			args = append(args, e.Trace, e.Span)
 		}
-		if !owns {
-			continue
-		}
-		rows, err := tx.QueryContext(ctx, "SELECT info FROM model_calls WHERE session=? AND turn=? AND (?='' OR origin=?) ORDER BY time,id LIMIT 101", e.Session, e.Detail.Turn, origin, origin)
+		rows, err := tx.QueryContext(ctx, query+" ORDER BY m.time,m.id LIMIT 101", args...)
 		if err != nil {
 			return err
 		}

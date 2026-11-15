@@ -36,7 +36,7 @@ func identifierAlias(key string) string {
 		return "parent.session.id"
 	case "call_id", "callId", "tool_call_id", "toolCallId", "gen_ai.tool.call.id":
 		return "call.id"
-	case "message_id", "messageId", "gen_ai.message.id":
+	case "message_id", "messageId", "gen_ai.message.id", "message.uuid":
 		return "message.id"
 	case "agent_id", "agentId", "gen_ai.agent.id":
 		return "agent.id"

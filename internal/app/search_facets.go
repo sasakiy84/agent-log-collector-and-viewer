@@ -105,7 +105,18 @@ func (f sessionFilter) matchingCards(ctx context.Context) (string, []any, error)
 		return "", nil, fmt.Errorf("Invalid text match mode")
 	}
 	from := " FROM event_cards c"
-	query, args := f.Facets.evidenceSQL("c")
+	scope := f.Facets
+	if f.Skill != "" {
+		scope.From = ""
+		scope.To = ""
+	}
+	query, args := scope.evidenceSQL("c")
+	if f.Skill != "" {
+		evidence, more := f.Facets.evidenceSQL("k")
+		query += ` AND EXISTS(SELECT 1 FROM skill_events k WHERE k.event_id=c.id AND k.name=? AND k.plugin=?` + evidence + `)`
+		args = append(args, f.Skill, f.Plugin)
+		args = append(args, more...)
+	}
 	if len(f.Facets.Origins) == 0 {
 		// Fixing origin lets cards_page use its session/origin/time range instead
 		// of scanning every event of long-running sessions for bounded searches.

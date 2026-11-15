@@ -34,6 +34,14 @@ func diagnosticDetail(e Event, d Detail) bool {
 	if d.Kind == "metric" {
 		return true
 	}
+	if e.Origin != "import" && (e.Source == "claude" || e.Source == "copilot") {
+		if d.Kind == "model" && ((e.Source == "copilot" && e.Signal == "traces" && e.ParentSpan != "") || (e.Source == "claude" && len(d.Blocks) == 0)) {
+			return true
+		}
+		if e.Source == "claude" && (eventSuffix(d.Name) == "tool_decision" || d.Kind == "event") {
+			return true
+		}
+	}
 	native := e.Origin != "import" && str(d.Attributes["agentlog.origin"]) != "import"
 	if e.Source != "codex" || !native {
 		return false

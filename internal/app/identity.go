@@ -25,7 +25,7 @@ func correlationKeys(e Event, p Detail, d document) []correlationKey {
 	if e.Signal == "metrics" || (e.Source != "codex" && e.Source != "claude" && e.Source != "copilot") {
 		return nil
 	}
-	agent, ok := agentIdentity(p.Attributes)
+	agent, ok := agentIdentity(e.Source, p.Attributes)
 	if !ok {
 		return nil
 	}
@@ -55,6 +55,9 @@ func correlationKeys(e Event, p Detail, d document) []correlationKey {
 	} else {
 		add("event", "event.id", "event_id")
 		add("message", "gen_ai.message.id", "message.id", "message_id")
+		if e.Source == "claude" {
+			add("event", "message.uuid")
+		}
 		if p.Kind == "user" {
 			add("prompt", "prompt.id", "prompt_id")
 		}
@@ -84,12 +87,16 @@ func toolPhase(name, signal string, r map[string]any) string {
 
 // For message/tool events these attributes identify the executing agent. An
 // invoke_agent span describes a target agent, so it is not a duplicate candidate.
-func agentIdentity(at map[string]any) (string, bool) {
+func agentIdentity(source string, at map[string]any) (string, bool) {
 	if at["gen_ai.operation.name"] == "invoke_agent" {
 		return "", false
 	}
 	id := ""
-	for _, key := range []string{"agent_id", "gen_ai.agent.id"} {
+	keys := []string{"agent_id", "gen_ai.agent.id"}
+	if source == "copilot" {
+		keys = []string{"agent_id"}
+	}
+	for _, key := range keys {
 		value := at[key]
 		if !present(value) {
 			continue

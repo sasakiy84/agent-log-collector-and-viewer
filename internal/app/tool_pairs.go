@@ -55,7 +55,7 @@ func attachToolPair(ctx context.Context, tx *sql.Tx, event *TimelineEvent, origi
 	if pair.Phase != "tool.start" && pair.Phase != "tool.result" {
 		return nil
 	}
-	owner, valid := agentIdentity(event.Detail.Attributes)
+	owner, valid := agentIdentity(event.Source, event.Detail.Attributes)
 	if !valid {
 		pair.State = "ambiguous"
 		return nil

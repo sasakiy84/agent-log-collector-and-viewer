@@ -11,6 +11,8 @@ import (
 )
 
 type SkillEvidence struct {
+	Instance string `json:"-"`
+	Time     string `json:"-"`
 	Name     string `json:"name"`
 	Plugin   string `json:"plugin,omitempty"`
 	Scope    string `json:"scope,omitempty"`
@@ -224,7 +226,7 @@ func attachSkills(ctx context.Context, tx *sql.Tx, events []TimelineEvent) error
 	ids := []string{}
 	positions := map[string]int{}
 	for i, e := range events {
-		if e.Source != "codex" {
+		if e.Source != "codex" && e.Source != "claude" && e.Source != "copilot" {
 			continue
 		}
 		for _, record := range e.Records {

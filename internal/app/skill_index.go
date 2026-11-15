@@ -12,11 +12,18 @@ import (
 func storeSkillFacts(ctx context.Context, tx *sql.Tx, e Event, d Detail) error {
 	for _, f := range extractedSkills(e, d) {
 		turn := skillString(firstValue(d.Attributes, "turn.id", "turn_id"), 512)
+		if f.Instance != "" {
+			turn = "event:" + e.ID + ":" + f.Instance
+		}
 		if turn == "" {
 			turn = "event:" + e.ID
 		}
 		group := identityKey(e.Session, "skill:"+f.Name, f.Plugin, turn)
-		_, err := tx.ExecContext(ctx, `INSERT INTO skill_events VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(event_id,name,plugin,evidence) DO UPDATE SET session=excluded.session,origin=excluded.origin,scope=excluded.scope,mode=excluded.mode,group_key=excluded.group_key,time=excluded.time,path=excluded.path,search=excluded.search`, e.ID, e.Session, e.Origin, f.Name, f.Plugin, f.Scope, f.Mode, f.Evidence, group, e.Time, f.Path, skillSearch(f.Name+" "+f.Plugin+" "+f.Scope+" "+f.Path))
+		stamp := f.Time
+		if !validEventTime(stamp) {
+			stamp = e.Time
+		}
+		_, err := tx.ExecContext(ctx, `INSERT INTO skill_events VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(event_id,name,plugin,evidence,group_key) DO UPDATE SET session=excluded.session,origin=excluded.origin,scope=excluded.scope,mode=excluded.mode,group_key=excluded.group_key,time=excluded.time,path=excluded.path,search=excluded.search`, e.ID, e.Session, e.Origin, f.Name, f.Plugin, f.Scope, f.Mode, f.Evidence, group, stamp, f.Path, skillSearch(f.Name+" "+f.Plugin+" "+f.Scope+" "+f.Path))
 		if err != nil {
 			return err
 		}

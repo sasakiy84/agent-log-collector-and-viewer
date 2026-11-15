@@ -45,10 +45,16 @@ func (a *App) searchSummary(w http.ResponseWriter, r *http.Request) {
 	}
 	group := r.URL.Query().Get("group")
 	column := ""
+	var columnArgs []any
 	switch group {
 	case "", "day":
 		group = "day"
 		column = "substr(c.time,1,10)"
+		if filter.Skill != "" {
+			evidence, more := filter.Facets.evidenceSQL("k")
+			column = `substr((SELECT MIN(k.time) FROM skill_events k WHERE k.event_id=c.id AND k.name=? AND k.plugin=?` + evidence + `),1,10)`
+			columnArgs = append([]any{filter.Skill, filter.Plugin}, more...)
+		}
 	case "project":
 		column = "s.project_key"
 	case "source":
@@ -59,11 +65,11 @@ func (a *App) searchSummary(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid analysis grouping", 400)
 		return
 	}
-	order := column + " DESC"
+	order := "group_key DESC"
 	if group != "day" {
-		order = "COUNT(*) DESC," + column
+		order = "COUNT(*) DESC,group_key"
 	}
-	rows, err := a.readers.QueryContext(r.Context(), "SELECT "+column+",COUNT(*),COUNT(DISTINCT c.session),SUM(c.is_error)"+cards+" GROUP BY "+column+" ORDER BY "+order+" LIMIT 101", args...)
+	rows, err := a.readers.QueryContext(r.Context(), "SELECT "+column+" AS group_key,COUNT(*),COUNT(DISTINCT c.session),SUM(c.is_error)"+cards+" GROUP BY group_key ORDER BY "+order+" LIMIT 101", append(columnArgs, args...)...)
 	if err != nil {
 		databaseError(w, r, err)
 		return
