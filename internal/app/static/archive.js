@@ -26,6 +26,7 @@ async function archivePost(path, body) {
   if (r.status === 401) {
     $("#login").hidden = false;
     $("#workspace").hidden = true;
+    updateDocumentTitle();
     throw Error("Sign in required.");
   }
   if (!r.ok) throw Error((await r.text()).trim());
