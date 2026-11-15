@@ -18,6 +18,10 @@ At most 100 summaries are shown for one reply; Diagnostics retains every event.
 Without sufficient identifiers, session totals remain available without attributing
 them to a particular answer. Missing prompt or project data is never fabricated.
 
+Session titles use the first user request, skipping recognized Codex context and
+`<external_codex_apps_open_page>` application messages. Original messages remain
+available in the timeline, JSON export and search.
+
 Existing databases receive versioned migrations and a resumable presentation
 backfill. Original event IDs and OTLP payloads are preserved. Imported cards use
 their bounded cached presentation; native OTEL records are parsed once during the

@@ -16,7 +16,7 @@ func userPromptText(text, source string) string {
 	}
 	for {
 		previous := text
-		for _, tag := range []string{"recommended_plugins", "environment_context", "user_instructions", "skills_instructions", "skill"} {
+		for _, tag := range []string{"recommended_plugins", "environment_context", "user_instructions", "skills_instructions", "skill", "external_codex_apps_open_page"} {
 			open, close := "<"+tag+">", "</"+tag+">"
 			if strings.HasPrefix(text, open) {
 				if end := strings.Index(text[len(open):], close); end >= 0 {
@@ -139,8 +139,29 @@ func backfillTitles(ctx context.Context, tx *sql.Tx, cursor string) (string, int
 	if err != nil {
 		return cursor, 0, err
 	}
+	return updatePromptTitles(ctx, tx, batch, cursor)
+}
+
+const appMessageTitlesJob = "codex_app_titles.v1"
+
+func backfillAppMessageTitles(ctx context.Context, tx *sql.Tx, cursor string) (string, int, error) {
+	// Page through the existing user-card index in bounded transactions. Read
+	// original payloads only for titles affected by the newly recognized tag.
+	columns := strings.Replace(qualifiedColumns("e"), "e.raw", `CASE WHEN c.source='codex' AND c.prompt_title GLOB '<external_codex_apps_open_page>*' THEN e.raw ELSE X'' END`, 1)
+	batch, err := loadEventBatch(ctx, tx, "SELECT "+columns+" FROM event_cards c CROSS JOIN events e ON e.id=c.id WHERE c.id>? AND c.is_user=1 ORDER BY c.id LIMIT 200", cursor)
+	if err != nil {
+		return cursor, 0, err
+	}
+	return updatePromptTitles(ctx, tx, batch, cursor)
+}
+
+func updatePromptTitles(ctx context.Context, tx *sql.Tx, batch []Event, cursor string) (string, int, error) {
 	sessions := map[string]bool{}
 	for _, event := range batch {
+		cursor = event.ID
+		if len(event.Raw) == 0 {
+			continue
+		}
 		doc, err := decodeDocument(event.Raw)
 		if err != nil {
 			return cursor, 0, err
@@ -150,7 +171,6 @@ func backfillTitles(ctx context.Context, tx *sql.Tx, cursor string) (string, int
 			return cursor, 0, err
 		}
 		sessions[event.Session] = true
-		cursor = event.ID
 	}
 	for session := range sessions {
 		preview, err := catalogPreview(ctx, tx, session)
@@ -161,5 +181,8 @@ func backfillTitles(ctx context.Context, tx *sql.Tx, cursor string) (string, int
 			return cursor, 0, err
 		}
 	}
-	return cursor, len(batch), nil
+	// Title changes can alter cached preview metadata, so publish summaries in
+	// the same transaction without scanning unrelated session histories.
+	_, err := refreshFolderBatch(ctx, tx)
+	return cursor, len(batch), err
 }

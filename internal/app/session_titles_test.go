@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -17,6 +18,12 @@ func TestPromptTitleEnvelopes(t *testing.T) {
 		{"codex", "<div>このHTMLを修正して</div>", "<div>このHTMLを修正して</div>"},
 		{"claude", "<recommended_plugins>literal</recommended_plugins>", "<recommended_plugins>literal</recommended_plugins>"},
 		{"codex", "Content not exported", ""},
+		{"codex", `<external_codex_apps_open_page>{"page_id":null}</external_codex_apps_open_page>`, ""},
+		{"codex", "<external_codex_apps_open_page>{\"page_id\":\"page-123\"}</external_codex_apps_open_page>\n検索を修正して", "検索を修正して"},
+		{"codex", "<recommended_plugins>plugins</recommended_plugins>\n<external_codex_apps_open_page>{}</external_codex_apps_open_page>\n本来の依頼", "本来の依頼"},
+		{"codex", "<external_codex_apps_open_page> の意味を教えて", "<external_codex_apps_open_page> の意味を教えて"},
+		{"codex", "このタグを調べて: <external_codex_apps_open_page>{}</external_codex_apps_open_page>", "このタグを調べて: <external_codex_apps_open_page>{}</external_codex_apps_open_page>"},
+		{"claude", "<external_codex_apps_open_page>{}</external_codex_apps_open_page>", "<external_codex_apps_open_page>{}</external_codex_apps_open_page>"},
 	} {
 		t.Run(test.text[:min(len(test.text), 24)], func(t *testing.T) {
 			got := promptTitle(test.source, Detail{Kind: "user", Blocks: []Block{{Label: "Request", Text: test.text}}})
@@ -131,5 +138,92 @@ func TestModelOnlyConversationKeepsExplicitUserInputTitle(t *testing.T) {
 	}))
 	if got := previewTitle(t, a, "copilot:model-only", ""); got != "Fix the search query" {
 		t.Fatal("model-only user input lost", got)
+	}
+}
+
+func appOpenPageMessage(t *testing.T, pageID string) Event {
+	t.Helper()
+	e := recorded(t, "app-open-page", "import", "codex", "app-titles", "gen_ai.user.message", map[string]any{"cwd": "/work/project"})
+	doc, err := decodeDocument(e.Raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var attribute map[string]any
+	content, err := json.Marshal("<external_codex_apps_open_page>{\"page_id\":" + pageID + "}</external_codex_apps_open_page>")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Exercise OTLP arrayValue/kvlistValue, matching imported Codex messages.
+	if err = decodeJSON([]byte(`{"key":"gen_ai.input.messages","value":{"arrayValue":{"values":[{"kvlistValue":{"values":[{"key":"role","value":{"stringValue":"user"}},{"key":"parts","value":{"arrayValue":{"values":[{"kvlistValue":{"values":[{"key":"type","value":{"stringValue":"text"}},{"key":"content","value":{"stringValue":`+string(content)+`}}]}}]}}}]}}]}}}`), &attribute); err != nil {
+		t.Fatal(err)
+	}
+	doc.Record["attributes"] = append(arr(doc.Record["attributes"]), attribute)
+	e.Raw, err = json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return e
+}
+
+func TestAppMessageIsPreservedButNotUsedAsSessionTitle(t *testing.T) {
+	a := setup(t)
+	auto := appOpenPageMessage(t, "null")
+	save(t, a, auto)
+	if got := previewTitle(t, a, auto.Session, ""); got != "" {
+		t.Fatal("automatic message became a title", got)
+	}
+	human := recorded(t, "human", "import", "codex", "app-titles", "gen_ai.user.message", map[string]any{"prompt": "検索の表示を修正して"})
+	human.Sequence = 1
+	save(t, a, human)
+	var sessions []SessionSummary
+	getJSON(t, a, "/api/sessions", &sessions)
+	if len(sessions) != 1 || sessions[0].Preview.Blocks[0].Text != "検索の表示を修正して" {
+		t.Fatal("first human prompt not displayed", sessions)
+	}
+	var originals []Event
+	getJSON(t, a, "/api/export?session="+auto.Session, &originals)
+	if len(originals) != 2 || string(originals[0].Raw) != string(auto.Raw) {
+		t.Fatal("automatic message was removed or changed")
+	}
+}
+
+func TestAppMessageTitleRepairUsesOriginalsAndDoesNotRepeat(t *testing.T) {
+	a := setup(t)
+	ctx := context.Background()
+	auto := appOpenPageMessage(t, `"`+strings.Repeat("x", 3000)+`"`)
+	human := recorded(t, "human", "import", "codex", "app-titles", "gen_ai.user.message", map[string]any{"prompt": "本来の最初の依頼"})
+	human.Sequence = 1
+	save(t, a, auto, human)
+	// Reproduce the old persisted title, including a closing tag beyond both
+	// title and card limits. The previous completed title job stays complete.
+	if _, err := a.DB.Exec("UPDATE event_cards SET prompt_title=? WHERE id=?", "<external_codex_apps_open_page>…", auto.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.DB.Exec("UPDATE maintenance_jobs SET cursor='',complete=0 WHERE name=?", appMessageTitlesJob); err != nil {
+		t.Fatal(err)
+	}
+	if err := inTransaction(ctx, a.DB, func(tx *sql.Tx) error {
+		preview, err := catalogPreview(ctx, tx, auto.Session)
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec("UPDATE session_catalog SET preview=? WHERE session=?", preview, auto.Session)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.runMaintenance(ctx, appMessageTitlesJob, backfillAppMessageTitles, 0); err != nil {
+		t.Fatal(err)
+	}
+	var sessions []SessionSummary
+	getJSON(t, a, "/api/sessions", &sessions)
+	if len(sessions) != 1 || sessions[0].Preview.Blocks[0].Text != "本来の最初の依頼" {
+		t.Fatal("persisted catalog was not repaired", sessions)
+	}
+	if err := a.runMaintenance(ctx, appMessageTitlesJob, func(context.Context, *sql.Tx, string) (string, int, error) {
+		t.Fatal("completed title repair repeated")
+		return "", 0, nil
+	}, 0); err != nil {
+		t.Fatal(err)
 	}
 }
