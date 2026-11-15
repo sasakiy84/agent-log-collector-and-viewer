@@ -43,6 +43,6 @@ with tempfile.TemporaryDirectory() as folder:
    page.set_viewport_size({'width':390,'height':844});assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
    if os.getenv('AGENTLOG_SCREENSHOT_DIR'):page.screenshot(path=str(output/'ui-folders-mobile.png'),full_page=True)
    page.locator('[data-folder=""]').click();expect(page.locator('.session')).to_have_count(1);expect(page.locator('.session')).to_have_attribute('data-session','codex:unknown')
-   expect(page.locator('#listtitle')).to_have_text('Unknown folder');assert not errors,errors;browser.close()
+   expect(page.locator('#listtitle')).to_have_text('Folder unavailable');assert not errors,errors;browser.close()
  finally:server.terminate();server.wait(timeout=20)
 print('PASS: global folder grouping, full paths/same names/unknown, counts across pages, recent ordering, source/Japanese search, direct reload/back links, failure rollback, XSS and mobile')

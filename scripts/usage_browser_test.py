@@ -37,7 +37,7 @@ with tempfile.TemporaryDirectory() as folder:
    expect(page.locator('.usage-shortcut')).to_have_text('5K tokens · $0.1')
    page.locator('.usage-shortcut').click();expect(page.locator('#sessionusage')).to_be_focused();expect(page.locator('.usage-heading')).to_be_in_viewport()
    def total(label):return page.locator('.usage-totals > div').filter(has=page.get_by_text(label,exact=True)).locator('dd')
-   expect(total('Input')).to_have_text('4,700');expect(total('Output')).to_have_text('300');expect(total('Cache read')).to_have_text('700');expect(total('Cache hit')).to_have_text('14.9%');expect(total('USD cost')).to_have_text('$0.1');expect(total('Errors')).to_have_text('1')
+   expect(total('Input')).to_have_text('4,700');expect(total('Output')).to_have_text('300');expect(total('Cache read')).to_have_text('700');expect(total('Cached input')).to_have_text('14.9%');expect(total('USD cost')).to_have_text('$0.1');expect(total('Error events')).to_have_text('1')
    page.locator('.usage-more summary').click();expect(page.locator('.usage-more')).to_contain_text('1.50 s')
    page.locator('[data-kind="tool"]').click();expect(total('Input')).to_have_text('4,700')
    if os.getenv('AGENTLOG_SCREENSHOT_DIR'):page.screenshot(path=str(output/'ui-usage-session.png'))
