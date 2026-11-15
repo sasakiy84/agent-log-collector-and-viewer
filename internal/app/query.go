@@ -229,6 +229,10 @@ func (a *App) session(w http.ResponseWriter, r *http.Request) {
 		databaseError(w, r, errors.Join(err, rowErr))
 		return
 	}
+	if err = attachSubagents(r.Context(), tx, page.Events); err != nil {
+		databaseError(w, r, err)
+		return
+	}
 	if err = tx.Commit(); err != nil {
 		databaseError(w, r, err)
 		return
@@ -304,6 +308,12 @@ func (a *App) event(w http.ResponseWriter, r *http.Request) {
 		databaseError(w, r, err)
 		return
 	}
+	linked := []TimelineEvent{event}
+	if err = attachSubagents(r.Context(), tx, linked); err != nil {
+		databaseError(w, r, err)
+		return
+	}
+	event = linked[0]
 	if err = tx.Commit(); err != nil {
 		databaseError(w, r, err)
 		return
