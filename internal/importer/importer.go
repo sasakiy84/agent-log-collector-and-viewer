@@ -156,7 +156,9 @@ func Run(ctx context.Context, o Options, progress io.Writer) (Stats, error) {
 			if e != nil {
 				return e
 			}
-			req.Header.Set("Authorization", "Bearer "+o.Token)
+			if o.Token != "" {
+				req.Header.Set("Authorization", "Bearer "+o.Token)
+			}
 			req.Header.Set("Content-Type", "application/json")
 			res, e = client.Do(req)
 			if e != nil {

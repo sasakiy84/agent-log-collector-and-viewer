@@ -24,8 +24,8 @@ func validate(o Options) error {
 		if _, err := endpoint(o.Endpoint); err != nil {
 			return err
 		}
-		if len(o.Token) < 16 {
-			return errors.New("AGENTLOG_TOKEN must contain at least 16 characters")
+		if o.Token != "" && len(o.Token) < 16 {
+			return errors.New("AGENTLOG_TOKEN must be empty or contain at least 16 characters")
 		}
 	}
 	return nil
