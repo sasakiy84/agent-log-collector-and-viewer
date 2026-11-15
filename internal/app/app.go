@@ -110,6 +110,12 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("GET /api/session", a.session)
 	mux.HandleFunc("GET /api/event", a.event)
 	mux.HandleFunc("GET /api/subagent", a.subagent)
+	mux.HandleFunc("GET /api/skills", a.skills)
+	mux.HandleFunc("GET /skills", func(w http.ResponseWriter, r *http.Request) {
+		b, _ := assets.ReadFile("static/index.html")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(b)
+	})
 	mux.HandleFunc("GET /api/export", a.export)
 	mux.HandleFunc("GET /api/stats", func(w http.ResponseWriter, r *http.Request) {
 		var n, s int
