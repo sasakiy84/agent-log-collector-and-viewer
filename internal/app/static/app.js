@@ -161,12 +161,33 @@ syncIdentifierSearch();
 if (!selected && !archiveMode)
   sessionStorage.setItem("sessionsURL", location.pathname + location.search);
 $("#detailpage > .back").href = sessionStorage.getItem("sessionsURL") || "/";
+function updateDocumentTitle() {
+  let parts;
+  if (!$("#login").hidden) {
+    parts = ["Sign in"];
+  } else if (selected) {
+    const preview = meta?.preview;
+    const context = typeof preview?.project === "string" && preview.project
+      ? preview.project
+      : typeof preview?.cwd === "string" && preview.cwd ? folderName(preview.cwd) : "";
+    parts = [$("#sessiontitle").textContent, context];
+  } else if (archiveMode) {
+    parts = ["Archive"];
+  } else {
+    const scope = project !== null ? projectName(project) : folder !== null ? folderName(folder) : "";
+    parts = [scope, skillsMode ? "Skills" : exportMode ? "Export" : "Sessions"];
+  }
+  document.title = [...parts, "Agentlog"]
+    .map((part) => String(part || "").replace(/\s+/g, " ").trim())
+    .filter(Boolean).join(" · ");
+}
 async function apiResponse(path, signal) {
   const r = await fetch(path, { signal });
   if (r.status === 401) {
     closeInspector(false);
     $("#login").hidden = false;
     $("#workspace").hidden = true;
+    updateDocumentTitle();
     throw Error("Sign in required.");
   }
   if (!r.ok)
@@ -741,6 +762,7 @@ async function refresh(scrollMode) {
     $("#skillpage").hidden = !skillsMode;
     $("#detailpage").hidden = !selected || archiveMode || skillsMode;
     $("#archivepage").hidden = !archiveMode;
+    updateDocumentTitle();
     $("#error").textContent = "";
     if (selected) placeTimeline(scrollMode, anchor, serial);
   } catch (e) {

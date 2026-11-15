@@ -125,6 +125,15 @@ func (a *App) Handler() http.Handler {
 
 func serveShell(w http.ResponseWriter, r *http.Request) {
 	b, _ := assets.ReadFile("static/index.html")
+	title := "Session"
+	switch r.URL.Path {
+	case "/skills":
+		title = "Skills"
+	case "/archive":
+		title = "Archive"
+	case "/export":
+		title = "Export"
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write(b)
+	w.Write([]byte(strings.Replace(string(b), "<title>Sessions · Agentlog</title>", "<title>"+title+" · Agentlog</title>", 1)))
 }
