@@ -208,10 +208,11 @@ func (a *App) session(w http.ResponseWriter, r *http.Request) {
 			page.Preview = &detail
 		}
 	} else {
-		var rows []TimelineEvent
-		rows, err = readTimeline(r.Context(), tx, id, origin, 1, 0, timelinePreview)
-		if len(rows) > 0 {
-			detail := summaryDetail(rows[0].Detail)
+		var detail Detail
+		detail, err = sessionPreview(r.Context(), tx, id, origin)
+		if errors.Is(err, sql.ErrNoRows) {
+			err = nil
+		} else if err == nil {
 			page.Preview = &detail
 		}
 	}

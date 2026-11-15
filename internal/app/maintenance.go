@@ -13,6 +13,7 @@ const (
 	agentsJob      = "agents.v1"
 	skillsJob      = "skills.v1"
 	directoriesJob = "directories.v1"
+	titlesJob      = "titles.v1"
 )
 
 type maintenanceBatch func(context.Context, *sql.Tx, string) (cursor string, processed int, err error)

@@ -120,24 +120,25 @@ func TestSearchUpdatesMovesAndDeletesAtomically(t *testing.T) {
 }
 func TestSearchUpgradeAndRestart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "upgrade.db")
-	a, err := Open(path, token)
+	db := migrationDB(t, path)
+	plan, err := migrations()
 	if err != nil {
 		t.Fatal(err)
 	}
-	event := oldEvent(t, "existing", "existing")
-	event = recorded(t, "existing", "import", "codex", "existing", "gen_ai.user.message", map[string]any{"prompt": "既存データを検索"})
-	save(t, a, event)
-	a.Close()
-	db, err := sql.Open("sqlite", path)
-	if err != nil {
+	if _, err := db.Exec(plan[0].sql); err != nil {
 		t.Fatal(err)
 	}
-	_, err = db.Exec(`DROP TABLE schema_migrations; DROP TABLE maintenance_jobs; DROP TRIGGER trace_work_insert; DROP TRIGGER trace_work_update; DROP TRIGGER trace_work_delete; DROP TABLE trace_dirty; DROP TRIGGER search_document_delete;DROP TRIGGER search_event_insert;DROP TRIGGER search_event_update;DROP TABLE search_dirty;DROP TABLE search_documents;DROP TABLE event_search`)
+	event := recorded(t, "existing", "import", "codex", "existing", "gen_ai.user.message", map[string]any{"prompt": "既存データを検索"})
+	if _, err := db.Exec("INSERT INTO events(id,session,parent,source,signal,time,name,trace,span,parent_span,raw,sequence,origin,kind,tool_name) VALUES(?,?,'','codex','logs',?,?,'','','',?,0,'import','user','')", event.ID, event.Session, event.Time, event.Name, []byte(event.Raw)); err != nil {
+		t.Fatal(err)
+	}
+	// A frozen pre-migration schema, rather than removing history from a newer
+	// schema whose added columns would survive and be applied twice.
+	if _, err := db.Exec(`DROP TRIGGER search_document_delete;DROP TRIGGER search_event_insert;DROP TRIGGER search_event_update;DROP TABLE search_dirty;DROP TABLE search_documents;DROP TABLE event_search`); err != nil {
+		t.Fatal(err)
+	}
 	db.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
-	a, err = Open(path, token)
+	a, err := Open(path, token)
 	if err != nil {
 		t.Fatal(err)
 	}

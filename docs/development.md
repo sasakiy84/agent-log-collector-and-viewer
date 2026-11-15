@@ -12,7 +12,7 @@ Missing cards/search documents are discovered once during adoption. Subsequent i
 
 ## Data backfills
 
-`maintenance_jobs` is independent of schema history. A job name includes its algorithm version (`usage.v1`, `agents.v1`, `skills.v1`, `directories.v1`). When the extraction logic changes, schedule a new name in a new migration. Do not reset a shipped checkpoint implicitly.
+`maintenance_jobs` is independent of schema history. A job name includes its algorithm version (`usage.v1`, `agents.v1`, `skills.v1`, `directories.v1`, `titles.v1`). When the extraction logic changes, schedule a new name in a new migration. Do not reset a shipped checkpoint implicitly.
 
 `runMaintenance` commits a bounded batch and its cursor together. Empty batches mark completion, non-advancing cursors fail, and errors retain the last committed checkpoint. Required jobs finish before HTTP serves requests; historical skill recovery remains a background job. Logs report progress. Restart resumes failed/incomplete work; the last error is retained until a successful batch.
 

@@ -104,10 +104,10 @@ func storeCard(ctx context.Context, tx *sql.Tx, e Event, d Detail, doc document)
 	if err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO event_cards VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
+	_, err = tx.ExecContext(ctx, `INSERT INTO event_cards(id,session,origin,source,parent,time,sequence,is_user,signal,trace,span,parent_span,detail,prompt_title) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
  session=excluded.session,origin=excluded.origin,source=excluded.source,parent=excluded.parent,time=excluded.time,sequence=excluded.sequence,
- is_user=excluded.is_user,signal=excluded.signal,trace=excluded.trace,span=excluded.span,parent_span=excluded.parent_span,detail=excluded.detail`,
-		e.ID, e.Session, e.Origin, e.Source, e.Parent, e.Time, e.Sequence, d.Kind == "user", e.Signal, e.Trace, e.Span, e.ParentSpan, presentation)
+ is_user=excluded.is_user,signal=excluded.signal,trace=excluded.trace,span=excluded.span,parent_span=excluded.parent_span,detail=excluded.detail,prompt_title=excluded.prompt_title`,
+		e.ID, e.Session, e.Origin, e.Source, e.Parent, e.Time, e.Sequence, d.Kind == "user", e.Signal, e.Trace, e.Span, e.ParentSpan, presentation, promptTitle(e.Source, d))
 	if err == nil {
 		err = storeUsage(ctx, tx, e, doc, d)
 	}
@@ -265,17 +265,7 @@ func refreshTimeline(ctx context.Context, tx *sql.Tx, session string) error {
 	if imports+otel == 0 {
 		_, err = tx.ExecContext(ctx, "DELETE FROM session_catalog WHERE session=?", session)
 	} else {
-		preview, e := readTimeline(ctx, tx, session, "", 1, 0, timelinePreview)
-		if e != nil {
-			return e
-		}
-		folder, e := sessionDirectory(ctx, tx, session)
-		if e != nil {
-			return e
-		}
-		summary := summaryDetail(preview[0].Detail)
-		summary.Cwd = folder
-		detail, e := json.Marshal(summary)
+		detail, e := catalogPreview(ctx, tx, session)
 		if e != nil {
 			return e
 		}
