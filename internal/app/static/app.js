@@ -3,7 +3,7 @@ const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const label=s=>({codex:'Codex',claude:'Claude Code',copilot:'Copilot',other:'Other'}[s]||s);
 const link=id=>'/sessions/'+encodeURIComponent(id);
-const date=s=>new Date(s).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
+const date=s=>new Date(s).toLocaleString(undefined,{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
 const clock=s=>new Date(s).toLocaleTimeString(undefined,{hour12:false});
 let requestSerial=0,activeRequest=null,sessionOffset=0,eventOffset=null,eventLimit=200,source='',query='',kind='',origin='',pageOrigin='',events=[],meta=null;
 let sessionData=null;
