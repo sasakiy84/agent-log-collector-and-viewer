@@ -167,6 +167,9 @@ func (a *App) prepareReadModel(ctx context.Context) error {
 			return err
 		}
 		err = inTransaction(ctx, a.DB, func(tx *sql.Tx) error { return refreshTimeline(ctx, tx, session) })
+		if err == nil {
+			err = a.pauseMaintenance(ctx)
+		}
 		if err != nil {
 			return err
 		}

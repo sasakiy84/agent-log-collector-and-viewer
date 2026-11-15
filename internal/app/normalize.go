@@ -138,7 +138,11 @@ func normalize(root map[string]any, signal string) ([]Event, error) {
 					if normalizedBytes > maxBody {
 						return nil, fmt.Errorf("normalized batch exceeds 16 MiB")
 					}
-					ev := Event{Session: sid, Parent: parent, Source: source, Signal: signal, Time: tm, Name: name, Trace: trace, Span: span, ParentSpan: str(rec["parentSpanId"]), Raw: raw}
+					origin := "otel"
+					if at["agentlog.origin"] == "import" {
+						origin = "import"
+					}
+					ev := Event{Origin: origin, Session: sid, Parent: parent, Source: source, Signal: signal, Time: tm, Name: name, Trace: trace, Span: span, ParentSpan: str(rec["parentSpanId"]), Raw: raw}
 					if importID := at["agentlog.import.id"]; importID != "" {
 						sum := sha256.Sum256([]byte(source + "|" + importID))
 						ev.ID = "import:" + hex.EncodeToString(sum[:])

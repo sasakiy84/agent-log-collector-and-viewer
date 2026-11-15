@@ -4,9 +4,11 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/sasakiy84/agent-log-collector-and-viewer/internal/checkpoint"
 	"github.com/sasakiy84/agent-log-collector-and-viewer/internal/importer"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 )
@@ -26,6 +28,7 @@ func importMain(args []string) error {
 	cwd := fs.String("cwd", "", "Only sessions from this working directory (including descendants)")
 	project := fs.String("project", "", "Project namespace; defaults to session working-directory name")
 	endpoint := fs.String("endpoint", "http://127.0.0.1:4318", "Collector base URL or /v1/logs URL")
+	watchState := fs.String("watch-state", "", "Watch checkpoint database (default: user config directory/agentlog/watch.db)")
 	watch := fs.Bool("watch", false, "Import existing sessions and watch for changes")
 	interval := fs.Duration("interval", time.Second, "Watch polling interval")
 	dry := fs.Bool("dry-run", false, "Parse and report without sending")
@@ -42,6 +45,23 @@ func importMain(args []string) error {
 	defer stop()
 	o := importer.Options{Dirs: dirs, Files: files, Tags: tags, All: *all, Source: *source, Project: *project, WorkingDir: *cwd, Endpoint: *endpoint, Token: os.Getenv("AGENTLOG_TOKEN"), DryRun: *dry}
 	if *watch {
+		if *dry {
+			return fmt.Errorf("--watch cannot be combined with --dry-run")
+		}
+		statePath := *watchState
+		if statePath == "" {
+			dir, err := os.UserConfigDir()
+			if err != nil {
+				return err
+			}
+			statePath = filepath.Join(dir, "agentlog", "watch.db")
+		}
+		store, err := checkpoint.Open(ctx, statePath)
+		if err != nil {
+			return err
+		}
+		defer store.Close()
+		o.Checkpoint = store
 		return importer.Watch(ctx, []importer.Options{o}, *interval, os.Stderr)
 	}
 	stats, e := importer.Run(ctx, o, os.Stderr)

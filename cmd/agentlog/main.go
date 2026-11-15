@@ -46,7 +46,7 @@ func serverMain() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	log.Printf("agentlog %s starting; preparing database %s", version, *db)
-	a, e := app.Open(ctx, *db, os.Getenv("AGENTLOG_TOKEN"))
+	a, e := app.Start(ctx, *db, os.Getenv("AGENTLOG_TOKEN"))
 	if e != nil {
 		if ctx.Err() != nil {
 			return nil
@@ -59,6 +59,7 @@ func serverMain() error {
 	if len(watch) > 0 {
 		for i := range watch {
 			watch[i].Sink = a.IngestLogs
+			watch[i].Checkpoint = a.WatchState()
 		}
 		workers.Add(1)
 		go func() {

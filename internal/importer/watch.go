@@ -1,6 +1,7 @@
 package importer
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -95,10 +96,11 @@ func journalSegment(file string) bool {
 }
 
 type watchedFile struct {
-	info      os.FileInfo
-	pending   bool
-	retry     time.Time
-	lastError string
+	info        os.FileInfo
+	fingerprint []byte
+	pending     bool
+	retry       time.Time
+	lastError   string
 }
 type watchState struct {
 	options   Options
@@ -157,12 +159,20 @@ func Watch(ctx context.Context, options []Options, interval time.Duration, progr
 				}
 				seen[file] = true
 				old := w.files[file]
-				if old == nil || info.Size() != old.info.Size() || !info.ModTime().Equal(old.info.ModTime()) || !os.SameFile(info, old.info) {
+				if old == nil || info.Size() != old.info.Size() || !info.ModTime().Equal(old.info.ModTime()) || !os.SameFile(info, old.info) || fileIdentity(info) != fileIdentity(old.info) {
 					w.files[file] = &watchedFile{info: info, pending: true}
 					if journalSegment(file) {
 						dirtyHeads[filepath.Join(filepath.Dir(file), "events.jsonl")] = true
 					}
 				}
+				if old != nil && !old.pending && w.options.Checkpoint != nil && filepath.Base(file) == "events.jsonl" {
+					fingerprint, e := watchFingerprint(ctx, file)
+					if e != nil || !bytes.Equal(fingerprint, old.fingerprint) {
+						old.pending = true
+						old.retry = time.Time{}
+					}
+				}
+
 			}
 			// Keep unseen entries if a scan failed; a temporary permission error is not deletion.
 			if err == nil {
@@ -190,7 +200,35 @@ func Watch(ctx context.Context, options []Options, interval time.Duration, progr
 				o.All = false
 				o.Dirs = nil
 				o.Files = []string{file}
-				stats, e := Run(ctx, o, io.Discard)
+				var fingerprint []byte
+				var e error
+				key := watchKey(o, file)
+				if o.Checkpoint != nil {
+					fingerprint, e = watchFingerprint(ctx, file)
+					if e == nil {
+						var previous []byte
+						previous, e = o.Checkpoint.Get(ctx, key)
+						if e == nil && bytes.Equal(previous, fingerprint) {
+							f.pending = false
+							f.fingerprint = fingerprint
+							continue
+						}
+					}
+				}
+				var stats Stats
+				if e == nil {
+					stats, e = Run(ctx, o, io.Discard)
+				}
+				if e == nil && o.Checkpoint != nil {
+					var after []byte
+					after, e = watchFingerprint(ctx, file)
+					if e == nil && !bytes.Equal(after, fingerprint) {
+						continue
+					}
+					if e == nil {
+						e = o.Checkpoint.Put(ctx, key, fingerprint)
+					}
+				}
 				if ctx.Err() != nil {
 					return nil
 				}
@@ -203,6 +241,7 @@ func Watch(ctx context.Context, options []Options, interval time.Duration, progr
 					continue
 				}
 				f.pending = false
+				f.fingerprint = fingerprint
 				f.lastError = ""
 				fmt.Fprintf(progress, "watch %s: %d records, %d skipped\n", file, stats.Records, stats.Skipped)
 			}
