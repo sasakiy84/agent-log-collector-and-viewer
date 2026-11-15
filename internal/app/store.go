@@ -53,6 +53,9 @@ func Open(path, token string) (*App, error) {
 			err = a.initUsage()
 		}
 		if err == nil {
+			err = a.initSubagents()
+		}
+		if err == nil {
 			err = a.initSearchIndex()
 		}
 	}

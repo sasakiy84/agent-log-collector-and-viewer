@@ -52,7 +52,7 @@ with sync_playwright() as p:
  page.locator('[data-kind=""]').click()
  with page.expect_download() as d:page.get_by_text('Export JSON',exact=True).click()
  assert d.value.suggested_filename=='session.json'
- page.get_by_text('Subagent: reviewer',exact=True).click();page.locator('.prose').filter(has_text='Reviewed the query:').wait_for()
+ page.get_by_text('Subagent: reviewer',exact=True).click();page.locator('#subagentevents .prose').filter(has_text='Reviewed the query:').wait_for();page.locator('#subagentfull').click();page.locator('#timeline .prose').filter(has_text='Reviewed the query:').wait_for()
  page.get_by_text('Parent session',exact=True).click();page.locator('.event').first.wait_for()
  page.reload();page.locator('.event').first.wait_for();assert page.locator('#listpage').is_hidden()
  for sid,image in [('codex:c82f16a0-auth','ui-codex.png'),('copilot:e95b2c40-search','ui-copilot.png')]:

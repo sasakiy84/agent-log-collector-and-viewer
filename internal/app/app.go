@@ -109,6 +109,7 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("GET /api/folders", a.folders)
 	mux.HandleFunc("GET /api/session", a.session)
 	mux.HandleFunc("GET /api/event", a.event)
+	mux.HandleFunc("GET /api/subagent", a.subagent)
 	mux.HandleFunc("GET /api/export", a.export)
 	mux.HandleFunc("GET /api/stats", func(w http.ResponseWriter, r *http.Request) {
 		var n, s int

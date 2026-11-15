@@ -155,6 +155,9 @@ func summaryDetail(d Detail) Detail {
 	return d
 }
 func storeCard(ctx context.Context, tx *sql.Tx, e Event, d Detail, doc document) error {
+	if err := storeAgentData(ctx, tx, e, d); err != nil {
+		return err
+	}
 	presentation, err := json.Marshal(cardDetail(d))
 	if err != nil {
 		return err
@@ -215,6 +218,9 @@ func refreshCards(ctx context.Context, tx *sql.Tx) error {
 }
 func (a *App) initReadModel() error {
 	if _, err := a.DB.Exec(readModelSchema); err != nil {
+		return err
+	}
+	if _, err := a.DB.Exec(subagentSchema); err != nil {
 		return err
 	}
 	if _, err := a.DB.Exec(usageSchema); err != nil {
@@ -490,7 +496,12 @@ func readTimeline(ctx context.Context, tx *sql.Tx, session, origin string, limit
 	if err != nil {
 		return nil, err
 	}
+	return decodeTimeline(rows)
+}
+
+func decodeTimeline(rows *sql.Rows) ([]TimelineEvent, error) {
 	defer rows.Close()
+	var err error
 	out := []TimelineEvent{}
 	for rows.Next() {
 		var id string

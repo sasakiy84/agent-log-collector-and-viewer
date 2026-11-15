@@ -7,6 +7,7 @@ const date=s=>new Date(s).toLocaleString(undefined,{year:'numeric',month:'short'
 const clock=s=>new Date(s).toLocaleTimeString(undefined,{hour12:false});
 let requestSerial=0,activeRequest=null,sessionOffset=0,eventOffset=null,eventLimit=200,source='',query='',kind='',origin='',pageOrigin='',events=[],meta=null;
 let sessionData=null;
+let inspectorTrigger=null;
 let inspectedID='', inspectedRecord=null, inspectorTab='details',inspectorEvent=null,inspectorRequest=null,jsonEvent=null;
 const inspectorCache=new Map();
 let selected=location.pathname.startsWith('/sessions/')?decodeURIComponent(location.pathname.slice(10)):'';
@@ -57,15 +58,16 @@ function renderEvents(){
  $('#export').href='/api/export?session='+encodeURIComponent(selected)+'&origin='+encodeURIComponent(pageOrigin);
  const context={};for(const key of ['model','cwd','host','project','tags'])context[key]=parsed.map(([,p])=>p).find(p=>p[key])?.[key] ?? meta.preview?.[key];
  $('#sessionmeta').innerHTML=`<strong>${esc(label(meta.source))}</strong>${meta.start?`<span>${esc(date(meta.start))}</span>`:''}${context.model?`<span>${esc(context.model)}</span>`:''}${context.cwd?`<span>${esc(context.cwd)}</span>`:''}${context.host?`<span>${esc(context.host)}</span>`:''}${context.project?`<span>Project: ${esc(context.project)}</span>`:''}${context.tags?`<span>Tags: ${esc(Array.isArray(context.tags)?context.tags.join(', '):context.tags)}</span>`:''}<span class="sessionid">${esc(selected)}</span>`;
- $('#relations').innerHTML=(meta.parent?`<a href="${esc(link(meta.parent))}">Parent session</a>`:'')+meta.children.map(id=>`<a href="${esc(link(id))}">Subagent: ${esc(id.split('/agent:').pop())}</a>`).join('');
+ $('#relations').innerHTML=(meta.parent?`<a href="${esc(link(meta.parent))}">Parent session</a>`:'')+subagentLinks(meta.children.map(id=>({session:id,label:id.split('/agent:').pop()})));
  $('#pageinfo').textContent=meta.count?`${meta.offset+1}–${meta.offset+slice.length} / ${meta.count}${kind||pageOrigin?' · '+visible.length+' matching on this page':''}`:'0 events';
- $('#timeline').innerHTML=visible.length?visible.map(([e,p])=>`<article class="event ${esc(p.kind)} ${p.error?'error':''}" id="span-${esc(e.span||e.id)}" data-event="${esc(e.id)}" role="button" tabindex="0" aria-label="${esc(p.title+' · '+clock(e.time))}" aria-expanded="${e.id===inspectedID}" aria-controls="inspector"><div class="eventcontent"><div class="eventheading"><h2>${esc(p.title)}</h2>${e.origins.length>1?'<span class="kind">Imported + OTEL</span>':''}${['tool','metric'].includes(p.kind)?`<span class="kind">${esc(p.kind)}</span>`:''}${p.error?'<span class="status failed">Failed</span>':String(p.attributes.success)==='true'?'<span class="status succeeded">Succeeded</span>':''}<time datetime="${esc(e.time)}" title="${esc(date(e.time))}">${esc(clock(e.time))}</time></div>${p.blocks.map(b=>`<div class="block ${b.label==='Error'?'failure-detail':''}">${['Request','Response','Message',p.kind].includes(b.label)?'':`<div class="blocklabel">${esc(b.label)}</div>`}<${b.code?'pre':'div'} class="${b.code?'code':'prose'}">${esc(b.text)}</${b.code?'pre':'div'}></div>`).join('')}${p.fields.length?`<dl class="fields">${p.fields.filter(([k])=>k!=='Result').map(([k,v])=>`<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>`:''}</div></article>`).join(''):'<p class="empty">No matching events on this page</p>';
+ $('#timeline').innerHTML=visible.length?visible.map(([e,p])=>`<article class="event ${esc(p.kind)} ${p.error?'error':''}" id="span-${esc(e.span||e.id)}" data-event="${esc(e.id)}" role="button" tabindex="0" aria-label="${esc(p.title+' · '+clock(e.time))}" aria-expanded="${e.id===inspectedID}" aria-controls="inspector"><div class="eventcontent"><div class="eventheading"><h2>${esc(p.title)}</h2>${e.origins.length>1?'<span class="kind">Imported + OTEL</span>':''}${['tool','metric'].includes(p.kind)?`<span class="kind">${esc(p.kind)}</span>`:''}${p.error?'<span class="status failed">Failed</span>':String(p.attributes.success)==='true'?'<span class="status succeeded">Succeeded</span>':''}<time datetime="${esc(e.time)}" title="${esc(date(e.time))}">${esc(clock(e.time))}</time></div>${p.blocks.map(b=>`<div class="block ${b.label==='Error'?'failure-detail':''}">${['Request','Response','Message',p.kind].includes(b.label)?'':`<div class="blocklabel">${esc(b.label)}</div>`}<${b.code?'pre':'div'} class="${b.code?'code':'prose'}">${esc(b.text)}</${b.code?'pre':'div'}></div>`).join('')}${subagentLinks(e.subagents)}${p.fields.length?`<dl class="fields">${p.fields.filter(([k])=>k!=='Result').map(([k,v])=>`<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>`:''}</div></article>`).join(''):'<p class="empty">No matching events on this page</p>';
  if(inspectedID && !visible.some(([e])=>e.id===inspectedID)) closeInspector(false);
  document.querySelectorAll('[data-event]').forEach(card=>{
   card.classList.toggle('selected',card.dataset.event===inspectedID);
-  card.onclick=()=>{if(!window.getSelection()?.toString()) openInspector(card.dataset.event)};
-  card.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openInspector(card.dataset.event)}};
+  card.onclick=event=>{if(!event.target.closest('a,button')&&!window.getSelection()?.toString()) openInspector(card.dataset.event)};
+  card.onkeydown=e=>{if(e.target!==card)return;if(e.key==='Enter'||e.key===' '){e.preventDefault();openInspector(card.dataset.event)}};
  });
+ bindSubagentLinks($('#timeline'));bindSubagentLinks($('#relations'));
  if(focusedID) document.querySelector(`[data-event="${CSS.escape(focusedID)}"]`)?.focus({preventScroll:true});
  if(inspectedID) renderInspector();
  updateTimelineNavigation();
@@ -81,7 +83,7 @@ function setInspectorTab(tab){
  }
 }
 function syncInspectorMode(){
- const modal=!!inspectedID&&matchMedia('(max-width: 900px)').matches;
+ const modal=!!(inspectedID||subagentState)&&matchMedia('(max-width: 900px)').matches;
  $('#inspector').setAttribute('role',modal?'dialog':'region');
  if(modal) $('#inspector').setAttribute('aria-modal','true');else $('#inspector').removeAttribute('aria-modal');
  document.body.classList.toggle('inspector-modal',modal);
@@ -90,6 +92,7 @@ function syncInspectorMode(){
  if(modal&&!$('#inspector').contains(document.activeElement)) $('#closeinspector').focus({preventScroll:true});
 }
 async function openInspector(id){
+ resetSubagentPreview();inspectorTrigger=document.querySelector(`#timeline [data-event="${CSS.escape(id)}"]`);
  inspectorRequest?.abort();const controller=new AbortController();inspectorRequest=controller;
  inspectedID=id;inspectorEvent=inspectorCache.get(id)||null;inspectedRecord=null;jsonEvent=null;$('#eventjson').textContent='';
  $('#inspector').hidden=false;$('#detailpage').classList.add('inspector-open');
@@ -106,21 +109,24 @@ function renderInspectorJSON(){
  $('#eventjson').textContent=JSON.stringify(inspectorEvent.records.length===1?inspectorEvent.records[0].raw:{records:inspectorEvent.records},null,2);
 }
 function closeInspector(restore=true){
+ resetSubagentPreview();
  inspectorRequest?.abort();const id=inspectedID;inspectedID='';inspectedRecord=null;inspectorEvent=null;jsonEvent=null;$('#inspector').hidden=true;$('#detailpage').classList.remove('inspector-open');syncInspectorMode();
  document.querySelectorAll('[data-event]').forEach(card=>{card.classList.remove('selected');card.setAttribute('aria-expanded','false')});
- if(restore&&id) document.querySelector(`[data-event="${CSS.escape(id)}"]`)?.focus({preventScroll:true});
+ if(restore)(inspectorTrigger?.isConnected?inspectorTrigger:id?document.querySelector(`[data-event="${CSS.escape(id)}"]`):null)?.focus({preventScroll:true});inspectorTrigger=null;
 }
 function renderInspector(){
+ if(subagentState)return;
  const e=inspectorEvent||events.find(e=>e.id===inspectedID);if(!e||e===inspectedRecord)return;inspectedRecord=e;
  const parent=events.find(x=>x.span===e.parent_span&&x.trace===e.trace&&x.source===e.source&&document.getElementById('span-'+x.span));
  const p=e.detail,value=v=>typeof v==='string'?v:JSON.stringify(v,null,2);
  $('#inspectortitle').textContent=p.title;$('#inspectortime').textContent=date(e.time)+' · '+label(e.source);
  const properties=[['Sources',e.origins.map(x=>x==='import'?'Imported':'OTEL').join(' + ')],['Signal',e.signal],['Time',e.time],['Event',p.name],['Trace ID',e.trace],['Span ID',e.span],['Parent span',e.parent_span],['Session',e.session],...p.fields].filter(([,v])=>v!==undefined&&v!=='');
- $('#inspectdetails').innerHTML=p.blocks.map(b=>`<div class="block ${b.label==='Error'?'failure-detail':''}"><div class="blocklabel">${esc(b.label)}</div><${b.code?'pre':'div'} class="${b.code?'code':'prose'}">${esc(b.text)}</${b.code?'pre':'div'}></div>`).join('')+
+ $('#inspectdetails').innerHTML=subagentLinks(e.subagents)+p.blocks.map(b=>`<div class="block ${b.label==='Error'?'failure-detail':''}"><div class="blocklabel">${esc(b.label)}</div><${b.code?'pre':'div'} class="${b.code?'code':'prose'}">${esc(b.text)}</${b.code?'pre':'div'}></div>`).join('')+
  `<h3>Properties</h3><dl class="propertylist">${properties.map(([k,v])=>`<div><dt>${esc(k)}</dt><dd>${k==='Parent span'&&parent?`<a href="#span-${esc(parent.span)}" id="inspectparent">${esc(value(v))}</a>`:esc(value(v))}</dd></div>`).join('')}</dl>`+
  (p.conflicts?.length?`<h3>Source differences</h3><dl class="propertylist">${p.conflicts.map(c=>`<div><dt>${esc(c.field)}</dt><dd>${c.values.map(v=>`${v.origin==='import'?'Imported':'OTEL'}: ${esc(v.value)}`).join('\n')}</dd></div>`).join('')}</dl>`:'')+
  `<h3>Attributes</h3><dl class="propertylist">${Object.entries(p.attributes).map(([k,v])=>`<div><dt>${esc(k)}</dt><dd>${esc(value(v))}</dd></div>`).join('')||'<div>No attributes</div>'}</dl>`;
  if($('#inspectparent')) $('#inspectparent').onclick=ev=>{ev.preventDefault();openInspector(parent.id);document.getElementById('span-'+parent.span)?.scrollIntoView({block:'nearest'})};
+ bindSubagentLinks($('#inspectdetails'));
  $('#copystatus').textContent='';setInspectorTab(inspectorTab);
 }
 $('#closeinspector').onclick=()=>closeInspector();
@@ -129,10 +135,10 @@ $('.inspectortabs').onkeydown=e=>{if(['ArrowLeft','ArrowRight','Home','End'].inc
 $('#copyjson').onclick=async()=>{try{await navigator.clipboard.writeText($('#eventjson').textContent);$('#copystatus').textContent='Copied'}catch{$('#copystatus').textContent='Select the JSON to copy'}};
 addEventListener('resize',syncInspectorMode);
 addEventListener('keydown',e=>{
- if(!inspectedID)return;
+ if(!inspectedID&&!subagentState)return;
  if(e.key==='Escape'){e.preventDefault();closeInspector();return}
  if(e.key==='Tab'&&matchMedia('(max-width: 900px)').matches){
-  const items=[...$('#inspector').querySelectorAll('button,[tabindex="0"]')].filter(el=>el.getClientRects().length&&!el.disabled&&el.tabIndex>=0);
+  const items=[...$('#inspector').querySelectorAll('button,a[href],[tabindex="0"]')].filter(el=>el.getClientRects().length&&!el.disabled&&el.tabIndex>=0);
   const first=items[0],last=items.at(-1);
   if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}
  }
@@ -179,6 +185,7 @@ const eventPager=new Pagination($('#eventpagination'),{noun:'events',summary:()=
 $('#eventpagination').addEventListener('click',event=>{if(event.target.closest('.usage-shortcut')){event.preventDefault();$('#sessionusage').scrollIntoView({block:'start'});$('#sessionusage').focus({preventScroll:true})}});
 const archivePager=new Pagination($('#archivepagination'),{noun:'sessions',onChange:page=>{archiveOffset=(page-1)*200;refresh('top')}});
 $('#origin').onchange=()=>{origin=$('#origin').value;eventOffset=null;eventLimit=200;closeInspector(false);refresh('bottom')};
+setupSubagentPreview();
 const archiveSelection=new Set();let archiveAll=false,archiveOffset=0,archiveData=null;
 const bytes=n=>{const units=['B','KiB','MiB','GiB','TiB'];let i=0;while(n>=1024&&i<units.length-1){n/=1024;i++}return `${n.toFixed(i?1:0)} ${units[i]}`};
 async function archivePost(path,body){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(r.status===401){$('#login').hidden=false;$('#workspace').hidden=true;throw Error('Sign in required.')}if(!r.ok)throw Error((await r.text()).trim());return r.json()}

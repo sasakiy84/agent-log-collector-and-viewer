@@ -35,3 +35,5 @@ python3 scripts/performance_check.py --binary ./agentlog --folders
 ```
 
 Usage summaries are maintained incrementally from normalized reporting groups. With the same 150,000-record/500-session/20-folder synthetic fixture, warm medians after adding accounting were 2.90 ms for session lists, 7.55 ms for details and 2.82 ms for folders. Session counts, order and event identities matched v0.6.0. Reverse-order OTEL delta batches of 1k/2k/4k/10k records took 1.35/3.13/5.83/16.36 seconds including ingestion and full-text indexing; accounting uses an exact integer RTree rather than a suffix scan per interval. These local measurements are fixture-specific.
+
+Subagent links use one batched lookup for visible cards and indexed lookups for actual launch calls. In a synthetic 10,000-tool-record history, warm HTTP medians across 12 reads were 6.93 ms for the session detail (v0.7.2: 7.78 ms) and 1.12 ms for a 45-event runtime-agent preview. The one-time subagent index upgrade took 0.51 s. Preview pages contain at most 40 cached cards and do not fetch original JSON.
