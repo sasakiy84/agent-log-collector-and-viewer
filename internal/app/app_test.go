@@ -258,7 +258,7 @@ func TestSessionPageMetadataAndSearch(t *testing.T) {
 	}
 	w = get("/api/sessions?q=alert")
 	var sessions []map[string]any
-	if e := json.Unmarshal(w.Body.Bytes(), &sessions); e != nil || len(sessions) != 2 {
+	if e := json.Unmarshal(w.Body.Bytes(), &sessions); e != nil || len(sessions) != 1 || sessions[0]["id"] != "claude:parent" || w.Header().Get("X-Total-Count") != "1" {
 		t.Fatal(e, w.Body.String())
 	}
 	w = get("/sessions/claude%3Aparent%2Fagent%3Achild")

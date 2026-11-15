@@ -14,6 +14,16 @@ func TestSessionPageTotalsAndStaleOffsets(t *testing.T) {
 		records = append(records, e)
 	}
 	records = append(records, recorded(t, "other", "otel", "claude", "other", "user_prompt", map[string]any{"prompt": "different"}))
+	// More than one page of newer child sessions must not displace roots or
+	// inflate totals, including when filtering/searching or clamping an offset.
+	for i := 0; i < 205; i++ {
+		e := recorded(t, fmt.Sprintf("child-%03d", i), "otel", "codex", fmt.Sprintf("child-%03d", i), "user_prompt", map[string]any{"prompt": "synthetic child"})
+		e.Parent = "codex:fixture-000"
+		if i == 1 {
+			e.Parent = "codex:child-000"
+		}
+		records = append(records, e)
+	}
 	save(t, a, records...)
 	for _, tc := range []struct {
 		query, total, offset string
@@ -35,6 +45,11 @@ func TestSessionPageTotalsAndStaleOffsets(t *testing.T) {
 		}
 		if w.Code != 200 || w.Header().Get("X-Total-Count") != tc.total || w.Header().Get("X-Page-Offset") != tc.offset || len(rows) != tc.rows {
 			t.Fatalf("%s: status=%d total=%s offset=%s rows=%d", tc.query, w.Code, w.Header().Get("X-Total-Count"), w.Header().Get("X-Page-Offset"), len(rows))
+		}
+		for _, row := range rows {
+			if row.Parent != "" {
+				t.Fatalf("child session appeared in list: %+v", row)
+			}
 		}
 	}
 	var archive struct {
