@@ -10,8 +10,10 @@ timelineToolbarObserver.observe($('.logbar'));
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const label=s=>({codex:'Codex',claude:'Claude Code',copilot:'Copilot',other:'Other'}[s]||s);
 const link=id=>'/sessions/'+encodeURIComponent(id);
-const date=s=>new Date(s).toLocaleString(undefined,{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
-const clock=s=>new Date(s).toLocaleTimeString(undefined,{hour12:false});
+const dateFormat=new Intl.DateTimeFormat(undefined,{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
+const clockFormat=new Intl.DateTimeFormat(undefined,{hour:'numeric',minute:'numeric',second:'numeric',hour12:false});
+const date=s=>dateFormat.format(new Date(s));
+const clock=s=>clockFormat.format(new Date(s));
 // Labels belong to the view: cached cards and full inspector records use the
 // same wording without rewriting stored telemetry or rebuilding projections.
 function eventTitle(detail){
