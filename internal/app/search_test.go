@@ -47,9 +47,14 @@ func TestSearchIndexesFullDecodedContent(t *testing.T) {
 	payload := strings.Repeat("uninteresting output ", 10000) + "最後の診断結果"
 	e := recorded(t, "large", "import", "claude", "large", "gen_ai.tool.result", map[string]any{"output": payload, "nested": `{"report":"\u8a8d\u8a3c\u5931\u6557","README.md":"updated","設定項目":"有効"}`})
 	save(t, a, e)
-	for _, query := range []string{"診断", "認証", "失敗", "README", "設定項目"} {
+	for _, query := range []string{"診断", "認証", "失敗", "updated", "有効"} {
 		if len(searchSessions(t, a, query)) != 1 {
 			t.Fatalf("full/decoded text not found: %s", query)
+		}
+	}
+	for _, query := range []string{"README", "設定項目"} {
+		if len(searchSessions(t, a, query)) != 0 {
+			t.Fatalf("JSON key was indexed: %s", query)
 		}
 	}
 	p := page(t, a, e.Session, "", 0)
@@ -165,6 +170,9 @@ func TestSearchArchiveAndReplay(t *testing.T) {
 	event := oldEvent(t, "archive", "old")
 	event.Raw = []byte(strings.ReplaceAll(string(event.Raw), "synthetic archive fixture", "認証情報の確認"))
 	save(t, a, event)
+	if len(identifierSessions(t, a, "event.id", event.ID)) != 1 {
+		t.Fatal("missing identifier fixture")
+	}
 	if len(searchSessions(t, a, "認証")) != 1 {
 		t.Fatal("missing fixture")
 	}
@@ -176,10 +184,16 @@ func TestSearchArchiveAndReplay(t *testing.T) {
 		t.Fatal(w.Code, w.Body)
 	}
 	waitArchive(t, a, job.ID, "deleted")
+	if len(identifierSessions(t, a, "event.id", event.ID)) != 0 {
+		t.Fatal("archived identifier survived deletion")
+	}
 	if len(searchSessions(t, a, "認証")) != 0 {
 		t.Fatal("archived event still searchable")
 	}
 	save(t, a, event)
+	if len(identifierSessions(t, a, "event.id", event.ID)) != 0 {
+		t.Fatal("archive replay resurrected identifier index")
+	}
 	if len(searchSessions(t, a, "認証")) != 0 {
 		t.Fatal("archive replay resurrected index")
 	}

@@ -116,6 +116,8 @@ let folder = listURL.searchParams.has("folder")
   : null;
 $("#showdiagnostics").checked = listURL.searchParams.get("diagnostics") === "1";
 query = listURL.searchParams.get("q") || "";
+let idKey = listURL.searchParams.get("id_key") || "",
+  idValue = listURL.searchParams.get("id_value") || "";
 sessionOffset = Number(listURL.searchParams.get("offset")) || 0;
 if (selected) {
   view =
@@ -147,6 +149,7 @@ if (selected) {
   $("#origin").value = origin;
 }
 $("#search").value = query;
+syncIdentifierSearch();
 if (!selected && !archiveMode)
   sessionStorage.setItem("sessionsURL", location.pathname + location.search);
 $("#detailpage > .back").href = sessionStorage.getItem("sessionsURL") || "/";
@@ -188,6 +191,10 @@ function listParameters() {
   }
   if ($("#showdiagnostics").checked) p.set("diagnostics", "1");
   if (query) p.set("q", query);
+  if (idValue) {
+    p.set("id_value", idValue);
+    if (idKey) p.set("id_key", idKey);
+  }
   return p;
 }
 function listState() {
@@ -691,6 +698,8 @@ async function refresh(scrollMode) {
       sessionData = {
         offset: sessionOffset,
         query,
+        idKey,
+        idValue,
         folder,
         project,
         diagnostics: $("#showdiagnostics").checked,
@@ -735,6 +744,8 @@ async function refresh(scrollMode) {
       ({
         offset: sessionOffset,
         query,
+        idKey,
+        idValue,
         folder,
         project,
         skillFilter,
@@ -742,6 +753,7 @@ async function refresh(scrollMode) {
       } = sessionData);
       $("#showdiagnostics").checked = sessionData.diagnostics;
       $("#search").value = query;
+      syncIdentifierSearch();
       listState();
       renderProjects();
     }
@@ -817,6 +829,28 @@ document.querySelectorAll("[data-view]").forEach(
 );
 syncEventFilters();
 setupProjects();
+function syncIdentifierSearch() {
+  $("#identifierfield").value = idKey;
+  $("#identifiervalue").value = idValue;
+  $("#idfilterstatus").textContent = idValue ? " · Active" : "";
+  if (idValue) $("#idsearch").open = true;
+}
+$("#idsearchform").onsubmit = (e) => {
+  e.preventDefault();
+  idKey = $("#identifierfield").value.trim();
+  idValue = $("#identifiervalue").value;
+  sessionOffset = 0;
+  syncIdentifierSearch();
+  listState();
+  refresh();
+};
+$("#clearidsearch").onclick = () => {
+  idKey = idValue = "";
+  sessionOffset = 0;
+  syncIdentifierSearch();
+  listState();
+  refresh();
+};
 let timer,
   composingSearch = false;
 function scheduleSearch() {

@@ -15,7 +15,7 @@ with tempfile.TemporaryDirectory() as folder:
   def attrs(values):return [{'key':key,'value':{'stringValue':value}} for key,value in values.items()]
   logs=[]
   for source,session,prompts in [('codex','japanese-auth',['日本語の認証エラーを調査しました。','猫が走った。']),('claude','japanese-password',['パスワードの変更をお願いします。']),('copilot','japanese-json',[json.dumps({'設定項目':'接続障害の診断'},ensure_ascii=True)])]:
-   logs.append({'resource':{'attributes':attrs({'service.name':source,'service.namespace':'決済基盤'})},'scopeLogs':[{'logRecords':[{'eventName':'gen_ai.user.message','attributes':attrs({'session.id':session,'prompt':prompt})} for prompt in prompts]}]})
+   logs.append({'resource':{'attributes':attrs({'service.name':source,'service.namespace':'決済基盤'})},'scopeLogs':[{'logRecords':[{'eventName':'gen_ai.user.message','attributes':attrs({'session.id':session,'gen_ai.message.id':session+'-message','prompt':prompt})} for prompt in prompts]}]})
   request=urllib.request.Request(base+'/v1/logs',json.dumps({'resourceLogs':logs}).encode(),headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'})
   with settled_urlopen(request) as response:assert response.status==200
   with sync_playwright() as p:
@@ -28,11 +28,19 @@ with tempfile.TemporaryDirectory() as folder:
    page.locator('#search').dispatch_event('compositionend');expect(page.locator('.session')).to_have_count(1)
    assert page.locator('.session').get_attribute('data-session')=='codex:japanese-auth'
    assert page.locator('.session .count').inner_text()=='2'
-   for query,session in [('調査する','codex:japanese-auth'),('走る','codex:japanese-auth'),('ﾊﾟｽﾜｰﾄﾞ','claude:japanese-password'),('パスワード','claude:japanese-password'),('設定項目','copilot:japanese-json'),('接続','copilot:japanese-json')]:
+   for query,session in [('調査する','codex:japanese-auth'),('走る','codex:japanese-auth'),('ﾊﾟｽﾜｰﾄﾞ','claude:japanese-password'),('パスワード','claude:japanese-password'),('診断','copilot:japanese-json'),('接続','copilot:japanese-json')]:
     page.locator('#search').fill(query);expect(page.locator('.session')).to_have_count(1);expect(page.locator('.session')).to_have_attribute('data-session',session)
    page.locator('#search').fill('決済');expect(page.locator('.session')).to_have_count(3)
+   page.locator('#idsearch summary').click()
+   page.locator('#identifierfield').fill('message.id');page.locator('#identifiervalue').fill('japanese-auth-message');page.locator('#idsearchform button[type=submit]').click()
+   expect(page.locator('.session')).to_have_count(1);expect(page.locator('.session')).to_have_attribute('data-session','codex:japanese-auth')
+   assert 'id_key=message.id' in page.url and 'id_value=japanese-auth-message' in page.url
+   page.reload();expect(page.locator('.session')).to_have_count(1);expect(page.locator('#identifiervalue')).to_have_value('japanese-auth-message');assert page.locator('#idsearch').get_attribute('open') is not None
+   page.locator('#identifierfield').fill('');page.locator('#idsearchform button[type=submit]').click();expect(page.locator('.session')).to_have_count(1)
+   page.locator('#identifiervalue').fill('JAPANESE-auth-message');page.locator('#idsearchform button[type=submit]').click();expect(page.locator('.session')).to_have_count(0)
+   page.locator('#clearidsearch').click();expect(page.locator('.session')).to_have_count(3)
    if os.getenv('AGENTLOG_SCREENSHOT'):page.screenshot(path=os.environ['AGENTLOG_SCREENSHOT'],full_page=True)
    page.set_viewport_size({'width':390,'height':844});assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
    assert not errors,errors;browser.close()
  finally:server.terminate();server.wait(timeout=20)
-print('PASS: Japanese IME, 2-character words, inflection, width/dakuten normalization, embedded JSON keys/values, project/agent filters, complete counts and mobile')
+print('PASS: Japanese IME, inflection, width/dakuten normalization, decoded string values, exact field/any-ID search, URL reload, filters, complete counts and mobile')
