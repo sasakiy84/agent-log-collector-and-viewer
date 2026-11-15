@@ -7,7 +7,9 @@
 
 The session search page keeps projects in a persistent sidebar, ordered by their most recent session activity. Click a project to filter sessions; text search and agent filters apply within that selection. Projects have their own search. Selection is saved in the URL and restored when returning from a session.
 
-Explicit `service.namespace` / `project.name` labels define a project. Without a label, an actual exported working directory defines the group (full paths are distinct even if their last directory names match). Sessions with neither appear under **Unassigned**. Paths mentioned in prompts or tool arguments are never used to guess a project. Explicit names intentionally combine different directories or hosts.
+Projects are grouped by name. Agentlog uses an explicit `service.namespace` / `project.name` label when present; otherwise it uses the final directory name from the exported working directory. For example, the label `shop`, `/workspaces/shop` and `/home/user/shop` all belong to the same project. Windows and POSIX directory separators are supported. Names match exactly, including case. Sessions with neither a label nor a working directory appear under **Unassigned**. Paths mentioned in prompts or tool arguments are never used to guess a project.
+
+The same name groups session search, project counts, skills and exports. The original working directory remains available in session details and folder-based archives. Existing cached project groups are merged once by a versioned migration without re-reading raw event histories. Older `project=path:…` selections resolve to the new name group, so open pages and saved links do not recreate duplicate entries.
 
 Resource attributes appear in the session header and inspector. Project names and tags are included in session search.
 
