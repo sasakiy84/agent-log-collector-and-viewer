@@ -105,7 +105,12 @@ let selected = location.pathname.startsWith("/sessions/")
   : "";
 const archiveMode = location.pathname === "/archive";
 const skillsMode = location.pathname === "/skills";
+const exportMode = location.pathname === "/export";
+let exportDownloadURL = "";
+let exportQueryPending = false;
 const listURL = new URL(location.href);
+let exportSource = listURL.searchParams.get("source") || "";
+$("#exportsource").value = exportSource;
 let skillFilter = listURL.searchParams.get("skill") || "",
   skillPlugin = listURL.searchParams.get("plugin") || "";
 let project = listURL.searchParams.has("project")
@@ -114,7 +119,10 @@ let project = listURL.searchParams.has("project")
 let folder = listURL.searchParams.has("folder")
   ? listURL.searchParams.get("folder")
   : null;
-$("#showdiagnostics").checked = listURL.searchParams.get("diagnostics") === "1";
+$("#showdiagnostics").checked = listURL.searchParams.has("diagnostics")
+  ? listURL.searchParams.get("diagnostics") === "1"
+  : exportMode;
+$("#exportcontrols").hidden = !exportMode;
 query = listURL.searchParams.get("q") || "";
 let idKey = listURL.searchParams.get("id_key") || "",
   idValue = listURL.searchParams.get("id_value") || "";
@@ -184,12 +192,14 @@ function titleFor(id, p) {
 }
 function listParameters() {
   const p = new URLSearchParams();
+  if (exportMode && exportSource) p.set("source", exportSource);
   if (project !== null) p.set("project", project);
   if (skillFilter) {
     p.set("skill", skillFilter);
     p.set("plugin", skillPlugin);
   }
   if ($("#showdiagnostics").checked) p.set("diagnostics", "1");
+  else if (exportMode) p.set("diagnostics", "0");
   if (query) p.set("q", query);
   if (idValue) {
     p.set("id_value", idValue);
@@ -201,7 +211,7 @@ function listState() {
   const p = listParameters();
   if (folder !== null) p.set("folder", folder);
   if (sessionOffset) p.set("offset", sessionOffset);
-  history.replaceState(null, "", "/" + (p.size ? "?" + p : ""));
+  history.replaceState(null, "", (exportMode ? "/export" : "/") + (p.size ? "?" + p : ""));
   sessionStorage.setItem("sessionsURL", location.pathname + location.search);
 }
 function folderName(path) {
@@ -218,18 +228,22 @@ function renderListHeading(total) {
     ? "Skill: " + skillFilter + (skillPlugin ? " · " + skillPlugin : "")
     : "";
   $("#listtitle").textContent =
-    project !== null
+    (exportMode ? "Export · " : "") + (project !== null
       ? projectName(project)
       : folder !== null
         ? folderName(folder)
-        : "All sessions";
-  $("#foldersback").hidden = true;
+        : "All sessions");
+  $("#foldersback").hidden = !exportMode;
+  if (exportMode) {
+    $("#foldersback").textContent = "Sessions";
+    $("#foldersback").href = project === null ? "/" : "/?" + new URLSearchParams({ project });
+  }
   const path = project?.startsWith("path:") ? project.slice(5) : folder;
   $("#folderpath").hidden = !path;
   $("#folderpath").textContent = path || "";
   $("#listcount").textContent = `${total.toLocaleString()} sessions`;
   $("#listcolumn").textContent = "Session";
-  $("#countcolumn").textContent = "Events";
+  $("#countcolumn").textContent = exportMode ? "Records" : "Events";
   sessionPager.noun = "sessions";
   renderProjects();
 }
@@ -651,6 +665,7 @@ async function refresh(scrollMode) {
   for (const pager of [sessionPager, eventPager, archivePager, skillsPager])
     pager.setLoading(true);
   $("#origin").disabled = true;
+  if (exportMode) $("#downloadexport").disabled = true;
   try {
     if (skillsMode) {
       await Promise.all([
@@ -689,7 +704,7 @@ async function refresh(scrollMode) {
       params.set("offset", sessionOffset);
       if (folder !== null) params.set("folder", folder);
       const [response] = await Promise.all([
-          apiResponse("/api/sessions?" + params, controller.signal),
+          apiResponse((exportMode ? "/api/export/sessions?" : "/api/sessions?") + params, controller.signal),
           loadProjects(controller.signal),
         ]),
         data = await response.json();
@@ -697,6 +712,7 @@ async function refresh(scrollMode) {
       sessionOffset = Number(response.headers.get("X-Page-Offset"));
       sessionData = {
         offset: sessionOffset,
+        exportSource,
         query,
         idKey,
         idValue,
@@ -708,6 +724,13 @@ async function refresh(scrollMode) {
       };
       listState();
       renderSessions(data, Number(response.headers.get("X-Total-Count")));
+      if (exportMode) {
+        $("#exportrecords").textContent = Number(response.headers.get("X-Record-Count")).toLocaleString() + " records";
+        const download = new URLSearchParams(params);
+        download.delete("offset");
+        exportDownloadURL = "/api/export/download?" + download;
+        $("#downloadexport").disabled = exportQueryPending || !Number(response.headers.get("X-Total-Count"));
+      }
       if (scrollMode === "top")
         window.scrollTo({ top: 0, behavior: "instant" });
     }
@@ -743,6 +766,7 @@ async function refresh(scrollMode) {
     } else if (sessionData) {
       ({
         offset: sessionOffset,
+        exportSource,
         query,
         idKey,
         idValue,
@@ -754,6 +778,7 @@ async function refresh(scrollMode) {
       $("#showdiagnostics").checked = sessionData.diagnostics;
       $("#search").value = query;
       syncIdentifierSearch();
+      $("#exportsource").value = exportSource;
       listState();
       renderProjects();
     }
@@ -829,6 +854,15 @@ document.querySelectorAll("[data-view]").forEach(
 );
 syncEventFilters();
 setupProjects();
+$("#downloadexport").onclick = () => {
+  if (exportDownloadURL) location.assign(exportDownloadURL);
+};
+$("#exportsource").onchange = () => {
+  exportSource = $("#exportsource").value;
+  sessionOffset = 0;
+  listState();
+  refresh();
+};
 function syncIdentifierSearch() {
   $("#identifierfield").value = idKey;
   $("#identifiervalue").value = idValue;
@@ -855,7 +889,12 @@ let timer,
   composingSearch = false;
 function scheduleSearch() {
   clearTimeout(timer);
+  if (exportMode) {
+    exportQueryPending = true;
+    $("#downloadexport").disabled = true;
+  }
   timer = setTimeout(() => {
+    exportQueryPending = false;
     query = $("#search").value;
     sessionOffset = 0;
     listState();
@@ -870,6 +909,10 @@ $("#showdiagnostics").onchange = () => {
 $("#search").addEventListener("compositionstart", () => {
   composingSearch = true;
   clearTimeout(timer);
+  if (exportMode) {
+    exportQueryPending = true;
+    $("#downloadexport").disabled = true;
+  }
 });
 $("#search").addEventListener("compositionend", () => {
   composingSearch = false;
