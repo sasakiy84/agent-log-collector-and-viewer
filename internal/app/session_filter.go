@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"strings"
 )
@@ -11,13 +12,19 @@ import (
 type sessionFilter struct {
 	Source, Search, Skill, Plugin string
 	IDKey, IDValue                string
+	TextMode, Exclude             string
+	Facets                        searchFacets
 	Diagnostics                   bool
 	IncludeLocked                 bool
+	RootsOnly                     bool
 	Project, Folder               *string
 }
 
 func parseSessionFilter(q url.Values) sessionFilter {
-	f := sessionFilter{Source: q.Get("source"), Search: strings.TrimSpace(q.Get("q")), Skill: q.Get("skill"), Plugin: q.Get("plugin"), Diagnostics: q.Get("diagnostics") == "1", IDKey: q.Get("id_key"), IDValue: q.Get("id_value")}
+	f := sessionFilter{RootsOnly: q.Get("include_children") == "0", Facets: parseSearchFacets(q), TextMode: q.Get("text_mode"), Exclude: strings.TrimSpace(q.Get("exclude")), Source: q.Get("source"), Search: strings.TrimSpace(q.Get("q")), Skill: q.Get("skill"), Plugin: q.Get("plugin"), Diagnostics: q.Get("diagnostics") == "1", IDKey: q.Get("id_key"), IDValue: q.Get("id_value")}
+	if len(f.Facets.Sources) == 1 {
+		f.Source = f.Facets.Sources[0]
+	}
 	if q.Has("project") {
 		v := canonicalProjectID(q.Get("project"))
 		f.Project = &v
@@ -31,7 +38,7 @@ func parseSessionFilter(q url.Values) sessionFilter {
 
 // The folder cache has dimensions for source, diagnostics and folder only.
 func (f sessionFilter) usesFolderCache() bool {
-	return !f.IncludeLocked && f.Search == "" && f.Skill == "" && f.Project == nil && f.IDKey == "" && f.IDValue == ""
+	return !f.RootsOnly && f.Facets.Err == nil && !f.Facets.hasEvents() && len(f.Facets.Projects) == 0 && len(f.Facets.Sources) <= 1 && f.Exclude == "" && !f.IncludeLocked && f.Search == "" && f.Skill == "" && f.Project == nil && f.IDKey == "" && f.IDValue == ""
 }
 
 func (f sessionFilter) sql(ctx context.Context) (string, []any, error) {
@@ -47,31 +54,46 @@ func (f sessionFilter) sql(ctx context.Context) (string, []any, error) {
 	query += idQuery
 	args = append(args, idArgs...)
 	if skill := f.Skill; skill != "" {
-		query += ` AND EXISTS(SELECT 1 FROM skill_events k WHERE k.session=s.session AND k.name=? AND k.plugin=?)`
+		evidence, evidenceArgs := f.Facets.evidenceSQL("k")
+		query += ` AND EXISTS(SELECT 1 FROM skill_events k WHERE k.session=s.session AND k.name=? AND k.plugin=?` + evidence + `)`
 		args = append(args, skill, f.Plugin)
+		args = append(args, evidenceArgs...)
+	}
+	if f.RootsOnly {
+		query += " AND length(s.parent)=0"
 	}
 	if !f.Diagnostics {
 		query += ` AND s.internal=0 AND NOT (s.source='codex' AND (s.session GLOB 'trace:codex:*' OR s.session='unassigned:codex'))`
 	}
-	if source := f.Source; source != "" {
-		query += " AND source=?"
-		args = append(args, source)
+
+	if f.Facets.Err != nil {
+		return "", nil, f.Facets.Err
 	}
-	if search := f.Search; search != "" {
-		match, err := searchMatch(ctx, search)
+	if f.TextMode != "" && f.TextMode != "all" && f.TextMode != "any" {
+		return "", nil, fmt.Errorf("Invalid text match mode")
+	}
+	scope, scopeArgs := f.Facets.sessionSQL()
+	query += scope
+	args = append(args, scopeArgs...)
+	if len(f.Facets.Sources) == 0 && f.Source != "" {
+		query += " AND s.source=?"
+		args = append(args, f.Source)
+	}
+	if len(f.Facets.Projects) == 0 && f.Project != nil {
+		query += " AND s.project_key=?"
+		args = append(args, *f.Project)
+	}
+	if f.Search != "" || f.Exclude != "" || f.Facets.hasEvents() {
+		cards, cardArgs, err := f.matchingCards(ctx)
 		if err != nil {
 			return "", nil, err
 		}
-		if match == "" {
-			query += " AND 0"
+		if f.Search != "" {
+			query += " AND s.session IN(SELECT c.session" + cards + " GROUP BY c.session)"
 		} else {
-			query += ` AND s.session IN (SELECT d.session FROM event_search CROSS JOIN search_documents d ON d.rowid=event_search.rowid WHERE event_search MATCH ? GROUP BY d.session)`
-			args = append(args, match)
+			query += " AND EXISTS(SELECT 1" + cards + " AND c.session=s.session)"
 		}
-	}
-	if f.Project != nil {
-		query += " AND s.project_key=?"
-		args = append(args, *f.Project)
+		args = append(args, cardArgs...)
 	}
 	if f.Folder != nil {
 		query += " AND " + directoryColumn + "=?"

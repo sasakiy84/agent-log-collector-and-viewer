@@ -74,23 +74,29 @@ func writeFilteredExport(ctx context.Context, tx *sql.Tx, sessions *sql.Rows, ar
 	if err != nil {
 		return err
 	}
-	filters := map[string]string{}
-	for _, key := range []string{"project", "folder", "q", "id_key", "id_value", "source", "skill", "plugin"} {
+	filters := map[string]any{}
+	for _, key := range []string{"project", "folder", "q", "id_key", "id_value", "source", "skill", "plugin", "from", "to", "origin", "event_kind", "text_mode", "exclude", "include_children"} {
 		if q.Has(key) {
-			filters[key] = q.Get(key)
+			if len(q[key]) > 1 {
+				filters[key] = q[key]
+			} else {
+				filters[key] = q.Get(key)
+			}
 		}
 	}
-	if filter.Project != nil {
+	if len(filter.Facets.Projects) > 1 {
+		filters["project"] = filter.Facets.Projects
+	} else if filter.Project != nil {
 		filters["project"] = *filter.Project
 	}
 	info := struct {
-		Format    string            `json:"format"`
-		Version   int               `json:"version"`
-		CreatedAt string            `json:"created_at"`
-		Filters   map[string]string `json:"filters"`
-		Internal  bool              `json:"include_internal"`
-		Sessions  int64             `json:"sessions"`
-		Records   int64             `json:"records"`
+		Format    string         `json:"format"`
+		Version   int            `json:"version"`
+		CreatedAt string         `json:"created_at"`
+		Filters   map[string]any `json:"filters"`
+		Internal  bool           `json:"include_internal"`
+		Sessions  int64          `json:"sessions"`
+		Records   int64          `json:"records"`
 	}{"agentlog.session-export", 1, time.Now().UTC().Format(time.RFC3339), filters, filter.Diagnostics, count, expected}
 	if err = json.NewEncoder(manifest).Encode(info); err != nil {
 		return err

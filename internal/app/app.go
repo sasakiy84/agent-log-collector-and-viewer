@@ -84,6 +84,7 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("POST /api/archives/{id}/compact", a.archiveCompact)
 	mux.HandleFunc("GET /archive", serveShell)
 	mux.HandleFunc("GET /api/sessions", a.sessions)
+	mux.HandleFunc("GET /api/search/summary", a.searchSummary)
 	mux.HandleFunc("GET /api/folders", a.folders)
 	mux.HandleFunc("GET /api/projects", a.projects)
 	mux.HandleFunc("GET /api/session", a.session)
