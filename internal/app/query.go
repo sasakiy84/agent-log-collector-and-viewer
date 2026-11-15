@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
-	"strings"
 )
 
 type SessionSummary struct {
@@ -31,45 +30,8 @@ type SessionPage struct {
 	Skills   []SkillSummary  `json:"skills,omitempty"`
 }
 
-func sessionFilter(r *http.Request) (string, []any, error) {
-	query := ` FROM session_catalog s WHERE NOT EXISTS(SELECT 1 FROM archive_locks l WHERE l.session=s.session)`
-	args := []any{}
-	if skill := r.URL.Query().Get("skill"); skill != "" {
-		query += ` AND EXISTS(SELECT 1 FROM skill_events k WHERE k.session=s.session AND k.name=? AND k.plugin=?)`
-		args = append(args, skill, r.URL.Query().Get("plugin"))
-	}
-	if r.URL.Query().Get("diagnostics") != "1" {
-		query += ` AND NOT (s.source='codex' AND (s.session GLOB 'trace:codex:*' OR s.session='unassigned:codex'))`
-	}
-	if source := r.URL.Query().Get("source"); source != "" {
-		query += " AND source=?"
-		args = append(args, source)
-	}
-	if search := strings.TrimSpace(r.URL.Query().Get("q")); search != "" {
-		match, err := searchMatch(r.Context(), search)
-		if err != nil {
-			return "", nil, err
-		}
-		if match == "" {
-			query += " AND 0"
-		} else {
-			query += ` AND s.session IN (SELECT d.session FROM event_search CROSS JOIN search_documents d ON d.rowid=event_search.rowid WHERE event_search MATCH ? GROUP BY d.session)`
-			args = append(args, match)
-		}
-	}
-	if r.URL.Query().Has("project") {
-		query += " AND s.project_key=?"
-		args = append(args, r.URL.Query().Get("project"))
-	}
-	if r.URL.Query().Has("folder") {
-		query += " AND " + directoryColumn + "=?"
-		args = append(args, r.URL.Query().Get("folder"))
-	}
-	return query, args, nil
-}
-
 func (a *App) sessions(w http.ResponseWriter, r *http.Request) {
-	query, args, err := sessionFilter(r)
+	query, args, err := parseSessionFilter(r.URL.Query()).sql(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), 400)
 		return

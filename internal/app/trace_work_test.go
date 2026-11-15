@@ -60,7 +60,7 @@ func TestStartupTraceMoveMaintainsViews(t *testing.T) {
 	}
 	path := a.dbPath
 	a.Close()
-	b, err := Open(path, token)
+	b, err := Open(context.Background(), path, token)
 	if err != nil {
 		t.Fatal("destination before old session must not collide with old view IDs", err)
 	}

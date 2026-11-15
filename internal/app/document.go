@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 )
@@ -13,11 +14,27 @@ type document struct {
 	Record   map[string]any `json:"record"`
 }
 
-func decodeDocument(raw json.RawMessage) (document, error) {
-	var d document
+// decodeJSON preserves OTLP int64 values and rejects trailing JSON. Use this
+// wherever untyped telemetry is decoded; float64 silently rounds large counters.
+func decodeJSON(raw []byte, target any) error {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()
-	err := decoder.Decode(&d)
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	var tail any
+	if err := decoder.Decode(&tail); err != io.EOF {
+		if err == nil {
+			return errors.New("multiple JSON values")
+		}
+		return err
+	}
+	return nil
+}
+
+func decodeDocument(raw json.RawMessage) (document, error) {
+	var d document
+	err := decodeJSON(raw, &d)
 	return d, err
 }
 func anyValue(v any) any {
@@ -84,13 +101,8 @@ func display(v any) string {
 func decoded(v any) any {
 	if s, ok := v.(string); ok {
 		var out any
-		d := json.NewDecoder(bytes.NewBufferString(s))
-		d.UseNumber()
-		if d.Decode(&out) == nil {
-			var tail any
-			if d.Decode(&tail) == io.EOF {
-				return out
-			}
+		if decodeJSON([]byte(s), &out) == nil {
+			return out
 		}
 	}
 	return v

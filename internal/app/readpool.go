@@ -21,7 +21,7 @@ func (a *App) initReaders(path string) error {
 	}
 	db.SetMaxOpenConns(4)
 	db.SetMaxIdleConns(4)
-	if err = db.Ping(); err != nil {
+	if err = db.PingContext(a.ctx); err != nil {
 		db.Close()
 		return err
 	}

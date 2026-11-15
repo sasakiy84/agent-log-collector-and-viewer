@@ -83,14 +83,6 @@ func (a *App) wakeArchive() {
 	default:
 	}
 }
-func (a *App) Close() error {
-	a.cancel()
-	a.workers.Wait()
-	if a.readers != nil && a.readers != a.DB {
-		a.readers.Close()
-	}
-	return a.DB.Close()
-}
 func (a *App) initArchives(path string) error {
 	if path == ":memory:" {
 		a.dbPath = path
@@ -102,9 +94,8 @@ func (a *App) initArchives(path string) error {
 		a.dbPath = abs
 		a.archiveDir = filepath.Join(filepath.Dir(abs), "archives")
 	}
-	a.ctx, a.cancel = context.WithCancel(context.Background())
 	a.archiveWake = make(chan struct{}, 1)
-	rows, err := a.DB.Query("SELECT id FROM archives WHERE status='preparing'")
+	rows, err := a.DB.QueryContext(a.ctx, "SELECT id FROM archives WHERE status='preparing'")
 	if err != nil {
 		return err
 	}
@@ -121,7 +112,7 @@ func (a *App) initArchives(path string) error {
 	if err != nil || rowErr != nil {
 		return errors.Join(err, rowErr)
 	}
-	if _, err = a.DB.Exec("UPDATE archives SET status='failed',error='Archive creation was interrupted; create a new archive.' WHERE status='preparing'"); err != nil {
+	if _, err = a.DB.ExecContext(a.ctx, "UPDATE archives SET status='failed',error='Archive creation was interrupted; create a new archive.' WHERE status='preparing'"); err != nil {
 		return err
 	}
 	for _, id := range interrupted {

@@ -230,7 +230,7 @@ func TestArchiveStaleCancelAndCorrupt(t *testing.T) {
 }
 func TestArchiveLocksAndRestart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "test.db")
-	a, err := Open(path, token)
+	a, err := Open(context.Background(), path, token)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,14 +244,14 @@ func TestArchiveLocksAndRestart(t *testing.T) {
 	if _, err = a.DB.Exec("INSERT INTO archive_locks VALUES(?,?)", e.Session, j.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err = a.Save([]Event{oldEvent(t, "new", "old")}); err == nil {
+	if err = a.Save(context.Background(), []Event{oldEvent(t, "new", "old")}); err == nil {
 		t.Fatal("locked session accepted new event")
 	}
 	if _, err = a.DB.Exec("UPDATE archives SET status='deleting',confirmed_at=?,database_bytes_before=? WHERE id=?", timestamp(time.Now()), a.diskBytes(), j.ID); err != nil {
 		t.Fatal(err)
 	}
 	a.Close()
-	b, err := Open(path, token)
+	b, err := Open(context.Background(), path, token)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,7 +280,7 @@ func TestArchiveReclaimsDatabase(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				a, err = Open(path, token)
+				a, err = Open(context.Background(), path, token)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -403,7 +403,7 @@ func TestArchiveRestartMissingVerification(t *testing.T) {
 	for _, verified := range []bool{false, true} {
 		t.Run(fmt.Sprint("verified=", verified), func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "test.db")
-			a, err := Open(path, token)
+			a, err := Open(context.Background(), path, token)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -424,7 +424,7 @@ func TestArchiveRestartMissingVerification(t *testing.T) {
 			}
 			os.Remove(a.archivePath(j.ID, false))
 			a.Close()
-			b, err := Open(path, token)
+			b, err := Open(context.Background(), path, token)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -464,7 +464,7 @@ func TestVacuumBatchConsumesAllPageResults(t *testing.T) {
 	if before < 512 {
 		t.Fatal("fixture too small", before)
 	}
-	if err := a.vacuumBatch(context.Background()); err != nil {
+	if pages, err := a.vacuumBatch(context.Background(), 256); err != nil || pages != 256 {
 		t.Fatal(err)
 	}
 	if err := a.DB.QueryRow("PRAGMA freelist_count").Scan(&after); err != nil {

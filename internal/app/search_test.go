@@ -138,7 +138,7 @@ func TestSearchUpgradeAndRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	db.Close()
-	a, err := Open(path, token)
+	a, err := Open(context.Background(), path, token)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +151,7 @@ func TestSearchUpgradeAndRestart(t *testing.T) {
 	a.DB.Exec("DELETE FROM search_documents WHERE event_id=?", event.ID)
 	a.DB.Exec("INSERT INTO search_dirty VALUES(?)", event.ID)
 	a.Close()
-	b, err := Open(path, token)
+	b, err := Open(context.Background(), path, token)
 	if err != nil {
 		t.Fatal(err)
 	}

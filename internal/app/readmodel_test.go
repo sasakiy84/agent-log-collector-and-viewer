@@ -161,7 +161,7 @@ func TestIndexedReadModelRestartAndDeletion(t *testing.T) {
 	save(t, a, e)
 	path := a.dbPath
 	a.Close()
-	b, err := Open(path, token)
+	b, err := Open(context.Background(), path, token)
 	if err != nil {
 		t.Fatal(err)
 	}

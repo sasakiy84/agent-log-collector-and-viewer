@@ -25,7 +25,7 @@ func storeSkillFacts(ctx context.Context, tx *sql.Tx, e Event, d Detail) error {
 }
 func (a *App) startSkillIndexer() error {
 	var complete bool
-	if err := a.DB.QueryRow("SELECT complete FROM maintenance_jobs WHERE name=?", skillsJob).Scan(&complete); err != nil {
+	if err := a.DB.QueryRowContext(a.ctx, "SELECT complete FROM maintenance_jobs WHERE name=?", skillsJob).Scan(&complete); err != nil {
 		return err
 	}
 	if complete {

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -114,7 +115,7 @@ func TestFolderUpgradeRecoversExactLongPathsAndMetadataFallback(t *testing.T) {
 	}
 	dbPath := a.dbPath
 	a.Close()
-	b, err := Open(dbPath, token)
+	b, err := Open(context.Background(), dbPath, token)
 	if err != nil {
 		t.Fatal(err)
 	}

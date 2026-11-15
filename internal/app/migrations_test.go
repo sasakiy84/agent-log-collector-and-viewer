@@ -127,7 +127,7 @@ func TestLegacyCheckpointAdoption(t *testing.T) {
 
 func TestDatabaseConnectionSettingsSurviveReplacement(t *testing.T) {
 	// URI punctuation in filenames must not become connection parameters.
-	a, err := Open(filepath.Join(t.TempDir(), "db?query#fragment.sqlite"), token)
+	a, err := Open(context.Background(), filepath.Join(t.TempDir(), "db?query#fragment.sqlite"), token)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -27,7 +27,7 @@ type Options struct {
 	Source, Endpoint, Token, Project, WorkingDir string
 	Client                                       *http.Client
 	// Sink stores converted OTLP batches locally instead of sending HTTP.
-	Sink func([]any) error
+	Sink func(context.Context, []any) error
 }
 type Stats struct{ Files, Records, Skipped, Failed int }
 
@@ -144,7 +144,7 @@ func Run(ctx context.Context, o Options, progress io.Writer) (Stats, error) {
 			return nil
 		}
 		if o.Sink != nil {
-			return o.Sink(records)
+			return o.Sink(ctx, records)
 		}
 		body, _ := json.Marshal(map[string]any{"resourceLogs": records})
 		req, e := http.NewRequestWithContext(ctx, "POST", dest, bytes.NewReader(body))
