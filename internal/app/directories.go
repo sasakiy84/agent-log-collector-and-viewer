@@ -28,7 +28,8 @@ type FolderSummary struct {
 }
 
 func (a *App) folders(w http.ResponseWriter, r *http.Request) {
-	filter, args, err := sessionFilter(r)
+	selection := parseSessionFilter(r.URL.Query())
+	filter, args, err := selection.sql(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), 400)
 		return
@@ -40,7 +41,7 @@ func (a *App) folders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
-	if strings.TrimSpace(r.URL.Query().Get("q")) == "" && r.URL.Query().Get("skill") == "" {
+	if selection.usesFolderCache() {
 		var pending bool
 		if err = tx.QueryRowContext(r.Context(), "SELECT EXISTS(SELECT 1 FROM folder_dirty)").Scan(&pending); err != nil {
 			databaseError(w, r, err)
@@ -50,12 +51,7 @@ func (a *App) folders(w http.ResponseWriter, r *http.Request) {
 		// results until the next write/startup drains it. Normal writes publish
 		// folder summaries in the same transaction as the session update.
 		if !pending {
-			var path *string
-			if r.URL.Query().Has("folder") {
-				value := r.URL.Query().Get("folder")
-				path = &value
-			}
-			folders, total, offset, e := cachedFolders(r.Context(), tx, r.URL.Query().Get("source"), r.URL.Query().Get("diagnostics") == "1", path, offset(r))
+			folders, total, offset, e := cachedFolders(r.Context(), tx, selection.Source, selection.Diagnostics, selection.Folder, offset(r))
 			if e == nil {
 				e = tx.Commit()
 			}

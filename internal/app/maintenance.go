@@ -105,7 +105,7 @@ func (a *App) runMaintenance(ctx context.Context, name string, batch maintenance
 		if err != nil {
 			if ctx.Err() == nil {
 				// Keep the last good checkpoint, and record failure for operators.
-				_, recordErr := a.DB.Exec("UPDATE maintenance_jobs SET error=?,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE name=?", err.Error(), name)
+				_, recordErr := a.DB.ExecContext(ctx, "UPDATE maintenance_jobs SET error=?,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE name=?", err.Error(), name)
 				if recordErr != nil {
 					log.Printf("Maintenance %s could not record failure: %v", name, recordErr)
 				}

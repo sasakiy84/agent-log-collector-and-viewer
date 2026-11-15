@@ -1,11 +1,9 @@
 package app
 
 import (
-	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/subtle"
-	"database/sql"
 	"embed"
 	"encoding/hex"
 	"encoding/json"
@@ -14,30 +12,11 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"time"
 )
 
 //go:embed static/*
 var assets embed.FS
-
-type App struct {
-	DB                 *sql.DB
-	readers            *sql.DB
-	token              string
-	dbPath, archiveDir string
-	ctx                context.Context
-	cancel             context.CancelFunc
-	workers            sync.WaitGroup
-	archiveWake        chan struct{}
-	archiveMu          sync.Mutex
-	archiveChange      chan struct{}
-	taskMu             sync.Mutex
-	taskID             string
-	taskCancel         context.CancelFunc
-	compacting         atomic.Bool
-}
 
 func (a *App) signature(v string) string {
 	h := hmac.New(sha256.New, []byte(a.token))
@@ -103,11 +82,7 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("POST /api/archives/{id}/delete", a.archiveDelete)
 	mux.HandleFunc("POST /api/archives/{id}/cancel", a.archiveCancel)
 	mux.HandleFunc("POST /api/archives/{id}/compact", a.archiveCompact)
-	mux.HandleFunc("GET /archive", func(w http.ResponseWriter, r *http.Request) {
-		b, _ := assets.ReadFile("static/index.html")
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(b)
-	})
+	mux.HandleFunc("GET /archive", serveShell)
 	mux.HandleFunc("GET /api/sessions", a.sessions)
 	mux.HandleFunc("GET /api/folders", a.folders)
 	mux.HandleFunc("GET /api/projects", a.projects)
@@ -115,15 +90,11 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("GET /api/event", a.event)
 	mux.HandleFunc("GET /api/subagent", a.subagent)
 	mux.HandleFunc("GET /api/skills", a.skills)
-	mux.HandleFunc("GET /skills", func(w http.ResponseWriter, r *http.Request) {
-		b, _ := assets.ReadFile("static/index.html")
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(b)
-	})
+	mux.HandleFunc("GET /skills", serveShell)
 	mux.HandleFunc("GET /api/export", a.export)
 	mux.HandleFunc("GET /api/stats", func(w http.ResponseWriter, r *http.Request) {
 		var n, s int
-		if err := a.readers.QueryRow("SELECT COUNT(*),COUNT(DISTINCT session) FROM events").Scan(&n, &s); err != nil {
+		if err := a.readers.QueryRowContext(r.Context(), "SELECT COUNT(*),COUNT(DISTINCT session) FROM events").Scan(&n, &s); err != nil {
 			databaseError(w, r, err)
 			return
 		}
@@ -131,11 +102,7 @@ func (a *App) Handler() http.Handler {
 	})
 	sub, _ := fs.Sub(assets, "static")
 	mux.Handle("GET /", http.FileServer(http.FS(sub)))
-	mux.HandleFunc("GET /sessions/{id}", func(w http.ResponseWriter, r *http.Request) {
-		b, _ := assets.ReadFile("static/index.html")
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(b)
-	})
+	mux.HandleFunc("GET /sessions/{id}", serveShell)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'; object-src 'none'")
@@ -147,4 +114,10 @@ func (a *App) Handler() http.Handler {
 		}
 		mux.ServeHTTP(w, r)
 	})
+}
+
+func serveShell(w http.ResponseWriter, r *http.Request) {
+	b, _ := assets.ReadFile("static/index.html")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write(b)
 }

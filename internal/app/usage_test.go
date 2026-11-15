@@ -200,7 +200,7 @@ func TestUsageDecimalPrecisionAndUSDBackfill(t *testing.T) {
 	}
 	path := a.dbPath
 	a.Close()
-	b, err := Open(path, token)
+	b, err := Open(context.Background(), path, token)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,7 +264,7 @@ func TestUsageUpgradeResumesWithoutCountingCompletedPointsTwice(t *testing.T) {
 	}
 	path := a.dbPath
 	a.Close()
-	b, err := Open(path, token)
+	b, err := Open(context.Background(), path, token)
 	if err != nil {
 		t.Fatal(err)
 	}

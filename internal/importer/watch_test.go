@@ -69,7 +69,7 @@ func TestWatchLocalLifecycle(t *testing.T) {
 	db, _ := setup(t)
 	dir := filepath.Join(t.TempDir(), "not-created-yet")
 	var sends atomic.Int32
-	o := importer.Options{Dirs: []string{dir}, Project: "store", Tags: []string{"backend"}, Sink: func(batch []any) error { sends.Add(1); return db.IngestLogs(batch) }}
+	o := importer.Options{Dirs: []string{dir}, Project: "store", Tags: []string{"backend"}, Sink: func(ctx context.Context, batch []any) error { sends.Add(1); return db.IngestLogs(ctx, batch) }}
 	p := file(t, dir, "nested/session.jsonl", claudeLine("one", "initial"))
 	cancel := startWatcher(t, o)
 	count := func(want int) func() bool {
@@ -111,11 +111,11 @@ func TestWatchRetriesWithoutFileChange(t *testing.T) {
 	dir := t.TempDir()
 	file(t, dir, "session.jsonl", claudeLine("retry", "retry"))
 	var attempts atomic.Int32
-	startWatcher(t, importer.Options{Dirs: []string{dir}, Sink: func(b []any) error {
+	startWatcher(t, importer.Options{Dirs: []string{dir}, Sink: func(ctx context.Context, b []any) error {
 		if attempts.Add(1) == 1 {
 			return errors.New("temporary failure")
 		}
-		return db.IngestLogs(b)
+		return db.IngestLogs(ctx, b)
 	}})
 	eventually(t, func() bool {
 		var n int
@@ -144,7 +144,7 @@ func TestWatchCopilotJournalDependency(t *testing.T) {
 	eventually(t, count(3))
 }
 func TestWatchValidation(t *testing.T) {
-	valid := importer.Options{Dirs: []string{t.TempDir()}, Sink: func([]any) error { return nil }}
+	valid := importer.Options{Dirs: []string{t.TempDir()}, Sink: func(context.Context, []any) error { return nil }}
 	for _, tc := range []struct {
 		o        importer.Options
 		interval time.Duration

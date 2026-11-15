@@ -29,7 +29,7 @@ func file(t *testing.T, dir, name, data string) string {
 }
 func setup(t *testing.T) (*app.App, *httptest.Server) {
 	t.Helper()
-	a, e := app.Open(filepath.Join(t.TempDir(), "test.db"), token)
+	a, e := app.Open(context.Background(), filepath.Join(t.TempDir(), "test.db"), token)
 	if e != nil {
 		t.Fatal(e)
 	}

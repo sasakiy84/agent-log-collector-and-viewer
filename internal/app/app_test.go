@@ -24,7 +24,7 @@ const token = "test-token-at-least-16"
 
 func setup(t *testing.T) *App {
 	t.Helper()
-	a, e := Open(filepath.Join(t.TempDir(), "test.db"), token)
+	a, e := Open(context.Background(), filepath.Join(t.TempDir(), "test.db"), token)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -159,13 +159,13 @@ func TestMetricsAndValidation(t *testing.T) {
 			t.Fatal(w.Code)
 		}
 	}
-	if _, e := Open(":memory:", "short"); e == nil {
+	if _, e := Open(context.Background(), ":memory:", "short"); e == nil {
 		t.Fatal("short token accepted")
 	}
 }
 func TestPersistencePagination(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "persist.db")
-	a, e := Open(p, token)
+	a, e := Open(context.Background(), p, token)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -173,11 +173,11 @@ func TestPersistencePagination(t *testing.T) {
 	for i := 0; i < 205; i++ {
 		v = append(v, Event{Session: "s", Time: fmt.Sprintf("%04d", i), Name: "n", Raw: json.RawMessage(fmt.Sprintf(`{"n":%d}`, i))})
 	}
-	if e = a.Save(v); e != nil {
+	if e = a.Save(context.Background(), v); e != nil {
 		t.Fatal(e)
 	}
 	a.Close()
-	a, e = Open(p, token)
+	a, e = Open(context.Background(), p, token)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -187,7 +187,7 @@ func TestPersistencePagination(t *testing.T) {
 		t.Fatal(e, v)
 	}
 	a.Close()
-	a, e = Open(p, token)
+	a, e = Open(context.Background(), p, token)
 	if e != nil {
 		t.Fatal(e)
 	}

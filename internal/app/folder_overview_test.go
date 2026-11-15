@@ -14,7 +14,7 @@ func TestFolderOverviewMatchesFilteredAccountingAfterChanges(t *testing.T) {
 	ctx := context.Background()
 	check := func() {
 		t.Helper()
-		for _, query := range []string{"", "?source=codex", "?diagnostics=1", "?source=codex&diagnostics=1", "?folder=" + url.QueryEscape("/work/shared")} {
+		for _, query := range []string{"", "?source=codex", "?diagnostics=1", "?source=codex&diagnostics=1", "?folder=" + url.QueryEscape("/work/shared"), "?project=path:/work/shared", "?project=path:/work/shared&source=claude", "?project=", "?project=name:missing"} {
 			var cached, original folderPage
 			getJSON(t, a, "/api/folders"+query, &cached)
 			// A durable pending marker selects the original full-session query.

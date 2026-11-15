@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http/httptest"
@@ -38,7 +39,7 @@ func recorded(t *testing.T, id, origin, source, session, kind string, at map[str
 }
 func save(t *testing.T, a *App, events ...Event) {
 	t.Helper()
-	if err := a.Save(events); err != nil {
+	if err := a.Save(context.Background(), events); err != nil {
 		t.Fatal(err)
 	}
 }

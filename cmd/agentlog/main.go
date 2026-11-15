@@ -6,6 +6,7 @@ import (
 	"github.com/sasakiy84/agent-log-collector-and-viewer/internal/app"
 	"github.com/sasakiy84/agent-log-collector-and-viewer/internal/importer"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -42,15 +43,18 @@ func serverMain() error {
 	if e != nil {
 		return e
 	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	log.Printf("agentlog %s starting; preparing database %s", version, *db)
-	a, e := app.Open(*db, os.Getenv("AGENTLOG_TOKEN"))
+	a, e := app.Open(ctx, *db, os.Getenv("AGENTLOG_TOKEN"))
 	if e != nil {
+		if ctx.Err() != nil {
+			return nil
+		}
 		return e
 	}
 	defer a.Close()
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	srv := &http.Server{Addr: *addr, Handler: a.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
+	srv := &http.Server{Addr: *addr, Handler: a.Handler(), BaseContext: func(net.Listener) context.Context { return ctx }, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	var workers sync.WaitGroup
 	if len(watch) > 0 {
 		for i := range watch {

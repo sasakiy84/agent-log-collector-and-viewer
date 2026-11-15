@@ -66,9 +66,6 @@ func storeModelFact(ctx context.Context, tx *sql.Tx, e Event, doc document, p De
 	if err != nil {
 		return err
 	}
-	if role == "request" {
-		_, err = tx.ExecContext(ctx, "INSERT INTO model_dirty SELECT id FROM model_facts WHERE source=? AND trace=? AND root='' AND role='usage' ON CONFLICT DO NOTHING", e.Source, e.Trace)
-	}
 	return err
 }
 
@@ -158,6 +155,9 @@ func rebuildModelCall(ctx context.Context, tx *sql.Tx, id string) error {
 }
 
 func refreshModelCalls(ctx context.Context, tx *sql.Tx) error {
+	if err := refreshModelAncestry(ctx, tx); err != nil {
+		return err
+	}
 	for {
 		rows, err := tx.QueryContext(ctx, "SELECT id FROM model_dirty LIMIT 200")
 		if err != nil {

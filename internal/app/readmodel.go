@@ -159,7 +159,7 @@ func (a *App) prepareReadModel(ctx context.Context) error {
 	// leave the durable dirty queue, so a restart does not repeat the entire job.
 	for {
 		var session string
-		err = a.DB.QueryRow("SELECT session FROM read_model_dirty d WHERE NOT EXISTS(SELECT 1 FROM archive_locks l WHERE l.session=d.session) LIMIT 1").Scan(&session)
+		err = a.DB.QueryRowContext(ctx, "SELECT session FROM read_model_dirty d WHERE NOT EXISTS(SELECT 1 FROM archive_locks l WHERE l.session=d.session) LIMIT 1").Scan(&session)
 		if errors.Is(err, sql.ErrNoRows) {
 			return inTransaction(ctx, a.DB, func(tx *sql.Tx) error { return refreshUsage(ctx, tx) })
 		}
