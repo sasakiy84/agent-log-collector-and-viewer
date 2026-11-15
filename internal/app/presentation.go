@@ -65,35 +65,27 @@ func filteredTimelineCount(ctx context.Context, tx *sql.Tx, session, origin stri
 
 func refreshPresentation(ctx context.Context, tx *sql.Tx) error {
 	for {
-		rows, err := tx.QueryContext(ctx, "SELECT id FROM presentation_dirty LIMIT 200")
+		_, err := tx.ExecContext(ctx, `UPDATE timeline_entries AS t SET
+   activity=MAX(COALESCE(i.activity,0),COALESCE(o.activity,0)),
+   kind=COALESCE(i.kind,o.kind,'event'),
+   has_skill=MAX(COALESCE(i.has_skill,0),COALESCE(o.has_skill,0)),
+   conversation=MAX(COALESCE(i.conversation,0),COALESCE(o.conversation,0)),
+   is_error=MAX(COALESCE(i.is_error,0),COALESCE(o.is_error,0))
+   FROM (SELECT id FROM presentation_dirty LIMIT 200) d
+   JOIN timeline_entries previous ON previous.id=d.id
+   LEFT JOIN event_cards i ON i.id=previous.import_id
+   LEFT JOIN event_cards o ON o.id=previous.otel_id
+   WHERE t.id=d.id`)
 		if err != nil {
 			return err
 		}
-		ids := []string{}
-		for rows.Next() {
-			var id string
-			if err = rows.Scan(&id); err != nil {
-				break
-			}
-			ids = append(ids, id)
-		}
-		err = errors.Join(err, rows.Err(), rows.Close())
-		if err != nil || len(ids) == 0 {
+		result, err := tx.ExecContext(ctx, "DELETE FROM presentation_dirty WHERE id IN(SELECT id FROM presentation_dirty LIMIT 200)")
+		if err != nil {
 			return err
 		}
-		for _, id := range ids {
-			_, err = tx.ExecContext(ctx, `UPDATE timeline_entries SET
- activity=MAX(COALESCE((SELECT activity FROM event_cards WHERE id=import_id),0),COALESCE((SELECT activity FROM event_cards WHERE id=otel_id),0)),
- kind=COALESCE((SELECT kind FROM event_cards WHERE id=import_id),(SELECT kind FROM event_cards WHERE id=otel_id),'event'),
- has_skill=MAX(COALESCE((SELECT has_skill FROM event_cards WHERE id=import_id),0),COALESCE((SELECT has_skill FROM event_cards WHERE id=otel_id),0)),
- conversation=MAX(COALESCE((SELECT conversation FROM event_cards WHERE id=import_id),0),COALESCE((SELECT conversation FROM event_cards WHERE id=otel_id),0)),
- is_error=MAX(COALESCE((SELECT is_error FROM event_cards WHERE id=import_id),0),COALESCE((SELECT is_error FROM event_cards WHERE id=otel_id),0)) WHERE id=?`, id)
-			if err != nil {
-				return err
-			}
-			if _, err = tx.ExecContext(ctx, "DELETE FROM presentation_dirty WHERE id=?", id); err != nil {
-				return err
-			}
+		n, err := result.RowsAffected()
+		if err != nil || n == 0 {
+			return err
 		}
 	}
 }
@@ -101,7 +93,7 @@ func refreshPresentation(ctx context.Context, tx *sql.Tx) error {
 func backfillPresentation(ctx context.Context, tx *sql.Tx, cursor string) (string, int, error) {
 	rows, err := tx.QueryContext(ctx, `SELECT e.id,e.session,e.parent,e.source,e.signal,e.time,e.name,e.trace,e.span,e.parent_span,
  CAST(CASE WHEN c.origin='otel' THEN e.raw ELSE 'null' END AS BLOB),e.sequence,c.origin,c.detail
- FROM event_cards c CROSS JOIN events e ON e.id=c.id WHERE c.id>? ORDER BY c.id LIMIT 200`, cursor)
+ FROM event_cards c CROSS JOIN events e ON e.id=c.id WHERE c.presentation_ready=0 AND c.id>? ORDER BY c.id LIMIT 200`, cursor)
 	if err != nil {
 		return cursor, 0, err
 	}
@@ -162,7 +154,7 @@ func backfillPresentation(ctx context.Context, tx *sql.Tx, cursor string) (strin
 			if err != nil {
 				return cursor, 0, err
 			}
-			if _, err = tx.ExecContext(ctx, "UPDATE event_cards SET detail=?,activity=?,kind=?,is_error=?,turn=?,conversation=?,has_skill=EXISTS(SELECT 1 FROM skill_events WHERE event_id=?) WHERE id=?", encoded, detailActivity(d), d.Kind, d.Error, d.Turn, detailConversation(d), e.ID, e.ID); err != nil {
+			if _, err = tx.ExecContext(ctx, "UPDATE event_cards SET presentation_ready=1,detail=?,activity=?,kind=?,is_error=?,turn=?,conversation=?,has_skill=EXISTS(SELECT 1 FROM skill_events WHERE event_id=?) WHERE id=?", encoded, detailActivity(d), d.Kind, d.Error, d.Turn, detailConversation(d), e.ID, e.ID); err != nil {
 				return cursor, 0, err
 			}
 		}

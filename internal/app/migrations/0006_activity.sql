@@ -1,3 +1,5 @@
+ALTER TABLE event_cards ADD COLUMN presentation_ready INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX cards_presentation_pending ON event_cards(id) WHERE presentation_ready=0;
 ALTER TABLE event_cards ADD COLUMN activity INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE event_cards ADD COLUMN kind TEXT NOT NULL DEFAULT 'event';
 ALTER TABLE event_cards ADD COLUMN is_error INTEGER NOT NULL DEFAULT 0;

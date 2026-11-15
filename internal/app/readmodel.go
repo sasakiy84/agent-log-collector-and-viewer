@@ -104,9 +104,9 @@ func storeCard(ctx context.Context, tx *sql.Tx, e Event, d Detail, doc document)
 	if err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO event_cards(id,session,origin,source,parent,time,sequence,is_user,signal,trace,span,parent_span,detail,prompt_title,activity,kind,is_error,turn,conversation,has_skill) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,EXISTS(SELECT 1 FROM skill_events WHERE event_id=?)) ON CONFLICT(id) DO UPDATE SET
+	_, err = tx.ExecContext(ctx, `INSERT INTO event_cards(id,session,origin,source,parent,time,sequence,is_user,signal,trace,span,parent_span,detail,prompt_title,activity,kind,is_error,turn,presentation_ready,conversation,has_skill) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,EXISTS(SELECT 1 FROM skill_events WHERE event_id=?)) ON CONFLICT(id) DO UPDATE SET
  session=excluded.session,origin=excluded.origin,source=excluded.source,parent=excluded.parent,time=excluded.time,sequence=excluded.sequence,
- is_user=excluded.is_user,signal=excluded.signal,trace=excluded.trace,span=excluded.span,parent_span=excluded.parent_span,detail=excluded.detail,prompt_title=excluded.prompt_title,activity=excluded.activity,kind=excluded.kind,is_error=excluded.is_error,turn=excluded.turn,conversation=excluded.conversation,has_skill=excluded.has_skill`,
+ is_user=excluded.is_user,signal=excluded.signal,trace=excluded.trace,span=excluded.span,parent_span=excluded.parent_span,detail=excluded.detail,prompt_title=excluded.prompt_title,activity=excluded.activity,kind=excluded.kind,is_error=excluded.is_error,turn=excluded.turn,presentation_ready=1,conversation=excluded.conversation,has_skill=excluded.has_skill`,
 		e.ID, e.Session, e.Origin, e.Source, e.Parent, e.Time, e.Sequence, d.Kind == "user", e.Signal, e.Trace, e.Span, e.ParentSpan, presentation, promptTitle(e.Source, d), detailActivity(d), d.Kind, d.Error, d.Turn, detailConversation(d), e.ID)
 	if err == nil {
 		err = storeUsage(ctx, tx, e, doc, d)
