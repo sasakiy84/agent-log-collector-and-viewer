@@ -30,6 +30,9 @@ type SessionPage struct {
 func sessionFilter(r *http.Request) (string, []any, error) {
 	query := ` FROM session_catalog s WHERE NOT EXISTS(SELECT 1 FROM archive_locks l WHERE l.session=s.session)`
 	args := []any{}
+	if r.URL.Query().Get("diagnostics") != "1" {
+		query += ` AND NOT (s.source='codex' AND (s.session GLOB 'trace:codex:*' OR s.session='unassigned:codex'))`
+	}
 	if source := r.URL.Query().Get("source"); source != "" {
 		query += " AND source=?"
 		args = append(args, source)
@@ -314,6 +317,10 @@ func (a *App) event(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	event = linked[0]
+	if err = attachToolPair(r.Context(), tx, &event, origin); err != nil {
+		databaseError(w, r, err)
+		return
+	}
 	if err = tx.Commit(); err != nil {
 		databaseError(w, r, err)
 		return

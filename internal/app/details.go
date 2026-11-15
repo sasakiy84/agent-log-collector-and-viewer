@@ -13,6 +13,7 @@ type Block struct {
 	Code  bool   `json:"code"`
 }
 type Detail struct {
+	ToolPhase  string         `json:"tool_phase,omitempty"`
 	Conflicts  []Conflict     `json:"conflicts,omitempty"`
 	Name       string         `json:"name"`
 	Kind       string         `json:"kind"`
@@ -167,6 +168,9 @@ func describe(e Event, d document) Detail {
 		if p.Title == "" {
 			p.Title = "Agent"
 		}
+	}
+	if p.Kind == "tool" {
+		p.ToolPhase = toolPhase(name, e.Signal, r)
 	}
 	p.messages("Input", get("gen_ai.input.messages"))
 	p.messages("Output", get("gen_ai.output.messages"))

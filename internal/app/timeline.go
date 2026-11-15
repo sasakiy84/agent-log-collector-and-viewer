@@ -25,6 +25,7 @@ type TimelineEvent struct {
 	Origins    []string       `json:"origins"`
 	Records    []Event        `json:"records"`
 	Subagents  []SubagentLink `json:"subagents,omitempty"`
+	ToolPair   *ToolPair      `json:"tool_pair,omitempty"`
 }
 
 func projectEvent(id string, records []Event) (TimelineEvent, error) {
@@ -61,6 +62,9 @@ func projectEvent(id string, records []Event) (TimelineEvent, error) {
 }
 func validEventTime(s string) bool { return s != "" && s != "1970-01-01T00:00:00.000000000Z" }
 func combineDetails(base, other Detail, baseOrigin, otherOrigin string) Detail {
+	if base.ToolPhase == "" {
+		base.ToolPhase = other.ToolPhase
+	}
 	conflict := func(field string, a, b any) {
 		if !present(a) || !present(b) || display(a) == display(b) {
 			return
