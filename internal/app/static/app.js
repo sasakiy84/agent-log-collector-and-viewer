@@ -394,10 +394,14 @@ function setInspectorTab(tab) {
   }
 }
 let inspectorLayoutFrame = 0;
-function fitInspectorHeight() {
+let inspectorRevealRequested = false;
+function fitInspectorHeight({ reveal = false } = {}) {
+  inspectorRevealRequested ||= reveal;
   if (inspectorLayoutFrame) return;
   inspectorLayoutFrame = requestAnimationFrame(() => {
     inspectorLayoutFrame = 0;
+    const reveal = inspectorRevealRequested;
+    inspectorRevealRequested = false;
     const panel = $("#inspector");
     if (panel.hidden || matchMedia("(max-width: 900px)").matches) {
       panel.style.removeProperty("--inspector-available-height");
@@ -405,7 +409,7 @@ function fitInspectorHeight() {
     }
     let top = panel.getBoundingClientRect().top;
     // Opening from a long session header must leave room for the body too.
-    if (top > innerHeight - 240) {
+    if (reveal && top > innerHeight - 240) {
       window.scrollBy(0, top - (innerHeight - 240));
       top = panel.getBoundingClientRect().top;
     }
@@ -462,6 +466,7 @@ async function openInspector(id) {
   $("#copyjson").disabled = !inspectorEvent;
   renderInspector();
   syncInspectorMode();
+  fitInspectorHeight({ reveal: true });
   $("#closeinspector").focus({ preventScroll: true });
   if (inspectorEvent) return;
   try {

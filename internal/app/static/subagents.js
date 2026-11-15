@@ -85,6 +85,7 @@ async function openSubagent(target, eventID) {
   }
   subagentState = { ...target, page: null };
   showSubagentPreview();
+  fitInspectorHeight({ reveal: true });
   $("#subagentevents").textContent = "";
   $("#closeinspector").focus({ preventScroll: true });
   await loadSubagent(null);

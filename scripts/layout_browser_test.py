@@ -98,6 +98,9 @@ with tempfile.TemporaryDirectory() as folder:
                 body=page.locator('.inspectorbody');header=page.locator('.inspectorheader').bounding_box()
                 body.evaluate('(e)=>e.scrollTop=e.scrollHeight')
                 assert abs(page.locator('.inspectorheader').bounding_box()['y']-header['y'])<1,'inspector header moved on body scroll'
+                page.evaluate('window.scrollTo(0,0)')
+                page.evaluate('()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
+                assert page.evaluate('scrollY')==0,'inspector prevents scrolling back to the session header'
             assert not errors,errors
             browser.close()
     finally:

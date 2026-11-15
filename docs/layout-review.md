@@ -17,6 +17,6 @@ Captured the running application in Chromium with synthetic sessions, long Japan
 AGENTLOG_BIN=./agentlog AGENTLOG_SCREENSHOT_DIR=/tmp/layout-review python3 scripts/layout_browser_test.py
 ```
 
-The script writes screenshots and `measurements.json`. It checks shared page axes, actual numeric/byte text edges, mobile row placement, document overflow, panel bounds and header stability while scrolling. `AGENTLOG_LAYOUT_CHECKS=0` allows capture of older versions that intentionally fail the new alignment checks.
+The script writes screenshots and `measurements.json`. It checks shared page axes, actual numeric/byte text edges, mobile row placement, document overflow, panel bounds, header stability while scrolling, and the ability to scroll back to the session header while a panel is open. `AGENTLOG_LAYOUT_CHECKS=0` allows capture of older versions that intentionally fail the new alignment checks.
 
 Existing browser checks cover tool-pair navigation, fixed inspector headers/mobile focus behavior, archive ZIP/download confirmation/deletion/replay suppression, shared search, Skills and project/timeline navigation. Layout work adds no data migration, network polling or application dependency.
