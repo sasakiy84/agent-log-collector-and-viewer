@@ -10,20 +10,6 @@ import (
 	"strings"
 )
 
-const subagentSchema = `
-CREATE INDEX IF NOT EXISTS cards_agent_candidates ON event_cards(id) WHERE source='copilot' OR json_extract(detail,'$.kind') IN ('tool','agent');
-CREATE TABLE IF NOT EXISTS agent_calls(event_id TEXT PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,
- session TEXT NOT NULL,owner TEXT NOT NULL,call_id TEXT NOT NULL,launch INTEGER NOT NULL,targets TEXT NOT NULL);
-CREATE INDEX IF NOT EXISTS agent_call_lookup ON agent_calls(session,owner,call_id);
-CREATE TABLE IF NOT EXISTS agent_activity(event_id TEXT PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,
- session TEXT NOT NULL,agent TEXT NOT NULL);
-CREATE INDEX IF NOT EXISTS agent_activity_lookup ON agent_activity(session,agent,event_id);
-CREATE TRIGGER IF NOT EXISTS agent_index_update AFTER UPDATE ON events BEGIN
- DELETE FROM agent_calls WHERE event_id=OLD.id;
- DELETE FROM agent_activity WHERE event_id=OLD.id; END;
-CREATE TABLE IF NOT EXISTS agent_index_progress(id INTEGER PRIMARY KEY CHECK(id=1),cursor TEXT NOT NULL,complete INTEGER NOT NULL);
-INSERT INTO agent_index_progress VALUES(1,'',0) ON CONFLICT DO NOTHING;`
-
 type agentTarget struct {
 	ID      string `json:"id"`
 	Label   string `json:"label,omitempty"`
@@ -149,74 +135,6 @@ func storeAgentData(ctx context.Context, tx *sql.Tx, e Event, d Detail) error {
 	}
 	_, err = tx.ExecContext(ctx, "INSERT INTO agent_calls VALUES(?,?,?,?,?,?) ON CONFLICT(event_id) DO UPDATE SET session=excluded.session,owner=excluded.owner,call_id=excluded.call_id,launch=excluded.launch,targets=excluded.targets", e.ID, e.Session, owner, call, launch, string(encoded))
 	return err
-}
-func (a *App) initSubagents() error {
-	for {
-		var cursor string
-		var complete bool
-		if err := a.DB.QueryRow("SELECT cursor,complete FROM agent_index_progress WHERE id=1").Scan(&cursor, &complete); err != nil {
-			return err
-		}
-		if complete {
-			return nil
-		}
-		tx, err := a.DB.Begin()
-		if err != nil {
-			return err
-		}
-		rows, err := tx.Query("SELECT "+qualifiedColumns("e")+",e.kind FROM event_cards c CROSS JOIN events e ON e.id=c.id WHERE c.id>? AND (c.source='copilot' OR json_extract(c.detail,'$.kind') IN ('tool','agent')) ORDER BY c.id LIMIT 200", cursor)
-		if err != nil {
-			tx.Rollback()
-			return err
-		}
-		type entry struct {
-			event Event
-			kind  string
-		}
-		batch := []entry{}
-		size := 0
-		for rows.Next() {
-			var e Event
-			var kind string
-			err := rows.Scan(append(e.scanArgs(), &kind)...)
-			if err != nil {
-				rows.Close()
-				tx.Rollback()
-				return err
-			}
-			batch = append(batch, entry{e, kind})
-			size += len(e.Raw)
-			if size >= 8<<20 {
-				break
-			}
-		}
-		err = rows.Err()
-		rows.Close()
-		if err != nil {
-			tx.Rollback()
-			return err
-		}
-		for _, item := range batch {
-			e := item.event
-			doc, eErr := decodeDocument(e.Raw)
-			if eErr == nil {
-				eErr = storeAgentData(context.Background(), tx, e, Detail{Kind: item.kind, Attributes: doc.attributes()})
-			}
-			if eErr != nil {
-				tx.Rollback()
-				return eErr
-			}
-			cursor = e.ID
-		}
-		_, err = tx.Exec("UPDATE agent_index_progress SET cursor=?,complete=? WHERE id=1", cursor, len(batch) == 0)
-		if err != nil {
-			tx.Rollback()
-			return err
-		}
-		if err = tx.Commit(); err != nil {
-			return err
-		}
-	}
 }
 func subagentLink(parent, source string, t agentTarget) SubagentLink {
 	label := t.Label

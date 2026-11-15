@@ -81,7 +81,7 @@ func TestSkillHistoryUsesCachedReferencesAndResumes(t *testing.T) {
 	deadline := time.Now().Add(3 * time.Second)
 	for {
 		var ready bool
-		if err := a.DB.QueryRow("SELECT complete FROM skill_index_progress").Scan(&ready); err != nil {
+		if err := a.DB.QueryRow("SELECT complete FROM maintenance_jobs WHERE name=?", skillsJob).Scan(&ready); err != nil {
 			t.Fatal(err)
 		}
 		if ready {
@@ -94,10 +94,10 @@ func TestSkillHistoryUsesCachedReferencesAndResumes(t *testing.T) {
 	}
 	read := recorded(t, "read", "import", "codex", "root", "gen_ai.tool.start", map[string]any{"tool_name": "Read", "arguments": `{"file_path":"/work/skills/review-core/SKILL.md"}`})
 	save(t, a, read, skillReport(t, "native", "otel", "root", "reported", "turn", ""))
-	if _, err := a.DB.Exec("UPDATE events SET raw='not JSON' WHERE id=?; DELETE FROM skill_events; UPDATE skill_index_progress SET cursor='',complete=0", read.ID); err != nil {
+	if _, err := a.DB.Exec("UPDATE events SET raw='not JSON' WHERE id=?; DELETE FROM skill_events; UPDATE maintenance_jobs SET cursor='',complete=0 WHERE name='skills.v1'", read.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.indexSkills(context.Background()); err != nil {
+	if err := a.runMaintenance(context.Background(), skillsJob, backfillSkills, 0); err != nil {
 		t.Fatal(err)
 	}
 	var catalog struct {

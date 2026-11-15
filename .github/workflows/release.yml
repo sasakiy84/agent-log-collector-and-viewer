@@ -4,23 +4,22 @@ on:
     tags: ['v*']
 permissions:
   contents: write
+  actions: read
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify merged source and successful CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci_verification.py verify
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
-      - run: go test -race ./...
-      - run: go vet ./...
-      - run: node --check internal/app/static/app.js
-      - run: node --check internal/app/static/pagination.js
-      - run: node --check internal/app/static/usage.js
-      - run: node --check internal/app/static/subagents.js
-      - run: node --check internal/app/static/tool_pairs.js
-      - run: node --check internal/app/static/skills.js
       - run: scripts/release.sh "${GITHUB_REF_NAME}"
       - env:
           GH_TOKEN: ${{ github.token }}

@@ -4,14 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
-	"log"
 	"slices"
 	"strings"
 	"sync"
-	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -23,20 +20,6 @@ import (
 
 // FTS5 is compiled into SQLite on every supported platform. Contentless-delete
 // stores the inverted index without a second copy of the full log text.
-const searchSchema = `
-CREATE VIRTUAL TABLE IF NOT EXISTS event_search USING fts5(
- text,content='',contentless_delete=1,tokenize='unicode61 remove_diacritics 2',prefix='2 3');
-CREATE TABLE IF NOT EXISTS search_documents(
- rowid INTEGER PRIMARY KEY,event_id TEXT NOT NULL UNIQUE REFERENCES events(id) ON DELETE CASCADE,session TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS search_dirty(event_id TEXT PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE);
-CREATE TRIGGER IF NOT EXISTS search_document_delete AFTER DELETE ON search_documents BEGIN
- DELETE FROM event_search WHERE rowid=OLD.rowid;END;
-CREATE TRIGGER IF NOT EXISTS search_event_insert AFTER INSERT ON events BEGIN
- INSERT INTO search_dirty VALUES(NEW.id) ON CONFLICT DO NOTHING;END;
-CREATE TRIGGER IF NOT EXISTS search_event_update AFTER UPDATE ON events
- WHEN OLD.raw IS NOT NEW.raw OR OLD.session<>NEW.session OR OLD.name<>NEW.name OR OLD.source<>NEW.source BEGIN
- INSERT INTO search_dirty VALUES(NEW.id) ON CONFLICT DO NOTHING;END;
-`
 
 type japaneseAnalyzer struct {
 	tokenizer *tokenizer.Tokenizer
@@ -259,70 +242,13 @@ func storeSearch(ctx context.Context, tx *sql.Tx, event Event, doc document) err
 	_, err = tx.ExecContext(ctx, "DELETE FROM search_dirty WHERE event_id=?", event.ID)
 	return err
 }
-func (a *App) initSearchSchema() error {
-	if _, err := a.DB.Exec(searchSchema); err != nil {
-		return err
-	}
-	_, err := a.DB.Exec(`INSERT INTO search_dirty SELECT e.id FROM events e LEFT JOIN search_documents d ON d.event_id=e.id WHERE d.event_id IS NULL ON CONFLICT DO NOTHING`)
-	return err
-}
-func (a *App) initSearchIndex() error {
-	var total int
-	if err := a.DB.QueryRow("SELECT COUNT(*) FROM search_dirty").Scan(&total); err != nil {
-		return err
-	}
-	if total > 0 {
-		log.Printf("Preparing Japanese full-text index for %d existing records (one-time upgrade)", total)
-	}
-	lastReport := time.Now()
-	for processed := 0; processed < total; {
-		tx, err := a.DB.Begin()
-		if err != nil {
-			return err
-		}
-		count, err := refreshSearchBatch(context.Background(), tx)
-		if err == nil {
-			err = tx.Commit()
-		} else {
-			tx.Rollback()
-		}
-		if err != nil {
-			return err
-		}
-		if count == 0 {
-			return errors.New("full-text indexing made no progress")
-		}
-		processed += count
-		if time.Since(lastReport) >= 5*time.Second || processed == total {
-			log.Printf("Japanese full-text index: %d/%d records", processed, total)
-			lastReport = time.Now()
-		}
-	}
-	return nil
+func (a *App) prepareSearch(ctx context.Context) error {
+	return a.drainBatches(ctx, "full-text search", refreshSearchBatch)
 }
 func refreshSearchBatch(ctx context.Context, tx *sql.Tx) (int, error) {
-	rows, err := tx.QueryContext(ctx, "SELECT "+qualifiedColumns("e")+" FROM search_dirty d CROSS JOIN events e ON e.id=d.event_id LIMIT 200")
+	batch, err := loadEventBatch(ctx, tx, "SELECT "+qualifiedColumns("e")+" FROM search_dirty d CROSS JOIN events e ON e.id=d.event_id LIMIT 200")
 	if err != nil {
 		return 0, err
-	}
-	batch := []Event{}
-	size := 0
-	for rows.Next() {
-		event, e := scanEvent(rows)
-		if e != nil {
-			err = e
-			break
-		}
-		batch = append(batch, event)
-		size += len(event.Raw)
-		if size >= 8<<20 {
-			break
-		}
-	}
-	rowErr := rows.Err()
-	rows.Close()
-	if err != nil || rowErr != nil {
-		return 0, errors.Join(err, rowErr)
 	}
 	for _, event := range batch {
 		doc, err := decodeDocument(event.Raw)
