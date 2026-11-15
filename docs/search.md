@@ -8,11 +8,15 @@ The default configuration is built into every binary and Docker image:
 - **Kagome + IPADIC**: Japanese search-mode segmentation with Kagome's standard Lucene-style base-form, part-of-speech and stop-word filters.
 - **Unicode NFKC and lowercase normalization**: full/half-width text and composed/decomposed kana match consistently. Japanese words such as `検索`, `認証` and `猫` do not require three characters or a log scan.
 
-Full decoded log content, JSON keys/values, project labels and session metadata are indexed. Card truncation does not affect search. Results retain the full session's event count and recent-activity order. Words are matched within an event; punctuation alone and Japanese stop words do not produce results. Queries are treated as literal words, with a limit of 512 characters / 64 distinct terms.
+Full decoded **string values** are indexed: prompts, replies, tool input/output, project labels, event names and other textual attributes. Nested JSON strings are decoded too. JSON keys, ID fields, numbers, booleans, binary values and OTLP nanosecond timestamps are excluded. OTLP `intValue` is numeric even though its protobuf JSON representation is a string. A value explicitly sent as `stringValue` remains text. Card truncation does not affect search. Results retain the full session's event count and recent-activity order. Words are matched within an event; punctuation alone and Japanese stop words do not produce results. Queries are treated as literal words, with a limit of 512 characters / 64 distinct terms.
+
+Open **Advanced search** to find an ID by exact value. Choose an ID field or leave it empty to search all ID fields. Presets include session, event, trace, span, call, message and agent IDs; any actual ID attribute name, such as `rpc.request_id`, can also be entered. IDs retain case, punctuation and full/half-width characters, with no morphological analysis or normalization. For session IDs, both the collector's `codex:…` form and the sender's original `session.id` / `conversation.id` are indexed. Imported and OTEL field aliases such as `tool_call_id` and `gen_ai.tool.call.id` are also available under `call.id`.
+
+ID lookups use a separate SQLite B-tree index on `(value,key,session)`, not FTS or a raw-log scan. Full-text and ID filters can be combined with project selection. The API accepts `id_key` and `id_value`, for example `/api/sessions?id_key=trace.id&id_value=0123456789abcdef0123456789abcdef`. Values are exact matches, up to 4096 characters. Existing internal-session and subagent visibility rules still apply.
 
 Ingestion and search-index updates commit together. Archived records are removed from the index and identical replays stay suppressed. Archive compaction incrementally merges deleted FTS postings before reclaiming SQLite pages.
 
-Existing records are indexed once at startup in resumable batches. Allow startup time and disk space for the index. No SQLite extension download, dictionary installation, environment variable or Docker override is required.
+Existing records are rebuilt once by a versioned, resumable background job (`search_strings.v1`) after HTTP startup. Each batch replaces the previous full-text terms and adds exact-ID entries in the same transaction; completed batches are not repeated on restart. Ingestion and browsing remain available during preparation. No SQLite extension download, dictionary installation, environment variable or Docker override is required.
 
 [SQLite FTS5](https://www.sqlite.org/fts5.html) · [Kagome](https://github.com/ikawaha/kagome) · [Kagome's Japanese filters](https://pkg.go.dev/github.com/ikawaha/kagome/v2/filter/ja)
 
@@ -24,4 +28,4 @@ With 150,000 synthetic records across 500 sessions, an indexed Japanese keyword 
 python3 scripts/performance_check.py --binary ./agentlog --japanese --payload-bytes 256
 ```
 
-Japanese IME, decoded JSON, filters and mobile layout: `scripts/search_browser_test.py`. Linux peak-memory regression: `scripts/search_memory_test.py`. Both use isolated synthetic data.
+Japanese IME, decoded strings, exact-ID filters, reload and mobile layout: `scripts/search_browser_test.py`. Linux peak-memory regression: `scripts/search_memory_test.py`. Both use isolated synthetic data.
