@@ -24,7 +24,7 @@ with tempfile.TemporaryDirectory() as temp:
    browser=p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox'])
    page=browser.new_page(viewport={'width':390,'height':844});errors=[]
    page.on('pageerror',lambda e:errors.append(str(e)))
-   page.goto(base);page.locator('#token').fill(token);page.locator('#loginform button').click()
+   page.goto(base+'/?folder=');page.locator('#token').fill(token);page.locator('#loginform button').click()
    page.wait_for_function("() => document.querySelectorAll('.session').length===200")
    page.locator('#sessionpagination [aria-label="Next page"]').click()
    page.wait_for_function("() => document.querySelectorAll('.session').length===6")

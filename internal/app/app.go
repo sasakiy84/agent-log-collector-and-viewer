@@ -106,6 +106,7 @@ func (a *App) Handler() http.Handler {
 		w.Write(b)
 	})
 	mux.HandleFunc("GET /api/sessions", a.sessions)
+	mux.HandleFunc("GET /api/folders", a.folders)
 	mux.HandleFunc("GET /api/session", a.session)
 	mux.HandleFunc("GET /api/event", a.event)
 	mux.HandleFunc("GET /api/export", a.export)

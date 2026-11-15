@@ -8,7 +8,7 @@ with sync_playwright() as p:
  browser=p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox'])
  page=browser.new_page(viewport={'width':1440,'height':1060});errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
  page.goto(BASE);page.locator('#token').fill('incorrect');page.locator('#loginform button').click();page.get_by_text('Invalid access token.').wait_for()
- page.locator('#token').fill(TOKEN);page.locator('#loginform button').click();page.locator('.session').first.wait_for()
+ page.locator('#token').fill(TOKEN);page.locator('#loginform button').click();page.locator('.folder').first.wait_for();page.screenshot(path=str(OUT/'ui-folders.png'),full_page=True);page.locator('[data-folder="/projects/agentlog"]').click();page.locator('.session').first.wait_for()
  assert page.locator('#detailpage').is_hidden();assert page.locator('.stats').count()==0
  page.screenshot(path=str(OUT/'ui-sessions.png'),full_page=True)
  page.locator('[data-source="codex"]').click();page.wait_for_function("() => [...document.querySelectorAll('.session .source')].every(x=>x.textContent==='Codex')")
@@ -71,6 +71,7 @@ with sync_playwright() as p:
  page.keyboard.press('Escape');assert page.evaluate('() => !document.querySelector("#eventlist").inert')
  assert page.locator('#autorefresh').count()==0
  page.route('**/api/session?*',lambda r:r.fulfill(status=500,body='failure'));page.locator('#refresh').click();page.get_by_text('Unable to load (HTTP 500).').wait_for(timeout=10000);page.unroute('**/api/session?*');page.locator('#refresh').click();page.wait_for_function("() => document.querySelector('#error').textContent===''",timeout=10000)
+ page.goto(BASE);page.locator('.folder').first.wait_for();page.screenshot(path=str(OUT/'ui-folders-mobile.png'),full_page=True)
  assert not errors,errors
  browser.close()
-print('PASS: standalone routes/reload, list filters/search, per-agent rendering, subagent navigation, inspector details/JSON, manual-refresh behavior, keyboard/focus trap, filters, errors, export, no automatic refresh, mobile; 8 screenshots.')
+print('PASS: folder drill-down, standalone routes/reload, list filters/search, per-agent rendering, subagent navigation, inspector details/JSON, manual-refresh behavior, keyboard/focus trap, filters, errors, export, no automatic refresh, mobile; 10 screenshots.')

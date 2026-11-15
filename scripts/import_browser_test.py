@@ -32,7 +32,7 @@ with tempfile.TemporaryDirectory() as tmp:
   with sync_playwright() as p:
    browser=p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox'])
    page=browser.new_page(viewport={'width':1440,'height':1060});errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
-   page.goto(base);page.locator('#token').fill(token);page.locator('#loginform button').click();page.locator('.session').wait_for()
+   page.goto(base+'/?folder=%2Fwork%2Fshop');page.locator('#token').fill(token);page.locator('#loginform button').click();page.locator('.session').wait_for()
    assert 'shop' in page.locator('.session small').inner_text()
    page.locator('#search').fill('backend');page.locator('.session').click();page.locator('.event').first.wait_for()
    expect(page.locator('.event')).to_have_count(6)

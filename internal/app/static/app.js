@@ -12,21 +12,39 @@ const inspectorCache=new Map();
 let selected=location.pathname.startsWith('/sessions/')?decodeURIComponent(location.pathname.slice(10)):'';
 const archiveMode=location.pathname==='/archive';
 const listURL=new URL(location.href);
+let folder=listURL.searchParams.has('folder')?listURL.searchParams.get('folder'):null;
 source=listURL.searchParams.get('source')||'';query=listURL.searchParams.get('q')||'';sessionOffset=Number(listURL.searchParams.get('offset'))||0;
 if(selected){const page=Number(listURL.searchParams.get('page'));if(Number.isSafeInteger(page)&&page>0&&page<=Number.MAX_SAFE_INTEGER/200)eventOffset=(page-1)*200;origin=['otel','import'].includes(listURL.searchParams.get('origin'))?listURL.searchParams.get('origin'):'';$('#origin').value=origin}
 $('#search').value=query;
 if(!selected&&!archiveMode) sessionStorage.setItem('sessionsURL',location.pathname+location.search);
-$('.back').href=sessionStorage.getItem('sessionsURL')||'/';
+$('#detailpage > .back').href=sessionStorage.getItem('sessionsURL')||'/';
 async function apiResponse(path,signal){const r=await fetch(path,{signal});if(r.status===401){closeInspector(false);$('#login').hidden=false;$('#workspace').hidden=true;throw Error('Sign in required.')}if(!r.ok)throw Error(r.status===404?'Session not found.':`Unable to load (HTTP ${r.status}).`);return r}
 async function api(path,signal){return (await apiResponse(path,signal)).json()}
 function titleFor(id,p){if(p){const prompt=p.blocks.find(b=>/request|user/i.test(b.label));if(prompt&&prompt.text!=='Content not exported')return prompt.text.split('\n')[0].slice(0,150)}return id.includes('/agent:')?'Subagent · '+id.split('/agent:').pop():id.replace(/^(codex|claude|copilot|other):/,'')}
-function listState(){const p=new URLSearchParams();if(source)p.set('source',source);if(query)p.set('q',query);if(sessionOffset)p.set('offset',sessionOffset);history.replaceState(null,'','/'+(p.size?'?'+p:''));sessionStorage.setItem('sessionsURL',location.pathname+location.search)}
+function listParameters(){const p=new URLSearchParams();if(source)p.set('source',source);if(query)p.set('q',query);return p}
+function listState(){const p=listParameters();if(folder!==null)p.set('folder',folder);if(sessionOffset)p.set('offset',sessionOffset);history.replaceState(null,'','/'+(p.size?'?'+p:''));sessionStorage.setItem('sessionsURL',location.pathname+location.search)}
+function folderLink(path){const p=listParameters();p.set('folder',path);return '/?'+p}
+function folderName(path){return path?path.replace(/[\\/]+$/,'').split(/[\\/]/).pop()||path:'Unknown folder'}
+function renderListHeading(total){
+ const grouped=folder===null,p=listParameters();
+ $('#listtitle').textContent=grouped?'Folders':folderName(folder);
+ $('#foldersback').hidden=grouped;$('#foldersback').href='/'+(p.size?'?'+p:'');
+ $('#folderpath').hidden=grouped||!folder;$('#folderpath').textContent=folder||'';
+ $('#listcount').textContent=`${total.toLocaleString()} ${grouped?'folders':'sessions'}`;
+ $('#listcolumn').textContent=grouped?'Folder':'Session';$('#countcolumn').textContent=grouped?'Sessions':'Events';
+ sessionPager.noun=grouped?'folders':'sessions';
+}
 function detailState(latest){const p=new URLSearchParams();if(!latest)p.set('page',Math.floor(meta.offset/meta.limit)+1);if(pageOrigin)p.set('origin',pageOrigin);history.replaceState(null,'',link(selected)+(p.size?'?'+p:''))}
 function projectLabel(p){return [p?.project,...(Array.isArray(p?.tags)?p.tags:p?.tags?[p.tags]:[])].filter(Boolean).join(' · ')}
 function renderSessions(rows,total){
- $('#listcount').textContent=`${total.toLocaleString()} sessions`;
+ renderListHeading(total);
  $('#sessions').innerHTML=rows.length?rows.slice(0,200).map(s=>`<a class="session" href="${esc(link(s.id))}" data-session="${esc(s.id)}"><div><h2>${esc(titleFor(s.id,s.preview))}</h2><small>${projectLabel(s.preview)?esc(projectLabel(s.preview))+' · ':''}${esc(s.id)}${s.parent?' · Subagent':''}</small></div><span class="source">${esc(label(s.source))}</span><time>${esc(date(s.end))}</time><span class="count">${s.count}</span></a>`).join(''):'<p class="empty">No sessions</p>';
  sessionPager.update({total,offset:sessionOffset,size:200});
+}
+function renderFolders(data){
+ renderListHeading(data.total);
+ $('#sessions').innerHTML=data.folders.length?data.folders.map(f=>`<a class="folder" href="${esc(folderLink(f.path))}" data-folder="${esc(f.path)}"><div><h2>${esc(folderName(f.path))}</h2>${f.path?`<small>${esc(f.path)}</small>`:''}</div><span class="source">${esc(f.sources.map(label).join(' · '))}</span><time>${esc(date(f.end))}</time><span class="count">${f.count.toLocaleString()}</span></a>`).join(''):'<p class="empty">No folders</p>';
+ sessionPager.update({total:data.total,offset:sessionOffset,size:200});
 }
 function renderEvents(){
  const focusedID=document.activeElement?.dataset.event;
@@ -139,10 +157,10 @@ async function refresh(scrollMode){
  try{
   if(archiveMode){await refreshArchive(controller.signal);if(!controller.signal.aborted&&scrollMode==='top')window.scrollTo({top:0,behavior:'instant'})}
   else if(selected){const latest=eventOffset===null;const paging=latest?'&position=latest':`&offset=${eventOffset}&limit=${eventLimit}`;const page=await api(`/api/session?id=${encodeURIComponent(selected)}&origin=${encodeURIComponent(origin)}${paging}`,controller.signal);if(controller.signal.aborted)return;anchor=captureTimelinePosition();scrollMode??=latest?'bottom':meta?'preserve':'top';closeInspector(false);inspectorCache.clear();meta=page;pageOrigin=origin;events=page.events;eventOffset=page.offset;eventLimit=page.limit;detailState(latest);renderEvents()}
-  else{const response=await apiResponse(`/api/sessions?source=${encodeURIComponent(source)}&q=${encodeURIComponent(query)}&offset=${sessionOffset}`,controller.signal),rows=await response.json();if(controller.signal.aborted)return;sessionOffset=Number(response.headers.get('X-Page-Offset'));sessionData={offset:sessionOffset,source,query};listState();renderSessions(rows,Number(response.headers.get('X-Total-Count')));if(scrollMode==='top')window.scrollTo({top:0,behavior:'instant'})}
+  else{const params=listParameters();params.set('offset',sessionOffset);if(folder!==null)params.set('folder',folder);const response=await apiResponse((folder===null?'/api/folders?':'/api/sessions?')+params,controller.signal),data=await response.json();if(controller.signal.aborted)return;sessionOffset=folder===null?data.offset:Number(response.headers.get('X-Page-Offset'));sessionData={offset:sessionOffset,source,query,folder};listState();if(folder===null)renderFolders(data);else renderSessions(data,Number(response.headers.get('X-Total-Count')));if(scrollMode==='top')window.scrollTo({top:0,behavior:'instant'})}
   if(controller.signal.aborted)return;
   $('#login').hidden=true;$('#workspace').hidden=false;$('#listpage').hidden=!!selected||archiveMode;$('#detailpage').hidden=!selected||archiveMode;$('#archivepage').hidden=!archiveMode;$('#error').textContent='';if(selected)placeTimeline(scrollMode,anchor,serial);
- }catch(e){if(e.name==='AbortError')return;if(selected&&meta){eventOffset=meta.offset;eventLimit=meta.limit;origin=pageOrigin;$('#origin').value=origin}else if(archiveMode&&archiveData){archiveOffset=archiveData.offset}else if(sessionData){({offset:sessionOffset,source,query}=sessionData);$('#search').value=query;document.querySelectorAll('[data-source]').forEach(b=>b.classList.toggle('active',b.dataset.source===source));listState()}$('#error').textContent=e.message;if($('#login').hidden){$('#workspace').hidden=false;$('#listpage').hidden=!!selected||archiveMode;$('#detailpage').hidden=!selected||archiveMode;$('#archivepage').hidden=!archiveMode}}
+ }catch(e){if(e.name==='AbortError')return;if(selected&&meta){eventOffset=meta.offset;eventLimit=meta.limit;origin=pageOrigin;$('#origin').value=origin}else if(archiveMode&&archiveData){archiveOffset=archiveData.offset}else if(sessionData){({offset:sessionOffset,source,query,folder}=sessionData);$('#search').value=query;document.querySelectorAll('[data-source]').forEach(b=>b.classList.toggle('active',b.dataset.source===source));listState()}$('#error').textContent=e.message;if($('#login').hidden){$('#workspace').hidden=false;$('#listpage').hidden=!!selected||archiveMode;$('#detailpage').hidden=!selected||archiveMode;$('#archivepage').hidden=!archiveMode}}
  finally{if(serial===requestSerial){$('#refresh').disabled=false;$('#workspace').removeAttribute('aria-busy');for(const pager of [sessionPager,eventPager,archivePager])pager.setLoading(false);$('#origin').disabled=false}}
 }
 $('#refresh').onclick=()=>{if(selected&&(!meta||meta.offset+meta.limit>=meta.count)){eventOffset=null;eventLimit=200}refresh()};

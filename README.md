@@ -2,7 +2,7 @@
 
 A personal OpenTelemetry collector and session viewer for Codex CLI, Claude Code and GitHub Copilot CLI.
 
-![Session timeline and event inspector](docs/ui-event-details.png)
+![Sessions grouped by working folder](docs/ui-folders.png)
 
 *Screenshot uses synthetic telemetry.*
 
@@ -10,7 +10,7 @@ A personal OpenTelemetry collector and session viewer for Codex CLI, Claude Code
 
 - Collect logs, traces and metrics over OTLP/HTTP (JSON or Protobuf), or import and watch saved CLI sessions.
 - Search Japanese and English with built-in SQLite FTS5 and an embedded Japanese dictionary ([search settings](docs/search.md)).
-- Browse sessions by recent activity; timelines run oldest to newest and open at the latest entry. Open cards for full attributes/JSON.
+- Browse sessions grouped by working folder and recent activity; timelines run oldest to newest and open at the latest entry. Open cards for full attributes/JSON.
 - Combine imported and OTEL events with shared IDs into one card while keeping both originals.
 - Archive sessions inactive for a month; download a ZIP, confirm it, then delete DB records and reclaim space.
 - One Go binary with an embedded UI, SQLite storage and token authentication. No automatic log expiry.

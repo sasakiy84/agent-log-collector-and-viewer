@@ -26,7 +26,7 @@ type SessionPage struct {
 	Events   []TimelineEvent `json:"events"`
 }
 
-func (a *App) sessions(w http.ResponseWriter, r *http.Request) {
+func sessionFilter(r *http.Request) (string, []any, error) {
 	query := ` FROM session_catalog s WHERE NOT EXISTS(SELECT 1 FROM archive_locks l WHERE l.session=s.session)`
 	args := []any{}
 	if source := r.URL.Query().Get("source"); source != "" {
@@ -36,8 +36,7 @@ func (a *App) sessions(w http.ResponseWriter, r *http.Request) {
 	if search := strings.TrimSpace(r.URL.Query().Get("q")); search != "" {
 		match, err := searchMatch(r.Context(), search)
 		if err != nil {
-			http.Error(w, err.Error(), 400)
-			return
+			return "", nil, err
 		}
 		if match == "" {
 			query += " AND 0"
@@ -45,6 +44,19 @@ func (a *App) sessions(w http.ResponseWriter, r *http.Request) {
 			query += ` AND s.session IN (SELECT d.session FROM event_search CROSS JOIN search_documents d ON d.rowid=event_search.rowid WHERE event_search MATCH ? GROUP BY d.session)`
 			args = append(args, match)
 		}
+	}
+	if r.URL.Query().Has("folder") {
+		query += " AND " + directoryColumn + "=?"
+		args = append(args, r.URL.Query().Get("folder"))
+	}
+	return query, args, nil
+}
+
+func (a *App) sessions(w http.ResponseWriter, r *http.Request) {
+	query, args, err := sessionFilter(r)
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+		return
 	}
 	tx, err := a.readers.BeginTx(r.Context(), &sql.TxOptions{ReadOnly: true})
 	if err != nil {

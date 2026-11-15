@@ -47,6 +47,9 @@ func Open(path, token string) (*App, error) {
 			err = a.initReadModel()
 		}
 		if err == nil {
+			err = a.initDirectoryIndex()
+		}
+		if err == nil {
 			err = a.initSearchIndex()
 		}
 	}

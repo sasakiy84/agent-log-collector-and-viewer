@@ -25,3 +25,11 @@ Existing databases build the display data once before accepting HTTP requests. B
 Session lists are ordered by latest activity. Shared numbered pagination shows the current range and total, first/last pages, nearby pages with ellipses, and a validated page-number field. The compact bar stays visible while scrolling. Lists count only indexed session summaries; filtered totals and rows share one read transaction (`X-Total-Count` and `X-Page-Offset`). Stale offsets clamp to the last valid page.
 
 Timelines use fixed 200-entry pages from the oldest event. They open on the last page, ordered oldest to newest, with the newest event visible at the bottom. The last page uses a descending index read bounded to its actual size, rather than skipping the history. **Latest** returns to that page. Historical page links retain their page/origin on reload; refreshing an older page preserves the reading position. Appending events does not shift previous page boundaries.
+
+The default overview groups all matching sessions by their full working-directory path before pagination. Opening a folder fetches only that folder's session page. Folder totals, agent sets and latest activity come from indexed session summaries, including when search or an agent filter is applied. Missing directory metadata forms one **Unknown folder** group; equal basenames at different paths remain separate.
+
+A partial directory-candidate index supplies the earliest user event with known metadata, then falls back to other known events. Existing databases populate the summary directories once at startup; only legacy paths clipped at 512 bytes need one original-record lookup. Directory identities accept strings up to 32 KiB; larger values and other types appear under Unknown folder and remain unchanged in original records. Folder reads never read original payloads.
+
+```sh
+python3 scripts/performance_check.py --binary ./agentlog --folders
+```

@@ -19,7 +19,7 @@ with tempfile.TemporaryDirectory() as folder:
   with urllib.request.urlopen(req) as r:assert r.status==200
   with sync_playwright() as p:
    browser=p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox']);page=browser.new_page(viewport={'width':1280,'height':800});errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
-   page.goto(base);page.locator('#token').fill(token);page.locator('#loginform button').click()
+   page.goto(base+'/?folder=');page.locator('#token').fill(token);page.locator('#loginform button').click()
    pager=page.locator('#sessionpagination')
    def current(pager,number):expect(pager.locator('[aria-current="page"]')).to_have_text(str(number));expect(pager).to_have_attribute('aria-busy','false')
    def jump(pager,number):pager.get_by_role('spinbutton',name='Page number').fill(str(number));pager.get_by_role('spinbutton',name='Page number').press('Enter')
@@ -31,11 +31,11 @@ with tempfile.TemporaryDirectory() as folder:
    assert pager.locator('.pagination-gap').count()==1
    # Failed navigation keeps the confirmed rows, page number and URL.
    before=page.locator('.session').first.get_attribute('data-session');url=page.url;held=[]
-   page.route('**/api/sessions?**offset=600',lambda route:held.append(route))
+   page.route('**/api/sessions?**offset=600*',lambda route:held.append(route))
    pager.get_by_role('button',name='Page 4',exact=True).click();page.wait_for_timeout(50);assert len(held)==1
    assert pager.get_by_role('spinbutton').is_disabled();assert pager.locator('button:not(:disabled)').count()==0
    held[0].fulfill(status=500,body='synthetic failure');expect(page.locator('#error')).to_contain_text('HTTP 500');current(pager,3);assert page.url==url;assert page.locator('.session').first.get_attribute('data-session')==before
-   page.unroute('**/api/sessions?**offset=600')
+   page.unroute('**/api/sessions?**offset=600*')
    # Search resets pagination and reports the filtered total, including empty.
    page.locator('#search').fill('project');current(pager,1);expect(pager.locator('.pagination-range')).to_have_text('1–200 / 1,001 sessions')
    page.locator('#search').fill('missing-query');expect(page.locator('#sessions .empty')).to_have_text('No sessions');expect(pager.locator('.pagination-range')).to_have_text('0 sessions');assert pager.locator('button:not(:disabled)').count()==0

@@ -20,7 +20,7 @@ with tempfile.TemporaryDirectory() as folder:
   with sync_playwright() as p:
    browser=p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox'])
    page=browser.new_page(viewport={'width':1280,'height':800});errors=[];page.on('pageerror',lambda error:errors.append(str(error)))
-   page.goto(base);page.locator('#token').fill(token);page.locator('#loginform button').click();expect(page.locator('.session')).to_have_count(3)
+   page.goto(base+'/?folder=');page.locator('#token').fill(token);page.locator('#loginform button').click();expect(page.locator('.session')).to_have_count(3)
    requests=[];page.on('request',lambda r:requests.append(r.url) if '/api/sessions?' in r.url else None)
    # Native IME pre-edit must not issue a search until composition is committed.
    page.locator('#search').dispatch_event('compositionstart');page.locator('#search').fill('認証');page.wait_for_timeout(400);assert not requests,requests

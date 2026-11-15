@@ -8,6 +8,7 @@ parser.add_argument('--records',type=int,default=150000)
 parser.add_argument('--sessions',type=int,default=500)
 parser.add_argument('--payload-bytes',type=int,default=2048)
 parser.add_argument('--japanese',action='store_true',help='Measure Japanese common/rare keyword searches as well')
+parser.add_argument('--folders',action='store_true',help='Include 20 working directories and measure the folder overview')
 args=parser.parse_args()
 assert args.records>0 and args.sessions>0 and args.payload_bytes>=0
 schema='''CREATE TABLE events(id TEXT PRIMARY KEY,session TEXT NOT NULL,parent TEXT NOT NULL,source TEXT NOT NULL,signal TEXT NOT NULL,time TEXT NOT NULL,trace TEXT NOT NULL,span TEXT NOT NULL,parent_span TEXT NOT NULL,sequence INTEGER NOT NULL,origin TEXT NOT NULL,kind TEXT NOT NULL,tool_name TEXT NOT NULL,name TEXT NOT NULL,raw BLOB NOT NULL);
@@ -29,6 +30,7 @@ def measure(binary,fixture,folder,name):
   print(name,'initial_upgrade_seconds',round(time.monotonic()-started,3),flush=True)
   signatures={}
   endpoints=[('list','/api/sessions'),('detail','/api/session?id=codex:fixture-0000')]
+  if args.folders and name=='current':endpoints.append(('folders','/api/folders'))
   if args.japanese:endpoints += [('search_common','/api/sessions?q='+urllib.parse.quote('認証')),('search_rare','/api/sessions?q='+urllib.parse.quote('一意診断'))]
   for endpoint,path in endpoints:
    samples=[]
@@ -39,7 +41,10 @@ def measure(binary,fixture,folder,name):
    result=json.loads(body)
    if endpoint=='search_common':assert len(result)==min(201,args.sessions,args.records)
    if endpoint=='search_rare':assert len(result)==1 and result[0]['id']=='codex:fixture-0000'
-   signatures[endpoint]=[(s['id'],s['count'],s['start'],s['end']) for s in result] if endpoint!='detail' else (result['count'],[(e['id'],e['time'],e['origins']) for e in result['events']])
+   if endpoint=='folders':
+    assert result['total']==min(20,args.sessions,args.records)
+    assert sum(f['count'] for f in result['folders'])==min(args.sessions,args.records)
+   else:signatures[endpoint]=[(s['id'],s['count'],s['start'],s['end']) for s in result] if endpoint!='detail' else (result['count'],[(e['id'],e['time'],e['origins']) for e in result['events']])
    print(name,endpoint,'first_ms',round(samples[0]*1000,2),'median_ms',round(statistics.median(samples[1:])*1000,2),'response_bytes',len(body),flush=True)
   return signatures
  finally:proc.terminate();proc.wait(timeout=30)
@@ -51,7 +56,9 @@ with tempfile.TemporaryDirectory(prefix='agentlog-perf-') as temporary:
    for session in range(min(args.sessions,args.records)):
     sid=f'codex:fixture-{session:04d}'
     prompt=('日本語の検索と認証を確認。'+('一意診断。' if session==0 else '') if args.japanese else 'Synthetic ')+('x'*args.payload_bytes)
-    raw=json.dumps({'resource':{'attributes':[{'key':'service.name','value':{'stringValue':'codex'}}]},'record':{'eventName':'gen_ai.user.message','attributes':[{'key':'prompt','value':{'stringValue':prompt}}]}},ensure_ascii=False).encode()
+    attributes=[{'key':'service.name','value':{'stringValue':'codex'}}]
+    if args.folders:attributes.append({'key':'cwd','value':{'stringValue':f'/work/project-{session%20:02d}'}})
+    raw=json.dumps({'resource':{'attributes':attributes},'record':{'eventName':'gen_ai.user.message','attributes':[{'key':'prompt','value':{'stringValue':prompt}}]}},ensure_ascii=False).encode()
     for number in range(session,args.records,args.sessions):yield(f'import:{number:064x}',sid,'','codex','logs','2026-01-01T00:00:00.000000000Z','','','',number,'import','user','','gen_ai.user.message',raw)
   database.executemany('INSERT INTO events VALUES('+','.join('?'*15)+')',rows())
  previous=measure(args.baseline,fixture,folder,'baseline') if args.baseline else None

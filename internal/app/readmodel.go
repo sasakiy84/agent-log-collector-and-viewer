@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS event_cards(
  signal TEXT NOT NULL,trace TEXT NOT NULL,span TEXT NOT NULL,parent_span TEXT NOT NULL,detail BLOB NOT NULL);
 CREATE INDEX IF NOT EXISTS cards_page ON event_cards(session,origin,time,sequence,id);
 CREATE INDEX IF NOT EXISTS cards_preview ON event_cards(session,origin,is_user DESC,time,sequence,id);
+CREATE INDEX IF NOT EXISTS cards_directory ON event_cards(session,is_user DESC,time,sequence,id) WHERE json_type(detail,'$.cwd')='text' AND json_extract(detail,'$.cwd')<>'';
 CREATE TABLE IF NOT EXISTS timeline_entries(
  id TEXT PRIMARY KEY,session TEXT NOT NULL,source TEXT NOT NULL,parent TEXT NOT NULL,time TEXT NOT NULL,
  end TEXT NOT NULL,sequence INTEGER NOT NULL,is_user INTEGER NOT NULL,import_id TEXT NOT NULL,otel_id TEXT NOT NULL);
@@ -50,6 +51,7 @@ CREATE TABLE IF NOT EXISTS session_catalog(
 CREATE INDEX IF NOT EXISTS catalog_recent ON session_catalog(end DESC,session);
 CREATE INDEX IF NOT EXISTS catalog_source_recent ON session_catalog(source,end DESC,session);
 CREATE INDEX IF NOT EXISTS catalog_children ON session_catalog(parent,session);
+CREATE INDEX IF NOT EXISTS catalog_directory_recent ON session_catalog(COALESCE(json_extract(preview,'$.cwd'),''),end DESC,session);
 CREATE TABLE IF NOT EXISTS read_model_dirty(session TEXT NOT NULL,id TEXT NOT NULL,PRIMARY KEY(session,id)) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS cards_dirty(id TEXT PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE);
 CREATE TRIGGER IF NOT EXISTS read_model_neighbors_UPDATE BEFORE UPDATE ON events WHEN EXISTS(SELECT 1 FROM event_keys WHERE event_id=OLD.id) BEGIN
@@ -136,7 +138,8 @@ func cardDetail(d Detail) Detail {
 	d.Conflicts = nil
 	d.Model = boundedValue(d.Model)
 	d.Host = boundedValue(d.Host)
-	d.Cwd = boundedValue(d.Cwd)
+	// Keep real paths exact, while arbitrary telemetry values stay bounded.
+	d.Cwd = directoryPath(d.Cwd)
 	d.Project = boundedValue(d.Project)
 	d.Tags = boundedValue(d.Tags)
 	return d
@@ -409,7 +412,16 @@ func refreshTimeline(ctx context.Context, tx *sql.Tx, session string) error {
 		if e != nil {
 			return e
 		}
-		detail, _ := json.Marshal(summaryDetail(preview[0].Detail))
+		folder, e := sessionDirectory(ctx, tx, session)
+		if e != nil {
+			return e
+		}
+		summary := summaryDetail(preview[0].Detail)
+		summary.Cwd = folder
+		detail, e := json.Marshal(summary)
+		if e != nil {
+			return e
+		}
 		_, err = tx.ExecContext(ctx, `INSERT INTO session_catalog SELECT ?,MAX(source),MAX(parent),
  (SELECT count FROM timeline_counts WHERE session=?),
  (SELECT time FROM timeline_entries WHERE session=? ORDER BY time LIMIT 1),

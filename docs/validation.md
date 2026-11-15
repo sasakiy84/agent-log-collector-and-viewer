@@ -1,3 +1,10 @@
+# Folder overview (current)
+
+- Default navigation shows one row per full working-directory path, including all matching sessions before pagination. Each row shows its agents, session count and latest activity. Folder/session ordering is newest activity first; unknown metadata is one group, and distinct paths with the same basename stay separate.
+- Opening a folder retains agent/search filters and uses server-side exact-path pagination. Reload and detail-to-list links retain the folder and page. Folder requests count and fetch from one read snapshot.
+- Tests cover over 200 sessions in one group, over 200 groups, Japanese search, source filters, unknown/fallback metadata, incremental update/delete, stale offsets, long paths with the same clipped prefix, old database upgrade and oversized/non-string metadata. Normal pages remain bounded and raw records are preserved.
+- Chromium covers overview/drill-down, scoped pagination/reload/back links, failed filter rollback, XSS escaping and mobile layouts, alongside the existing timeline, pagination, search, import/OTEL and UI/inspector suites. Go race tests and vet pass. Screenshots use synthetic telemetry.
+
 # Numbered pagination (current)
 
 - [Desktop example](ui-pagination.png) · [Mobile example](ui-pagination-mobile.png). Screenshots use synthetic telemetry.
