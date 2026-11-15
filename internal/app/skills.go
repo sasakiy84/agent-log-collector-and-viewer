@@ -23,6 +23,7 @@ type SkillSummary struct {
 	Plugin     string   `json:"plugin,omitempty"`
 	Sessions   int      `json:"sessions"`
 	Uses       int      `json:"uses"`
+	Inferred   int      `json:"inferred"`
 	References int      `json:"references"`
 	Last       string   `json:"last"`
 	Scopes     []string `json:"scopes"`
@@ -30,21 +31,36 @@ type SkillSummary struct {
 }
 
 const skillReported = `CASE WHEN k.evidence='reported' AND (k.origin='otel' OR NOT EXISTS(SELECT 1 FROM skill_events native WHERE native.name=k.name AND native.plugin=k.plugin AND native.session=k.session AND native.evidence='reported' AND native.origin='otel')) THEN k.group_key END`
-const skillRollup = `SELECT k.name,k.plugin,COUNT(DISTINCT k.session) AS sessions,COUNT(DISTINCT ` + skillReported + `) AS uses,COUNT(DISTINCT CASE WHEN k.evidence='reference' THEN k.session END) AS reference_sessions,MAX(k.time) AS last,json_group_array(DISTINCT k.scope) AS scopes`
+
+// Historical reads are evidence of possible use, not invocation counts. Prefer
+// reported invocations when available; otherwise estimate one use per session
+// regardless of rereads or imported/native copies.
+func skillRollup(origin string) string {
+	reported := skillReported
+	reportedSession := `SELECT 1 FROM skill_events reported WHERE reported.name=k.name AND reported.plugin=k.plugin AND reported.session=k.session AND reported.evidence='reported'`
+	if origin != "" {
+		reported = "CASE WHEN k.evidence='reported' THEN k.group_key END"
+		reportedSession += " AND reported.origin=k.origin"
+	}
+	inferred := `COUNT(DISTINCT CASE WHEN k.evidence='reference' AND NOT EXISTS(` + reportedSession + `) THEN k.session END)`
+	return `SELECT k.name,k.plugin,COUNT(DISTINCT k.session) AS sessions,COUNT(DISTINCT ` + reported + `)+` + inferred + ` AS uses,` + inferred + ` AS inferred,COUNT(DISTINCT CASE WHEN k.evidence='reference' THEN k.session END) AS reference_sessions,MAX(k.time) AS last,json_group_array(DISTINCT k.scope) AS scopes`
+}
+
+type skillUsageTotals struct{ Uses, Inferred int }
 
 func scanSkills(rows *sql.Rows) ([]SkillSummary, error) {
 	return scanSkillRows(rows, nil)
 }
 
-func scanSkillRows(rows *sql.Rows, totalUses *int) ([]SkillSummary, error) {
+func scanSkillRows(rows *sql.Rows, totals *skillUsageTotals) ([]SkillSummary, error) {
 	defer rows.Close()
 	out := []SkillSummary{}
 	for rows.Next() {
 		var s SkillSummary
 		var scopes string
-		args := []any{&s.Name, &s.Plugin, &s.Sessions, &s.Uses, &s.References, &s.Last, &scopes}
-		if totalUses != nil {
-			args = append(args, totalUses)
+		args := []any{&s.Name, &s.Plugin, &s.Sessions, &s.Uses, &s.Inferred, &s.References, &s.Last, &scopes}
+		if totals != nil {
+			args = append(args, &totals.Uses, &totals.Inferred)
 		}
 		if err := rows.Scan(args...); err != nil {
 			return nil, err
@@ -105,11 +121,11 @@ func (a *App) skills(w http.ResponseWriter, r *http.Request) {
 	params := append(append([]any{}, args...), off)
 	// Window aggregation covers every matching skill before LIMIT, so the
 	// displayed total remains correct on later pages and under project/search filters.
-	rows, err := tx.QueryContext(r.Context(), "WITH totals AS ("+skillRollup+grouped+") SELECT name,plugin,sessions,uses,reference_sessions,last,scopes,SUM(uses) OVER() FROM totals ORDER BY "+order+" LIMIT 200 OFFSET ?", params...)
+	rows, err := tx.QueryContext(r.Context(), "WITH totals AS ("+skillRollup("")+grouped+") SELECT name,plugin,sessions,uses,inferred,reference_sessions,last,scopes,SUM(uses) OVER(),SUM(inferred) OVER() FROM totals ORDER BY "+order+" LIMIT 200 OFFSET ?", params...)
 	var out []SkillSummary
-	var uses int
+	var totals skillUsageTotals
 	if err == nil {
-		out, err = scanSkillRows(rows, &uses)
+		out, err = scanSkillRows(rows, &totals)
 	}
 	var ready bool
 	if err == nil {
@@ -122,7 +138,7 @@ func (a *App) skills(w http.ResponseWriter, r *http.Request) {
 		databaseError(w, r, err)
 		return
 	}
-	write(w, map[string]any{"skills": out, "total": total, "uses": uses, "sort": sort, "offset": off, "ready": ready})
+	write(w, map[string]any{"skills": out, "total": total, "uses": totals.Uses, "inferred": totals.Inferred, "sort": sort, "offset": off, "ready": ready})
 }
 func sessionSkills(ctx context.Context, tx *sql.Tx, session, origin string) ([]SkillSummary, error) {
 	from := ` FROM skill_events k WHERE k.session=?`
@@ -131,10 +147,7 @@ func sessionSkills(ctx context.Context, tx *sql.Tx, session, origin string) ([]S
 		from += " AND k.origin=?"
 		args = append(args, origin)
 	}
-	rollup := skillRollup
-	if origin != "" {
-		rollup = strings.Replace(rollup, skillReported, "CASE WHEN k.evidence='reported' THEN k.group_key END", 1)
-	}
+	rollup := skillRollup(origin)
 	rows, err := tx.QueryContext(ctx, rollup+from+" GROUP BY k.name,k.plugin ORDER BY MAX(k.time) DESC,k.name,k.plugin", args...)
 	if err != nil {
 		return nil, err
