@@ -1,5 +1,7 @@
 # Maintenance review
 
+This records the v0.13.0 review. CI-proof release verification was subsequently removed in favor of local checks; see [the current development workflow](development.md#local-checks-and-releases).
+
 Scope: CLI/configuration, import/watch parsers, OTLP ingestion, database lifecycle,
 migrations and projections, query/cache paths, archive stages, browser scripts,
 delivery scripts and tests. Review passes covered ownership/duplication first,

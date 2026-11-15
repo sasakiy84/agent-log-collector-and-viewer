@@ -36,6 +36,11 @@ func (a *App) sessions(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 400)
 		return
 	}
+	// Hide child sessions before counting and paging; their logs remain
+	// accessible through the parent's links and the session detail endpoints.
+	// Length avoids an equality lookup on catalog_children that sorts every
+	// root session instead of paging through the existing recent-order indexes.
+	query += " AND length(s.parent)=0"
 	tx, err := a.readers.BeginTx(r.Context(), &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		databaseError(w, r, err)
