@@ -3,8 +3,11 @@ on:
   push:
     branches: [main, work]
   pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
+env:
+  PYTHONDONTWRITEBYTECODE: "1"
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -14,16 +17,15 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - run: test -z "$(gofmt -l cmd internal)"
+      - run: bash scripts/check-static.sh
       - run: go test -race ./...
       - run: go vet ./...
-      - run: node --check internal/app/static/app.js
-      - run: node --check internal/app/static/pagination.js
-      - run: node --check internal/app/static/usage.js
-      - run: node --check internal/app/static/subagents.js
-      - run: node --check internal/app/static/tool_pairs.js
-      - run: node --check internal/app/static/skills.js
+      - run: python3 -m unittest discover -s scripts -p '*_unit_test.py'
       - run: go build ./cmd/agentlog
+      - name: Verify published database upgrade
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/test-upgrade.sh
       - run: python3 scripts/watch_test.py
       - run: python3 scripts/search_memory_test.py
       - run: python3 scripts/usage_performance_test.py
@@ -37,3 +39,15 @@ jobs:
           AGENTLOG_TOKEN: ci-build-placeholder-at-least-16
         run: docker compose build
       - run: python3 scripts/docker_smoke.py
+  verified:
+    needs: [test, docker]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/ci_verification.py record
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ci-verification-${{ github.run_attempt }}
+          path: ci-verification.json
+          retention-days: 30
+          if-no-files-found: error
