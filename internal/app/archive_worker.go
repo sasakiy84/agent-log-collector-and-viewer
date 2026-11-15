@@ -78,6 +78,7 @@ func (a *App) archiveWorker() {
 				os.Remove(a.archivePath(job.ID, true))
 				os.Remove(a.archivePath(job.ID, false))
 			}
+			a.notifyArchive()
 		}
 	}
 }
@@ -102,6 +103,7 @@ type byteCounter struct{ n int64 }
 
 func (c *byteCounter) Write(p []byte) (int, error) { c.n += int64(len(p)); return len(p), nil }
 func (a *App) buildArchive(ctx context.Context, job ArchiveJob) (err error) {
+	defer a.notifyArchive()
 	current, err := a.archiveJob(ctx, job.ID)
 	if err != nil {
 		return err
@@ -150,13 +152,13 @@ func (a *App) buildArchive(ctx context.Context, job ArchiveJob) (err error) {
 	if err != nil {
 		return err
 	}
-	rows, err := a.DB.QueryContext(ctx, "SELECT session,source,last_activity,records,raw_bytes FROM archive_sessions WHERE archive_id=? ORDER BY session", job.ID)
+	rows, err := a.DB.QueryContext(ctx, "SELECT session,source,last_activity,records,raw_bytes,folder FROM archive_sessions WHERE archive_id=? ORDER BY session", job.ID)
 	if err != nil {
 		return err
 	}
 	for rows.Next() {
 		var s ArchiveSession
-		if err = rows.Scan(&s.ID, &s.Source, &s.LastActivity, &s.Records, &s.RawBytes); err != nil {
+		if err = rows.Scan(&s.ID, &s.Source, &s.LastActivity, &s.Records, &s.RawBytes, &s.Folder); err != nil {
 			break
 		}
 		entry := struct {
@@ -233,6 +235,7 @@ func (a *App) buildArchive(ctx context.Context, job ArchiveJob) (err error) {
 					err = context.Canceled
 					break
 				}
+				a.notifyArchive()
 				lastProgress = time.Now()
 			}
 			if ctx.Err() != nil {
@@ -293,6 +296,7 @@ func archiveEntry(session string) string {
 	return "sessions/" + hex.EncodeToString(hash[:]) + ".jsonl"
 }
 func (a *App) deleteArchive(ctx context.Context, job ArchiveJob) error {
+	defer a.notifyArchive()
 	// Verification is persisted before unlinking so interrupted, confirmed deletions can resume.
 	var verified string
 	if err := a.DB.QueryRowContext(ctx, "SELECT verified_at FROM archives WHERE id=?", job.ID).Scan(&verified); err != nil {
@@ -400,6 +404,7 @@ func (a *App) deleteArchive(ctx context.Context, job ArchiveJob) error {
 		if err = tx.Commit(); err != nil {
 			return err
 		}
+		a.notifyArchive()
 		if _, err = a.DB.ExecContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
 			return err
 		}
@@ -421,6 +426,7 @@ func (a *App) deleteArchive(ctx context.Context, job ArchiveJob) error {
 	if err = tx.Commit(); err != nil {
 		return err
 	}
+	a.notifyArchive()
 	return a.compactArchive(ctx, job)
 }
 func (a *App) diskBytes() int64 {
@@ -433,6 +439,7 @@ func (a *App) diskBytes() int64 {
 	return size
 }
 func (a *App) compactArchive(ctx context.Context, job ArchiveJob) error {
+	defer a.notifyArchive()
 	var mode int
 	err := a.mergeSearchIndex(ctx)
 	if err == nil {
