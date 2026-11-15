@@ -99,6 +99,15 @@ func sessionPreview(ctx context.Context, tx *sql.Tx, session, origin string) (De
 		}
 		d := summaryDetail(rows[0].Detail)
 		d.Blocks = []Block{}
+		// Some providers report the conversation only inside a model span.
+		// Retain its explicitly user-labelled input as a bounded fallback.
+		if rows[0].Detail.Kind != "user" {
+			input := rows[0].Detail
+			input.Kind = "user"
+			if title := promptTitle(rows[0].Source, input); title != "" {
+				d.Blocks = []Block{{Label: "Request", Text: title}}
+			}
+		}
 		return d, nil
 	}
 	if err != nil {

@@ -122,3 +122,14 @@ func TestContextOnlySessionHasNoFabricatedPrompt(t *testing.T) {
 		t.Fatal("context used as a request", got)
 	}
 }
+
+func TestModelOnlyConversationKeepsExplicitUserInputTitle(t *testing.T) {
+	a := setup(t)
+	save(t, a, recorded(t, "model", "otel", "copilot", "model-only", "gen_ai.client.operation", map[string]any{
+		"gen_ai.operation.name": "chat",
+		"gen_ai.input.messages": `[{"role":"system","content":"shared system instructions"},{"role":"user","content":"Fix the search query"}]`,
+	}))
+	if got := previewTitle(t, a, "copilot:model-only", ""); got != "Fix the search query" {
+		t.Fatal("model-only user input lost", got)
+	}
+}
