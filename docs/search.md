@@ -1,6 +1,8 @@
 # Full-text search
 
-Search Japanese or English from the session list. Spaces combine words with AND; the final word also matches prefixes. Examples: `認証`, `検索 エラー`, `ﾊﾟｽﾜｰﾄﾞ`, `backend timeout`.
+Use [Search filters](search-filters.md) for time ranges, multiple projects/agents/origins, event types, AND/OR/exclusions and on-demand analysis in Sessions and Skills.
+
+Search Japanese or English from the session list. By default, spaces combine words with AND; the final word also matches prefixes. Examples: `認証`, `検索 エラー`, `ﾊﾟｽﾜｰﾄﾞ`, `backend timeout`.
 
 The default configuration is built into every binary and Docker image:
 

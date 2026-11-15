@@ -5,7 +5,7 @@
 | `service.namespace` | Standard OTEL resource attribute; Agentlog uses it as the project name |
 | `project.tags` | Custom resource attribute; string or string array |
 
-The session search page keeps projects in a persistent sidebar, ordered by their most recent session activity. Click a project to filter sessions; text search and agent filters apply within that selection. Projects have their own search. Selection is saved in the URL and restored when returning from a session.
+The session search page keeps projects in a persistent sidebar, ordered by their most recent session activity. Click a project to filter sessions, or combine several with their checkboxes; text search and [time/agent/origin filters](search-filters.md) apply within that selection. Projects have their own search. Selection is saved in the URL and restored when returning from a session.
 
 Sidebar counts and ordering follow the visible root sessions: subagent sessions
 are excluded, and internal Codex conversations are excluded unless **Internal

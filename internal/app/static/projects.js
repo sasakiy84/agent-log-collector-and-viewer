@@ -3,7 +3,8 @@ let projects = [],
   projectsKey = "",
   projectsQuery = "",
   projectsTotal = 0,
-  projectsRequest = null;
+  projectsRequest = null,
+  projectLoadSerial = 0;
 function canonicalProjectID(id) {
   if (!id.startsWith("path:")) return id;
   const directory = id.slice(5);
@@ -16,25 +17,25 @@ function projectName(id) {
   return id;
 }
 function renderProjects() {
-  $("#projectexport").hidden = exportMode || project === null;
-  $("#projectexport").href = "/export?" + new URLSearchParams({ project: project ?? "", diagnostics: "1" });
+  const selection = selectedProjects();
+  $("#projectexport").hidden = exportMode || !selection.length;
+  const exportParams = new URLSearchParams({ diagnostics: "1" });
+  for (const id of selection) exportParams.append("project", id);
+  $("#projectexport").href = "/export?" + exportParams;
   $("#skillsnav").href =
     "/skills" +
-    (project !== null ? "?" + new URLSearchParams({ project }) : "");
+    (() => { const params = appendSearchScope(new URLSearchParams(), { kinds: false, text: false }); return params.size ? "?" + params : ""; })();
   const focused = document.activeElement?.dataset.project;
+  const focusedCheck = document.activeElement?.dataset.projectCheck;
   const all = $("#allprojects");
-  all.classList.toggle("active", project === null);
-  all.setAttribute("aria-current", project === null ? "true" : "false");
+  all.classList.toggle("active", !selection.length);
+  all.setAttribute("aria-current", !selection.length ? "true" : "false");
   const rows = [...projects];
-  if (project !== null && !rows.some((p) => p.id === project))
-    rows.unshift({
-      id: project,
-      name: projectName(project),
-    });
+  for (const id of selection) if (!rows.some((p) => p.id === id)) rows.unshift({ id, name: projectName(id), count: 0 });
   $("#projectlist").innerHTML = rows
     .map(
       (p) =>
-        `<button class="project-choice ${p.id === project ? "active" : ""}" data-project="${esc(p.id)}" aria-current="${p.id === project ? "true" : "false"}" title="${esc(p.name)}"><span>${esc(p.name)}</span>${p.count !== undefined ? `<small>${p.count.toLocaleString()}</small>` : ""}</button>`,
+        `<div class="project-option"><input type="checkbox" data-project-check="${esc(p.id)}" aria-label="Include project ${esc(p.name)}" ${selection.includes(p.id) ? "checked" : ""}><button class="project-choice ${selection.includes(p.id) ? "active" : ""}" data-project="${esc(p.id)}" aria-current="${selection.includes(p.id) ? "true" : "false"}" title="${esc(p.name)}"><span>${esc(p.name)}</span>${p.count !== undefined ? `<small>${p.count.toLocaleString()}</small>` : ""}</button></div>`,
     )
     .join("");
   $("#projectlist")
@@ -43,6 +44,8 @@ function renderProjects() {
       (button) =>
         (button.onclick = () => chooseProject(button.dataset.project)),
     );
+  $("#projectlist").querySelectorAll("[data-project-check]").forEach((input) => { input.onchange = () => projectCheckbox(input.dataset.projectCheck, input.checked); });
+  if (focusedCheck !== undefined) $("#projectlist").querySelector(`[data-project-check="${CSS.escape(focusedCheck)}"]`)?.focus({ preventScroll: true });
   if (focused !== undefined)
     $("#projectlist")
       .querySelector(`[data-project="${CSS.escape(focused)}"]`)
@@ -53,6 +56,7 @@ function renderProjects() {
 }
 function chooseProject(id) {
   project = id;
+  projectSelections = [];
   renderProjects();
   if (skillsMode) {
     skillsOffset = 0;
@@ -64,23 +68,25 @@ function chooseProject(id) {
   refresh();
 }
 async function loadProjects(signal, more = false) {
-  const key = JSON.stringify([$("#showdiagnostics").checked, projectsQuery, exportMode]);
+  const params = appendSearchScope(new URLSearchParams(), { projects: false, kinds: !skillsMode });
+  if (skillsMode) {params.delete("exclude");params.delete("text_mode");}
+  if (!skillsMode) {
+    if (query) params.set("session_q", query);
+    if (idValue) {params.set("id_value", idValue); if(idKey) params.set("id_key", idKey);}
+    if (skillFilter) {params.set("skill", skillFilter);params.set("plugin", skillPlugin);}
+  }
+  params.set("q", projectsQuery);
+  if ($("#showdiagnostics").checked) params.set("diagnostics", "1");
+  if (exportMode && $("#exportchildren").checked) params.set("include_children", "1");
+  const key = params.toString();
   if (!more && projectsKey === key) {
     renderProjects();
     return;
   }
-  const params = new URLSearchParams({
-    q: projectsQuery,
-    offset: String(more ? projects.length : 0),
-  });
-  if ($("#showdiagnostics").checked) params.set("diagnostics", "1");
-  if (exportMode) params.set("include_children", "1");
+  params.set("offset", String(more ? projects.length : 0));
+  const serial = ++projectLoadSerial;
   const data = await api("/api/projects?" + params, signal);
-  if (
-    signal?.aborted ||
-    key !== JSON.stringify([$("#showdiagnostics").checked, projectsQuery, exportMode])
-  )
-    return;
+  if (signal?.aborted || serial !== projectLoadSerial) return;
   projects = more ? [...projects, ...data.projects] : data.projects;
   projectsKey = key;
   projectsTotal = data.total;

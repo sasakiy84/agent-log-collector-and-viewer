@@ -1524,3 +1524,39 @@ html {
  .archive-folder-row {grid-template-columns:20px minmax(0,1fr) 75px;gap:8px;}
  .archive-folder-row>span:last-child {grid-column:auto;text-align:right;}
 }
+
+/* Search controls use native inputs; selections remain outside the text query. */
+.project-option { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 4px; align-items: center; }
+.project-option > input { margin: 0; accent-color: var(--accent); }
+#searchcontrols { margin: 0 0 12px; font-size: 12px; }
+.search-scopebar, #searchdates:not([hidden]), .analysis-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.search-scopebar label, .analysis-toolbar label { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); }
+#searchcontrols select, #searchcontrols input:not([type=checkbox]), .analysis-toolbar select { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--control-border); border-radius: 5px; padding: 6px 8px; min-width: 0; max-width: 100%; }
+#searchcontrols button { padding: 6px 9px; font-size: 12px; }
+#searchcontrols details { margin-top: 8px; }
+#searchcontrols summary, .search-analysis > summary { cursor: pointer; color: var(--text-secondary); width: fit-content; }
+.facet-fields { display: flex; flex-wrap: wrap; gap: 12px 20px; padding: 10px 0; }
+.facet-fields fieldset { border: 0; margin: 0; padding: 0; display: flex; flex-wrap: wrap; align-content: start; gap: 6px 12px; max-width: 420px; }
+.facet-fields legend { font-weight: 600; margin-bottom: 6px; }
+.facet-fields fieldset label { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.facet-fields input[type=checkbox] { margin: 0; accent-color: var(--accent); }
+.text-facets { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; width: 100%; }
+.text-facets label { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+#searchfiltererror:empty { display: none; }
+#searchfiltererror { color: var(--failure); margin: 6px 0 0; }
+.search-analysis { margin: 12px 0; font-size: 12px; }
+.search-analysis[open] { border: 1px solid var(--border); border-radius: 5px; padding: 10px; }
+.analysis-toolbar { margin-top: 10px; justify-content: space-between; }
+.search-analysis table { width: 100%; border-collapse: collapse; margin-top: 8px; font-variant-numeric: tabular-nums; }
+.search-analysis th, .search-analysis td { text-align: right; border-bottom: 1px solid var(--border); padding: 7px; }
+.search-analysis th:first-child { text-align: left; overflow-wrap: anywhere; }
+#analysisstatus:empty { display: none; }
+@media(max-width:720px) {
+ #searchdates:not([hidden]) { width: 100%; }
+ #searchdates label { width: 100%; display: grid; grid-template-columns: 34px minmax(0,1fr); }
+ .text-facets label { width: 100%; }
+ .text-facets input { flex: 1; }
+ .facet-fields fieldset { max-width: 100%; }
+ .search-analysis { overflow-x: auto; }
+ .search-analysis th, .search-analysis td { padding: 6px 3px; }
+}

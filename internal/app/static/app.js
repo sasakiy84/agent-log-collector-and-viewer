@@ -109,8 +109,9 @@ const exportMode = location.pathname === "/export";
 let exportDownloadURL = "";
 let exportQueryPending = false;
 const listURL = new URL(location.href);
-let exportSource = listURL.searchParams.get("source") || "";
-$("#exportsource").value = exportSource;
+let searchScope = readSearchScope(listURL.searchParams);
+let projectSelections = [...new Set(listURL.searchParams.getAll("project").map(canonicalProjectID))];
+if (projectSelections.length <= 1) projectSelections = [];
 let skillFilter = listURL.searchParams.get("skill") || "",
   skillPlugin = listURL.searchParams.get("plugin") || "";
 let project = listURL.searchParams.has("project")
@@ -119,10 +120,12 @@ let project = listURL.searchParams.has("project")
 let folder = listURL.searchParams.has("folder")
   ? listURL.searchParams.get("folder")
   : null;
+if (projectSelections.length > 1) project = null;
 $("#showdiagnostics").checked = listURL.searchParams.has("diagnostics")
   ? listURL.searchParams.get("diagnostics") === "1"
   : exportMode;
 $("#exportcontrols").hidden = !exportMode;
+$("#exportchildren").checked = listURL.searchParams.get("include_children") !== "0";
 query = listURL.searchParams.get("q") || "";
 let idKey = listURL.searchParams.get("id_key") || "",
   idValue = listURL.searchParams.get("id_value") || "";
@@ -174,7 +177,7 @@ function updateDocumentTitle() {
   } else if (archiveMode) {
     parts = ["Archive"];
   } else {
-    const scope = project !== null ? projectName(project) : folder !== null ? folderName(folder) : "";
+    const scope = projectScopeName() || (folder !== null ? folderName(folder) : "");
     parts = [scope, skillsMode ? "Skills" : exportMode ? "Export" : "Sessions"];
   }
   document.title = [...parts, "Agentlog"]
@@ -213,8 +216,8 @@ function titleFor(id, p) {
 }
 function listParameters() {
   const p = new URLSearchParams();
-  if (exportMode && exportSource) p.set("source", exportSource);
-  if (project !== null) p.set("project", project);
+  appendSearchScope(p);
+  if (exportMode && !$("#exportchildren").checked) p.set("include_children", "0");
   if (skillFilter) {
     p.set("skill", skillFilter);
     p.set("plugin", skillPlugin);
@@ -249,8 +252,8 @@ function renderListHeading(total) {
     ? "Skill: " + skillFilter + (skillPlugin ? " · " + skillPlugin : "")
     : "";
   $("#listtitle").textContent =
-    (exportMode ? "Export · " : "") + (project !== null
-      ? projectName(project)
+    (exportMode ? "Export · " : "") + (selectedProjects().length
+      ? projectScopeName()
       : folder !== null
         ? folderName(folder)
         : "All sessions");
@@ -733,18 +736,21 @@ async function refresh(scrollMode) {
       sessionOffset = Number(response.headers.get("X-Page-Offset"));
       sessionData = {
         offset: sessionOffset,
-        exportSource,
         query,
         idKey,
         idValue,
         folder,
         project,
+        projectSelections: [...projectSelections],
+        searchScope: structuredClone(searchScope),
         diagnostics: $("#showdiagnostics").checked,
+        exportChildren: $("#exportchildren").checked,
         skillFilter,
         skillPlugin,
       };
       listState();
       renderSessions(data, Number(response.headers.get("X-Total-Count")));
+      refreshSearchAnalysis(controller.signal);
       if (exportMode) {
         $("#exportrecords").textContent = Number(response.headers.get("X-Record-Count")).toLocaleString() + " records";
         const download = new URLSearchParams(params);
@@ -780,6 +786,9 @@ async function refresh(scrollMode) {
       skillsOffset = skillsData.offset;
       skillsSort = skillsData.sort;
       project = skillsData.project;
+      projectSelections = skillsData.projectSelections;
+      searchScope = skillsData.searchScope;
+      renderSearchControls();
       $("#skillsort").value = skillsSort;
       renderProjects();
       $("#skillsearch").value = skillsQuery;
@@ -788,19 +797,21 @@ async function refresh(scrollMode) {
     } else if (sessionData) {
       ({
         offset: sessionOffset,
-        exportSource,
         query,
         idKey,
         idValue,
         folder,
         project,
+        projectSelections,
+        searchScope,
         skillFilter,
         skillPlugin,
       } = sessionData);
       $("#showdiagnostics").checked = sessionData.diagnostics;
+      $("#exportchildren").checked = sessionData.exportChildren;
+      renderSearchControls();
       $("#search").value = query;
       syncIdentifierSearch();
-      $("#exportsource").value = exportSource;
       listState();
       renderProjects();
     }
@@ -879,12 +890,8 @@ setupProjects();
 $("#downloadexport").onclick = () => {
   if (exportDownloadURL) location.assign(exportDownloadURL);
 };
-$("#exportsource").onchange = () => {
-  exportSource = $("#exportsource").value;
-  sessionOffset = 0;
-  listState();
-  refresh();
-};
+$("#exportchildren").onchange = () => { sessionOffset = 0; refresh(); };
+
 function syncIdentifierSearch() {
   $("#identifierfield").value = idKey;
   $("#identifiervalue").value = idValue;
@@ -985,6 +992,7 @@ $("#origin").onchange = () => {
   closeInspector(false);
   refresh("bottom");
 };
+setupSearchControls();
 setupSubagentPreview();
 setupSkills();
 setupArchive();

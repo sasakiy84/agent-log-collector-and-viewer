@@ -1,6 +1,8 @@
 # Codex skills
 
-Open **Skills** for usage totals across sessions, ordered by **Most used**. The project sidebar switches between all projects and one project; search names, plugins, scopes or referenced paths within that selection. **Most sessions** and **Recent activity** offer alternate orders. The header shows the matching skill count and total uses across all pages.
+Open **Skills** for usage totals across sessions, ordered by **Most used**. The project sidebar switches between all projects and selected projects; search names, plugins, scopes or referenced paths within that selection. **Most sessions** and **Recent activity** offer alternate orders. The header shows the matching skill count and total uses across all pages.
+
+Use the shared [time and project filters](search-filters.md) to measure usage within a range or across several projects; counts and inference use only evidence in that scope.
 
 Click a row to open matching sessions in the selected project. Session headers retain their skill chips and event inspector. The timeline's **Skills** filter includes reported uses and indexed references, with filtering before pagination.
 
