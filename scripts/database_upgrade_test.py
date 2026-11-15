@@ -6,6 +6,7 @@ Synthetic records only. Set AGENTLOG_BASELINE_BIN and AGENTLOG_BIN.
 import hashlib
 import json
 import os
+from pathlib import Path
 import socket
 import sqlite3
 import subprocess
@@ -124,7 +125,7 @@ with tempfile.TemporaryDirectory() as folder:
             with sqlite3.connect("file:" + database + "?mode=ro", uri=True) as connection:
                 assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
                 current = connection.execute("SELECT version,name,checksum,applied_at FROM schema_migrations ORDER BY version").fetchall()
-                assert len(current) == 3
+                assert len(current) == len(list((Path(__file__).resolve().parents[1] / 'internal/app/migrations').glob('*.sql')))
                 current += connection.execute("SELECT name,cursor,complete,processed,updated_at FROM maintenance_jobs ORDER BY name").fetchall()
                 if checkpoints is not None:
                     assert current == checkpoints, "Completed migrations/jobs ran again"

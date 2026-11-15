@@ -94,6 +94,7 @@ func Open(path, token string) (*App, error) {
 		{"trace ownership", func() error { return a.drainBatches(ctx, "trace ownership", reconcileTraceBatch) }},
 		{"session views", func() error { return a.prepareReadModel(ctx) }},
 		{"folder summaries", func() error { return a.runMaintenance(ctx, directoriesJob, backfillDirectories, 0) }},
+		{"session titles", func() error { return a.runMaintenance(ctx, titlesJob, backfillTitles, 0) }},
 		{"usage summaries", func() error { return a.runMaintenance(ctx, usageJob, backfillUsage, 0) }},
 		{"subagent links", func() error { return a.runMaintenance(ctx, agentsJob, backfillAgents, 0) }},
 		{"full-text search", func() error { return a.prepareSearch(ctx) }},
