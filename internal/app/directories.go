@@ -40,6 +40,33 @@ func (a *App) folders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
+	if strings.TrimSpace(r.URL.Query().Get("q")) == "" && r.URL.Query().Get("skill") == "" {
+		var pending bool
+		if err = tx.QueryRowContext(r.Context(), "SELECT EXISTS(SELECT 1 FROM folder_dirty)").Scan(&pending); err != nil {
+			databaseError(w, r, err)
+			return
+		}
+		// External SQL edits can leave a pending projection; preserve correct
+		// results until the next write/startup drains it. Normal writes publish
+		// folder summaries in the same transaction as the session update.
+		if !pending {
+			var path *string
+			if r.URL.Query().Has("folder") {
+				value := r.URL.Query().Get("folder")
+				path = &value
+			}
+			folders, total, offset, e := cachedFolders(r.Context(), tx, r.URL.Query().Get("source"), r.URL.Query().Get("diagnostics") == "1", path, offset(r))
+			if e == nil {
+				e = tx.Commit()
+			}
+			if e != nil {
+				databaseError(w, r, e)
+				return
+			}
+			write(w, map[string]any{"folders": folders, "total": total, "offset": offset})
+			return
+		}
+	}
 	var total int
 	if err = tx.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM ("+query+")", args...).Scan(&total); err != nil {
 		databaseError(w, r, err)

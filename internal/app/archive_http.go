@@ -236,6 +236,9 @@ func (a *App) archiveDelete(w http.ResponseWriter, r *http.Request) {
 		_, err = tx.ExecContext(r.Context(), "UPDATE archives SET status='deleting',confirmed_at=?,database_bytes_before=? WHERE id=?", timestamp(time.Now()), a.diskBytes(), job.ID)
 	}
 	if err == nil {
+		err = refreshFolders(r.Context(), tx)
+	}
+	if err == nil {
 		err = tx.Commit()
 	}
 	if err != nil {

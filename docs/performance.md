@@ -1,5 +1,13 @@
 # Session-view performance
 
+The folder overview reads cached per-folder/source summaries instead of decoding and adding every session's usage on each GET. In a local synthetic fixture with 20,000 sessions, 20 folders and rich usage reports, warm HTTP medians were **1,472 ms → 1.63 ms** versus v0.10.2. Reusing browser number/date formatters reduced rendering 200 session rows from **57.9 ms → 8.3 ms**. Responses, counts, ordering and exact usage values matched the baseline. These measurements are fixture-specific, not deployment guarantees.
+
+Folder membership, exact decimal totals, coverage and latest activity update in the ingestion transaction. Updates subtract the previous contribution before adding the replacement; archive locks remove contributions before deletion begins. Folder/source/diagnostic filters use the cached groups. Search and skill filters still aggregate their selected sessions. Initial upgrade populates the cache from session summaries in resumable batches of 200; it does not read original logs. The 20,000-session upgrade took 3.75 seconds in this run. Normal startup does not repeat completed work.
+
+```sh
+python3 scripts/overview_performance_test.py --binary ./agentlog --baseline /path/to/v0.10.2/agentlog --browser
+```
+
 Measured locally with 150,000 synthetic imported records, 500 sessions, and 2 KiB prompt payloads per record. Medians are three reads following the first request, on the same machine and fixture; they are not deployment guarantees.
 
 | API | Before | After | Response before → after |

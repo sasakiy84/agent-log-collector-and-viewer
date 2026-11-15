@@ -1,7 +1,9 @@
 'use strict';
 
-const usageNumber=value=>value===undefined?'—':new Intl.NumberFormat('en-US').format(BigInt(value));
-const usageCompact=value=>value===undefined?'—':new Intl.NumberFormat('en-US',{notation:'compact',maximumFractionDigits:1}).format(BigInt(value));
+const usageIntegerFormat=new Intl.NumberFormat('en-US');
+const usageCompactFormat=new Intl.NumberFormat('en-US',{notation:'compact',maximumFractionDigits:1});
+const usageNumber=value=>value===undefined?'—':usageIntegerFormat.format(BigInt(value));
+const usageCompact=value=>value===undefined?'—':usageCompactFormat.format(BigInt(value));
 const usageUSD=value=>{if(value===undefined)return '—';const [whole,fraction]=value.split('.');return '$'+usageNumber(whole)+(fraction?'.'+fraction:'')};
 const usageTokenKeys=['input_tokens','output_tokens','cache_read_tokens','cache_write_tokens','reasoning_tokens'];
 const usagePartial=s=>['input_tokens','output_tokens','cost_usd'].some(k=>s.values[k]!==undefined&&(s.coverage[k]||0)<s.sessions)||usageTokenKeys.some(k=>s.values[k]!==undefined)&&(s.values.input_tokens===undefined||s.values.output_tokens===undefined)||s.excluded>0||s.legacy>0;
