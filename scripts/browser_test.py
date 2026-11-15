@@ -8,7 +8,7 @@ with sync_playwright() as p:
  browser=p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox'])
  page=browser.new_page(viewport={'width':1440,'height':1060});errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
  page.goto(BASE);page.locator('#token').fill('incorrect');page.locator('#loginform button').click();page.get_by_text('Invalid access token.').wait_for()
- page.locator('#token').fill(TOKEN);page.locator('#loginform button').click();page.locator('.folder').first.wait_for();page.screenshot(path=str(OUT/'ui-folders.png'),full_page=True);page.locator('[data-folder="/projects/agentlog"]').click();page.locator('.session').first.wait_for()
+ page.locator('#token').fill(TOKEN);page.locator('#loginform button').click();page.locator('.session').first.wait_for();page.screenshot(path=str(OUT/'ui-folders.png'),full_page=True);page.locator('[data-project="path:/projects/agentlog"]').click();page.locator('.session').first.wait_for()
  assert page.locator('#detailpage').is_hidden();assert page.locator('.stats').count()==0
  page.screenshot(path=str(OUT/'ui-sessions.png'),full_page=True)
  page.locator('[data-source="codex"]').click();page.wait_for_function("() => [...document.querySelectorAll('.session .source')].every(x=>x.textContent==='Codex')")
@@ -20,7 +20,7 @@ with sync_playwright() as p:
  assert page.locator('.eventheading time').count()==6
  assert page.locator('.status.failed').count()==1
  assert page.locator('.status.succeeded').count()==2
- assert page.locator('.failure-detail').evaluate('(el) => getComputedStyle(el).color')=='rgb(209, 52, 21)'
+ assert page.locator('.failure-detail').evaluate('(el) => getComputedStyle(el).color')=='rgb(180, 35, 24)'
  assert page.locator('.event').first.bounding_box()['x'] < 40
  assert page.locator('.eventheading time').first.bounding_box()['y'] < page.locator('.event').first.bounding_box()['y'] + 35
  assert page.get_by_text('go test ./internal/app -run TestPagination',exact=True).is_visible()
@@ -47,9 +47,9 @@ with sync_playwright() as p:
  page.locator('.event').first.click();page.locator('#detailtab').click()
  page.keyboard.press('ArrowRight');assert page.locator('#jsontab').get_attribute('aria-selected')=='true'
  page.locator('#closeinspector').click()
- page.locator('[data-kind="error"]').click();assert page.locator('.event').count()==1
- page.locator('.event').click();page.locator('[data-kind="conversation"]').click();assert page.locator('#inspector').is_hidden()
- page.locator('[data-kind=""]').click()
+ page.locator('button[data-kind="error"]').click();page.wait_for_function("document.querySelectorAll('.event').length===1")
+ page.locator('.event').click();page.locator('button[data-kind="conversation"]').click();assert page.locator('#inspector').is_hidden()
+ page.locator('button[data-kind=""]').click()
  with page.expect_download() as d:page.get_by_text('Export JSON',exact=True).click()
  assert d.value.suggested_filename=='session.json'
  page.get_by_text('Subagent: reviewer',exact=True).click();page.locator('#subagentevents .prose').filter(has_text='Reviewed the query:').wait_for();page.locator('#subagentfull').click();page.locator('#timeline .prose').filter(has_text='Reviewed the query:').wait_for()
@@ -59,7 +59,7 @@ with sync_playwright() as p:
   page.goto(BASE+'/sessions/'+__import__('urllib.parse',fromlist=['quote']).quote(sid,safe=''));page.locator('.event').first.wait_for();page.screenshot(path=str(OUT/image),full_page=True)
  page.locator('.event.tool').click();page.locator('#detailtab').click();page.locator('#inspectparent').click();assert page.locator('.event.model.selected').count()==1
  page.locator('#closeinspector').click()
- page.locator('[data-kind="conversation"]').click();assert page.locator('.event').count()==1
+ page.locator('button[data-kind="conversation"]').click();assert page.locator('.event').count()==1
  page.goto(BASE+'/sessions/claude%3A7d4b3a91-pagination');page.locator('.event').first.wait_for();page.set_viewport_size({'width':390,'height':844});assert page.evaluate('() => document.documentElement.scrollWidth <= innerWidth');page.screenshot(path=str(OUT/'ui-mobile.png'),full_page=True)
  page.locator('.event.error').click();assert page.locator('#inspector').get_attribute('aria-modal')=='true'
  assert page.evaluate('() => document.querySelector("#eventlist").inert')
@@ -71,7 +71,7 @@ with sync_playwright() as p:
  page.keyboard.press('Escape');assert page.evaluate('() => !document.querySelector("#eventlist").inert')
  assert page.locator('#autorefresh').count()==0
  page.route('**/api/session?*',lambda r:r.fulfill(status=500,body='failure'));page.locator('#refresh').click();page.get_by_text('Unable to load (HTTP 500).').wait_for(timeout=10000);page.unroute('**/api/session?*');page.locator('#refresh').click();page.wait_for_function("() => document.querySelector('#error').textContent===''",timeout=10000)
- page.goto(BASE);page.locator('.folder').first.wait_for();page.screenshot(path=str(OUT/'ui-folders-mobile.png'),full_page=True)
+ page.goto(BASE);page.locator('.session').first.wait_for();page.screenshot(path=str(OUT/'ui-folders-mobile.png'),full_page=True)
  assert not errors,errors
  browser.close()
 print('PASS: folder drill-down, standalone routes/reload, list filters/search, per-agent rendering, subagent navigation, inspector details/JSON, manual-refresh behavior, keyboard/focus trap, filters, errors, export, no automatic refresh, mobile; 10 screenshots.')

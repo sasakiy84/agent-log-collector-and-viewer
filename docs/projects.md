@@ -5,6 +5,10 @@
 | `service.namespace` | Standard OTEL resource attribute; Agentlog uses it as the project name |
 | `project.tags` | Custom resource attribute; string or string array |
 
+The session search page keeps projects in a persistent sidebar. Click a project to filter sessions; text search and agent filters apply within that selection. Projects have their own search. Selection is saved in the URL and restored when returning from a session.
+
+Explicit `service.namespace` / `project.name` labels define a project. Without a label, an actual exported working directory defines the group (full paths are distinct even if their last directory names match). Sessions with neither appear under **Unassigned**. Paths mentioned in prompts or tool arguments are never used to guess a project. Explicit names intentionally combine different directories or hosts.
+
 Resource attributes appear in the session header and inspector. Project names and tags are included in session search.
 
 ## Codex

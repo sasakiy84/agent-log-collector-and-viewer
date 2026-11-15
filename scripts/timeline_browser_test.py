@@ -35,11 +35,11 @@ with tempfile.TemporaryDirectory() as folder:
    failed=[]
    page.route('**/api/session?**offset=0&limit=200',lambda route:failed.append(route))
    page.locator('#eventpagination [aria-label="Previous page"]').click();page.wait_for_timeout(30);assert len(failed)==1
-   page.locator('[data-kind="conversation"]').click();expect(page.locator('.event')).to_have_count(200)
+   page.locator('button[data-kind="conversation"]').click();expect(page.locator('.event')).to_have_count(200)
    failed[0].fulfill(status=500,body='synthetic failure');expect(page.locator('#error')).to_contain_text('HTTP 500')
-   expect(page.locator('[data-kind="conversation"]')).to_be_focused()
+   expect(page.locator('button[data-kind="conversation"]')).to_be_focused()
    first('message 0200');expect(page.locator('.event')).to_have_count(200)
-   page.unroute('**/api/session?**offset=0&limit=200');page.locator('[data-kind=""]').click()
+   page.unroute('**/api/session?**offset=0&limit=200');page.locator('button[data-kind=""]').click()
    # A delayed Latest request locks page buttons and the jump form.
    held=[]
    def delayed(route):held.append(route)
