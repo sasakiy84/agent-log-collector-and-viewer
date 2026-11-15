@@ -8,6 +8,7 @@ const timelineToolbarObserver = new ResizeObserver(([entry]) => {
       "--timeline-toolbar-height",
       entry.target.getBoundingClientRect().height + "px",
     );
+  fitInspectorHeight();
 });
 timelineToolbarObserver.observe($(".logbar"));
 
@@ -392,6 +393,25 @@ function setInspectorTab(tab) {
     $("#inspect" + name).hidden = name !== tab;
   }
 }
+let inspectorLayoutFrame = 0;
+function fitInspectorHeight() {
+  if (inspectorLayoutFrame) return;
+  inspectorLayoutFrame = requestAnimationFrame(() => {
+    inspectorLayoutFrame = 0;
+    const panel = $("#inspector");
+    if (panel.hidden || matchMedia("(max-width: 900px)").matches) {
+      panel.style.removeProperty("--inspector-available-height");
+      return;
+    }
+    let top = panel.getBoundingClientRect().top;
+    // Opening from a long session header must leave room for the body too.
+    if (top > innerHeight - 240) {
+      window.scrollBy(0, top - (innerHeight - 240));
+      top = panel.getBoundingClientRect().top;
+    }
+    panel.style.setProperty("--inspector-available-height", Math.max(0, innerHeight - top - 12) + "px");
+  });
+}
 function syncInspectorMode() {
   const modal =
     !!(inspectedID || subagentState) &&
@@ -408,6 +428,7 @@ function syncInspectorMode() {
   $(".topbar").inert = modal;
   if (modal && !$("#inspector").contains(document.activeElement))
     $("#closeinspector").focus({ preventScroll: true });
+  fitInspectorHeight();
 }
 async function openInspector(id) {
   resetSubagentPreview();
@@ -603,6 +624,7 @@ $("#copyjson").onclick = async () => {
   }
 };
 addEventListener("resize", syncInspectorMode);
+addEventListener("scroll", fitInspectorHeight, { passive: true });
 addEventListener("keydown", (e) => {
   if (!inspectedID && !subagentState) return;
   if (e.key === "Escape") {

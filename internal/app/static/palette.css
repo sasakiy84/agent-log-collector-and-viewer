@@ -27,6 +27,10 @@
   --warning: var(--muted);
   --scroll-thumb: #898b91;
   --footer-shadow: 0 -4px 12px #ffffffed;
+  --page-max-width: 1800px;
+  --page-gutter: 28px;
+  --shell-inset: max(var(--page-gutter), calc((100% - var(--page-max-width)) / 2 + var(--page-gutter)));
+  --control-height: 32px;
   --appbar-height: 48px;
   --timeline-toolbar-height: 48px;
 }

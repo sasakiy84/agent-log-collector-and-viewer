@@ -51,6 +51,9 @@ with tempfile.TemporaryDirectory() as folder:
    requests=[];page.on('request',lambda r:requests.append(r.url) if '/api/' in r.url else None)
    page.wait_for_timeout(5500);assert not requests,requests;assert page.locator('#archiveconfirmation').input_value()=='DOWNLOADED'
    page.set_viewport_size({'width':390,'height':844});assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
+   field=page.locator('#archiveconfirmation').bounding_box();delete=page.locator('#archivedelete').bounding_box()
+   assert abs(field['x']+field['width']-delete['x']-delete['width'])<1,'confirmation and delete action right edges differ'
+   assert field['height']>=32,'confirmation field too short'
    if os.getenv('AGENTLOG_SCREENSHOT'):page.screenshot(path=str(pathlib.Path(os.environ['AGENTLOG_SCREENSHOT']).with_name('ui-archive-mobile.png')))
    page.locator('#archivedelete').click();expect(page.locator('#archivejob h2')).to_have_text('Archive complete',timeout=30000)
    expect(page.locator('.archive-row')).to_have_count(2);assert api('/api/stats')['events']==3
