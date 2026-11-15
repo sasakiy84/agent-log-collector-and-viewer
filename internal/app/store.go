@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"log"
 	_ "modernc.org/sqlite"
 	"os"
 )
@@ -40,23 +41,25 @@ func Open(path, token string) (*App, error) {
 		return nil, err
 	}
 	a := &App{DB: db, token: token}
-	// The archive schema supplies the small deletion-lock table used by the views.
-	if _, err = db.Exec(archiveSchema); err == nil {
-		err = a.initSearchSchema()
-		if err == nil {
-			err = a.initReadModel()
-		}
-		if err == nil {
-			err = a.initDirectoryIndex()
-		}
-		if err == nil {
-			err = a.initUsage()
-		}
-		if err == nil {
-			err = a.initSubagents()
-		}
-		if err == nil {
-			err = a.initSearchIndex()
+	// Required views finish before HTTP starts; log each stage so a large
+	// existing database is distinguishable from a silent or stalled process.
+	steps := []struct {
+		name string
+		run  func() error
+	}{
+		{"archive schema", func() error { _, err := db.Exec(archiveSchema); return err }},
+		{"search schema", a.initSearchSchema},
+		{"session views", a.initReadModel},
+		{"folder summaries", a.initDirectoryIndex},
+		{"usage summaries", a.initUsage},
+		{"subagent links", a.initSubagents},
+		{"full-text search", a.initSearchIndex},
+	}
+	for _, step := range steps {
+		log.Printf("Database initialization: %s", step.name)
+		if err = step.run(); err != nil {
+			err = fmt.Errorf("%s: %w", step.name, err)
+			break
 		}
 	}
 	if err != nil {
@@ -73,6 +76,10 @@ func Open(path, token string) (*App, error) {
 		}
 		a.readers.Close()
 		db.Close()
+		return nil, err
+	}
+	if err = a.startSkillIndexer(); err != nil {
+		a.Close()
 		return nil, err
 	}
 	return a, nil

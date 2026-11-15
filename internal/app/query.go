@@ -25,11 +25,19 @@ type SessionPage struct {
 	Limit    int             `json:"limit"`
 	Children []string        `json:"children"`
 	Events   []TimelineEvent `json:"events"`
+	Skills   []SkillSummary  `json:"skills,omitempty"`
 }
 
 func sessionFilter(r *http.Request) (string, []any, error) {
 	query := ` FROM session_catalog s WHERE NOT EXISTS(SELECT 1 FROM archive_locks l WHERE l.session=s.session)`
 	args := []any{}
+	if skill := r.URL.Query().Get("skill"); skill != "" {
+		query += ` AND EXISTS(SELECT 1 FROM skill_events k WHERE k.session=s.session AND k.name=? AND k.plugin=?)`
+		args = append(args, skill, r.URL.Query().Get("plugin"))
+	}
+	if r.URL.Query().Get("diagnostics") != "1" {
+		query += ` AND NOT (s.source='codex' AND (s.session GLOB 'trace:codex:*' OR s.session='unassigned:codex'))`
+	}
 	if source := r.URL.Query().Get("source"); source != "" {
 		query += " AND source=?"
 		args = append(args, source)
@@ -229,6 +237,14 @@ func (a *App) session(w http.ResponseWriter, r *http.Request) {
 		databaseError(w, r, errors.Join(err, rowErr))
 		return
 	}
+	page.Skills, err = sessionSkills(r.Context(), tx, id, origin)
+	if err == nil {
+		err = attachSkills(r.Context(), tx, page.Events)
+	}
+	if err != nil {
+		databaseError(w, r, err)
+		return
+	}
 	if err = attachSubagents(r.Context(), tx, page.Events); err != nil {
 		databaseError(w, r, err)
 		return
@@ -314,6 +330,15 @@ func (a *App) event(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	event = linked[0]
+	if err = attachSkills(r.Context(), tx, linked); err != nil {
+		databaseError(w, r, err)
+		return
+	}
+	event = linked[0]
+	if err = attachToolPair(r.Context(), tx, &event, origin); err != nil {
+		databaseError(w, r, err)
+		return
+	}
 	if err = tx.Commit(); err != nil {
 		databaseError(w, r, err)
 		return

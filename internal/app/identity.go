@@ -13,6 +13,12 @@ type correlationKey struct {
 	Key       string
 }
 
+func identityKey(agent, phase, namespace, id string) string {
+	b, _ := json.Marshal([]string{agent, phase, namespace, id})
+	h := sha256.Sum256(b)
+	return hex.EncodeToString(h[:])
+}
+
 // correlationKeys only uses identifiers with known semantics. Text, timestamps,
 // trace/span IDs and response IDs are deliberately not matching heuristics.
 func correlationKeys(e Event, p Detail, d document) []correlationKey {
@@ -39,9 +45,7 @@ func correlationKeys(e Event, p Detail, d document) []correlationKey {
 	add := func(namespace string, names ...string) {
 		for _, name := range names {
 			if id, ok := at[name].(string); ok && id != "" {
-				b, _ := json.Marshal([]string{agent, phase, namespace, id})
-				h := sha256.Sum256(b)
-				key := hex.EncodeToString(h[:])
+				key := identityKey(agent, phase, namespace, id)
 				keys[key] = correlationKey{namespace, key}
 			}
 		}

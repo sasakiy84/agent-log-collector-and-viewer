@@ -42,6 +42,7 @@ func serverMain() error {
 	if e != nil {
 		return e
 	}
+	log.Printf("agentlog %s starting; preparing database %s", version, *db)
 	a, e := app.Open(*db, os.Getenv("AGENTLOG_TOKEN"))
 	if e != nil {
 		return e

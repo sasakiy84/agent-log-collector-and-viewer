@@ -13,6 +13,7 @@ type Block struct {
 	Code  bool   `json:"code"`
 }
 type Detail struct {
+	ToolPhase  string         `json:"tool_phase,omitempty"`
 	Conflicts  []Conflict     `json:"conflicts,omitempty"`
 	Name       string         `json:"name"`
 	Kind       string         `json:"kind"`
@@ -113,6 +114,12 @@ func describe(e Event, d document) Detail {
 	p.Tags = get("project.tags")
 	op := str(get("gen_ai.operation.name"))
 	switch {
+	case e.Source == "codex" && name == "codex.skill_invocation":
+		p.Kind = "skill"
+		p.Title = firstString(skillString(a["skill.name"], 256), "Skill")
+		p.field("Invocation", get("skill.invocation_type"))
+		p.field("Scope", get("skill.scope"))
+		p.field("Plugin", get("skill.plugin_id"))
 	case name == "gen_ai.user.message" || strings.HasSuffix(name, "user_prompt") || strings.HasSuffix(name, "interaction"):
 		p.Kind = "user"
 		p.Title = "User"
@@ -167,6 +174,9 @@ func describe(e Event, d document) Detail {
 		if p.Title == "" {
 			p.Title = "Agent"
 		}
+	}
+	if p.Kind == "tool" {
+		p.ToolPhase = toolPhase(name, e.Signal, r)
 	}
 	p.messages("Input", get("gen_ai.input.messages"))
 	p.messages("Output", get("gen_ai.output.messages"))
