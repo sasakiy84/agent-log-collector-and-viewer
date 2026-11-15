@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Numbered pagination on all three screens with isolated synthetic data."""
+from test_support import settled_urlopen
 import json,os,pathlib,socket,subprocess,tempfile,time,urllib.request
 from playwright.sync_api import sync_playwright,expect
 binary=os.environ.get('AGENTLOG_BIN','./agentlog')
@@ -9,14 +10,14 @@ with tempfile.TemporaryDirectory() as folder:
  server=subprocess.Popen([binary,'--listen',f'127.0.0.1:{port}','--db',folder+'/test.db'],env={**os.environ,'AGENTLOG_TOKEN':token},stdout=subprocess.DEVNULL)
  try:
   for _ in range(100):
-   try:urllib.request.urlopen(base,timeout=1);break
+   try:settled_urlopen(base,timeout=1);break
    except OSError:time.sleep(.1)
   def record(session,index,prompt):return {'timeUnixNano':str(1735689600000000000+index*1000000000),'eventName':'gen_ai.user.message','attributes':[{'key':'session.id','value':{'stringValue':session}},{'key':'prompt','value':{'stringValue':prompt}}]}
   records=[record(f'project-{i:04d}',i,f'Review project {i:04d}') for i in range(1001)]
   records += [record('history',i,f'Message {i:04d}') for i in range(1805)]
   data={'resourceLogs':[{'resource':{'attributes':[{'key':'service.name','value':{'stringValue':'codex'}}]},'scopeLogs':[{'logRecords':records}]}]}
   req=urllib.request.Request(base+'/v1/logs',json.dumps(data).encode(),headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'})
-  with urllib.request.urlopen(req) as r:assert r.status==200
+  with settled_urlopen(req) as r:assert r.status==200
   with sync_playwright() as p:
    browser=p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox']);page=browser.new_page(viewport={'width':1280,'height':800});errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
    page.goto(base+'/?folder=');page.locator('#token').fill(token);page.locator('#loginform button').click()

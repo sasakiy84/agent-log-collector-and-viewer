@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Synthetic, schema-shaped OTLP fixtures. No real CLI data or claims of real execution."""
+from test_support import settled_urlopen
 import datetime,json,os,urllib.request
 BASE=os.getenv('AGENTLOG_URL','http://127.0.0.1:4318').rstrip('/')
 TOKEN=os.environ['AGENTLOG_TOKEN']
@@ -12,7 +13,7 @@ def attrs(v):
  return [{'key':k,'value':value(x)} for k,x in v.items()]
 def send(signal,body):
  req=urllib.request.Request(BASE+'/v1/'+signal,json.dumps(body).encode(),headers={'Authorization':'Bearer '+TOKEN,'Content-Type':'application/json'})
- with urllib.request.urlopen(req) as r:assert r.status==200
+ with settled_urlopen(req) as r:assert r.status==200
 prompt='Add pagination to the sessions API and cover the boundary cases.'
 def logs(source,sid,items,minutes=0,extra=None):
  resource={'attributes':attrs({'service.name':source+'-cli','host.name':'dev-workstation','demo.synthetic':'true','cwd':'/projects/agentlog'})}

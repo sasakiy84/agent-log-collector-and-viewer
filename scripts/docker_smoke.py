@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Test a locally built Compose image using an isolated, disposable project/volume."""
+from test_support import settled_urlopen
 import argparse,hashlib,json,os,pathlib,secrets,shutil,sqlite3,subprocess,tempfile,time,urllib.error,urllib.request,urllib.parse,zipfile
 parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--skip-scale',action='store_true',help='Run startup, persistence and lazy-inspector checks only');options=parser.parse_args()
 project='agentlog-smoke-'+secrets.token_hex(4)
@@ -11,7 +12,7 @@ def base():return 'http://'+run('port','agentlog','4318')
 def request(path,body=None,auth=token,timeout=5):
  b=None if body is None else json.dumps(body).encode()
  req=urllib.request.Request(base()+path,b,headers={'Content-Type':'application/json','Authorization':'Bearer '+auth})
- with urllib.request.urlopen(req,timeout=timeout) as response:return json.load(response)
+ with settled_urlopen(req,timeout=timeout) as response:return json.load(response)
 def ready():
  deadline=time.monotonic()+180;maximum=time.monotonic()+600;probe=time.monotonic()+5;previous='';logs=''
  while time.monotonic()<min(deadline,maximum):
@@ -81,7 +82,7 @@ def large_history(cid):
  with tempfile.TemporaryDirectory() as tmp:
   output=pathlib.Path(tmp)/'archive.zip'
   req=urllib.request.Request(base()+'/api/archives/'+archive['id']+'/download',headers={'Authorization':'Bearer '+token})
-  with urllib.request.urlopen(req,timeout=60) as response,output.open('wb') as destination:shutil.copyfileobj(response,destination,128*1024)
+  with settled_urlopen(req,timeout=60) as response,output.open('wb') as destination:shutil.copyfileobj(response,destination,128*1024)
   digest=hashlib.sha256()
   with output.open('rb') as data:
    for chunk in iter(lambda:data.read(128*1024),b''):digest.update(chunk)

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Exercise local config and HTTP watch commands against a real agentlog process."""
+from test_support import settled_urlopen
 import json
 import os
 import pathlib
@@ -41,7 +42,7 @@ with tempfile.TemporaryDirectory() as tmp:
 
     def fetch(path):
         req = urllib.request.Request(base + path, headers={'Authorization': 'Bearer ' + token})
-        with urllib.request.urlopen(req, timeout=1) as response:
+        with settled_urlopen(req, timeout=1) as response:
             return json.load(response)
 
     # Resolve this path relative to the config, independently of process cwd.
@@ -69,7 +70,7 @@ with tempfile.TemporaryDirectory() as tmp:
         server_args = ['--listen', f'127.0.0.1:{port}', '--db', str(root / 'events.db'), '--config', str(config)]
         try:
             # Initially offline: the unchanged remote file must retry delivery.
-            watcher = start(['import', '--watch', '--dir', str(remote), '--interval', '50ms', '--endpoint', base])
+            watcher = start(['import', '--watch', '--watch-state', str(root / 'watch.db'), '--dir', str(remote), '--interval', '50ms', '--endpoint', base])
             time.sleep(.2)
             server = start(server_args)
             wait_for(lambda: fetch('/api/stats')['events'] == 2)

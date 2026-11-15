@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """End-to-end CLI import + live OTEL project labels + inspector/source filtering."""
+from test_support import settled_urlopen
 import json,os,pathlib,socket,subprocess,tempfile,time,urllib.request
 from playwright.sync_api import sync_playwright, expect
 binary=os.getenv('AGENTLOG_BIN','./agentlog');token='browser-import-token-local'
@@ -9,7 +10,7 @@ with tempfile.TemporaryDirectory() as tmp:
  proc=subprocess.Popen([binary,'--listen',f'127.0.0.1:{port}','--db',tmp+'/events.db'],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
  try:
   for _ in range(100):
-   try:urllib.request.urlopen(base,timeout=1);break
+   try:settled_urlopen(base,timeout=1);break
    except OSError:time.sleep(.1)
   folder=pathlib.Path(tmp)/'transcripts';folder.mkdir()
   rows=[{'type':'user','sessionId':'browser-import','uuid':'u','cwd':'/work/shop','timestamp':'2026-11-01T00:00:00Z','message':{'content':'Run the tests.'}}, {'type':'assistant','sessionId':'browser-import','uuid':'a','timestamp':'2026-11-01T00:00:01Z','message':{'model':'claude-model','content':[{'type':'tool_use','id':'call','name':'Bash','input':{'command':'go test ./...'}}]}}, {'type':'user','sessionId':'browser-import','uuid':'r','timestamp':'2026-11-01T00:00:02Z','message':{'content':[{'type':'tool_result','tool_use_id':'call','content':'PASS','is_error':False}]}}, {'type':'assistant','sessionId':'browser-import','uuid':'done','timestamp':'2026-11-01T00:00:03Z','message':{'content':[{'type':'text','text':'All tests passed.'}],'usage':{'input_tokens':2300,'output_tokens':89}}}]
@@ -17,7 +18,7 @@ with tempfile.TemporaryDirectory() as tmp:
   for _ in range(2):subprocess.run([binary,'import','--dir',str(folder),'--endpoint',base,'--project','shop','--tag','backend','--tag','go'],env=env,check=True,capture_output=True)
   def fetch(path,body=None):
    req=urllib.request.Request(base+path,None if body is None else json.dumps(body).encode(),headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'})
-   with urllib.request.urlopen(req) as r:return json.load(r)
+   with settled_urlopen(req) as r:return json.load(r)
   assert fetch('/api/stats')['events']==5
   native={'resourceLogs':[{'resource':{'attributes':[{'key':'service.name','value':{'stringValue':'claude'}}]},'scopeLogs':[{'logRecords':[{'timeUnixNano':'1793577610000000000','attributes':[{'key':'session.id','value':{'stringValue':'browser-import'}},{'key':'event.name','value':{'stringValue':'claude_code.user_prompt'}},{'key':'prompt','value':{'stringValue':'Live OTEL message'}}]}]}]}]}
   fetch('/v1/logs?project=shop&tag=backend',native)

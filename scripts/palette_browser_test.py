@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Neutral panels, one accent, icons, contrast and scroll visibility on desktop/mobile. Synthetic data."""
+from test_support import settled_urlopen
 import json
 import os
 import socket
@@ -35,7 +36,7 @@ with tempfile.TemporaryDirectory() as folder:
     try:
         for _ in range(200):
             try:
-                urllib.request.urlopen(base, timeout=1).close()
+                settled_urlopen(base, timeout=1).close()
                 break
             except OSError:
                 time.sleep(.05)
@@ -55,7 +56,7 @@ with tempfile.TemporaryDirectory() as folder:
         rows += [log(f"list-{index:03d}", 1000 + index, "user_prompt", {"prompt": f"Review session {index:03d}"}) for index in range(100)]
         def send(signal, body):
             request = urllib.request.Request(base + "/v1/" + signal, json.dumps(body).encode(), headers={"Authorization": "Bearer " + TOKEN, "Content-Type": "application/json"})
-            urllib.request.urlopen(request).close()
+            settled_urlopen(request).close()
         send("logs", {"resourceLogs": [{"resource": resource, "scopeLogs": [{"logRecords": rows}]}]})
         send("metrics", {"resourceMetrics": [{"resource": resource, "scopeMetrics": [{"metrics": [{"name": "gen_ai.client.token.usage", "unit": "tokens", "sum": {"aggregationTemporality": 1, "dataPoints": [{"timeUnixNano": "1780000200000000000", "asInt": "123", "attributes": attrs({"session.id": "palette"})}]}}]}]}]})
         with sync_playwright() as p:

@@ -3,6 +3,7 @@
 
 Synthetic records only. Set AGENTLOG_BASELINE_BIN and AGENTLOG_BIN.
 """
+from test_support import settled_urlopen
 import hashlib
 import json
 import os
@@ -46,7 +47,7 @@ def call(base, path, data=None, binary=False):
     body = None if data is None else json.dumps(data).encode()
     request = urllib.request.Request(base + path, body, headers={
         "Authorization": "Bearer " + TOKEN, "Content-Type": "application/json"})
-    with urllib.request.urlopen(request, timeout=30) as response:
+    with settled_urlopen(request, timeout=30) as response:
         return response.read() if binary else json.load(response)
 
 

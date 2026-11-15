@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Reproducible synthetic API benchmark; optional --baseline compares binaries."""
+from test_support import settled_urlopen
 import argparse,json,os,pathlib,socket,sqlite3,statistics,subprocess,tempfile,time,urllib.parse,urllib.request
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--binary',default=os.getenv('AGENTLOG_BIN','./agentlog'))
@@ -23,7 +24,7 @@ def measure(binary,fixture,folder,name):
   while time.monotonic()-started<600:
    if proc.poll() is not None:raise RuntimeError('Collector exited during preparation')
    try:
-    with urllib.request.urlopen(base,timeout=1) as response:response.read()
+    with settled_urlopen(base,timeout=1) as response:response.read()
     break
    except OSError:time.sleep(.1)
   else:raise TimeoutError('Collector preparation exceeded 10 minutes')
@@ -36,7 +37,7 @@ def measure(binary,fixture,folder,name):
    samples=[]
    for _ in range(4):
     request=urllib.request.Request(base+path,headers={'Authorization':'Bearer '+token});start=time.monotonic()
-    with urllib.request.urlopen(request,timeout=120) as response:body=response.read()
+    with settled_urlopen(request,timeout=120) as response:body=response.read()
     samples.append(time.monotonic()-start)
    result=json.loads(body)
    if endpoint=='search_common':assert len(result)==min(201,args.sessions,args.records)

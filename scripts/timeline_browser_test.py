@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Latest-entry landing, numbered chronological pages and history scroll preservation."""
+from test_support import settled_urlopen
 import json,os,pathlib,socket,subprocess,tempfile,time,urllib.request
 from playwright.sync_api import sync_playwright,expect
 binary=os.environ.get('AGENTLOG_BIN',str(pathlib.Path(__file__).resolve().parents[1]/'agentlog'))
@@ -9,12 +10,12 @@ with tempfile.TemporaryDirectory() as folder:
  server=subprocess.Popen([binary,'--listen',f'127.0.0.1:{port}','--db',folder+'/test.db'],env={**os.environ,'AGENTLOG_TOKEN':token},stdout=subprocess.DEVNULL)
  try:
   for _ in range(100):
-   try:urllib.request.urlopen(base,timeout=1);break
+   try:settled_urlopen(base,timeout=1);break
    except OSError:time.sleep(.1)
   def send(session,indexes):
    data={'resourceLogs':[{'resource':{'attributes':[{'key':'service.name','value':{'stringValue':'codex'}}]},'scopeLogs':[{'logRecords':[{'timeUnixNano':str(1780000000000000000+i*100000000),'eventName':'gen_ai.user.message','attributes':[{'key':'session.id','value':{'stringValue':session}},{'key':'prompt','value':{'stringValue':f'message {i:04d}'}}]} for i in indexes]}]}]}
    request=urllib.request.Request(base+'/v1/logs',json.dumps(data).encode(),headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'})
-   with urllib.request.urlopen(request) as response:assert response.status==200
+   with settled_urlopen(request) as response:assert response.status==200
   send('long',range(405));send('newest',[500])
   with sync_playwright() as p:
    browser=p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox']);page=browser.new_page(viewport={'width':1280,'height':800});errors=[];page.on('pageerror',lambda e:errors.append(str(e)))

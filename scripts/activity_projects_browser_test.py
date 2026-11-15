@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Persistent project selection and server-filtered activity. Synthetic data only."""
+from test_support import settled_urlopen
 import json
 import os
 import socket
@@ -31,7 +32,7 @@ with tempfile.TemporaryDirectory() as directory:
     try:
         for _ in range(300):
             try:
-                urllib.request.urlopen(base, timeout=1).close()
+                settled_urlopen(base, timeout=1).close()
                 break
             except OSError:
                 assert proc.poll() is None, 'Server exited'
@@ -40,7 +41,7 @@ with tempfile.TemporaryDirectory() as directory:
         def api(path, body=None):
             req = urllib.request.Request(base + path, json.dumps(body).encode() if body is not None else None,
                                          headers={'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN})
-            return json.load(urllib.request.urlopen(req))
+            return json.load(settled_urlopen(req))
 
         stamp = 1794736800000000000
 

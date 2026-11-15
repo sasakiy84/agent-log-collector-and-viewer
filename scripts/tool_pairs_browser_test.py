@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Tool input/output navigation and opt-in Codex internal traces; synthetic data only."""
+from test_support import settled_urlopen
 import json,os,pathlib,socket,subprocess,tempfile,time,urllib.request
 from playwright.sync_api import sync_playwright,expect
 binary=os.getenv('AGENTLOG_BIN','./agentlog');token='synthetic-tool-pair-browser-token'
@@ -8,7 +9,7 @@ with tempfile.TemporaryDirectory() as folder:
  base=f'http://127.0.0.1:{port}';proc=subprocess.Popen([binary,'--listen',f'127.0.0.1:{port}','--db',folder+'/test.db'],env={**os.environ,'AGENTLOG_TOKEN':token},stdout=subprocess.DEVNULL)
  try:
   for _ in range(100):
-   try:urllib.request.urlopen(base,timeout=1);break
+   try:settled_urlopen(base,timeout=1);break
    except OSError:time.sleep(.1)
   def record(i,name,values):return {'timeUnixNano':str(1780000000000000000+i*1000000000),'eventName':name,'attributes':[{'key':k,'value':{'stringValue':str(v)}} for k,v in values.items()]}
   rows=[record(0,'gen_ai.tool.start',{'session.id':'root','cwd':'/work/tool-pair','tool_name':'exec_command','call_id':'test-call','arguments':'{"cmd":"go test ./..."}'})]
@@ -17,7 +18,7 @@ with tempfile.TemporaryDirectory() as folder:
   spans=[{'name':'fs.read_file','traceId':f'{i+1:032x}','spanId':f'{i+1:016x}','startTimeUnixNano':'1780000000000000000','endTimeUnixNano':'1780000000000000100'} for i in range(3)]
   for signal,body in [('logs',{'resourceLogs':[{'resource':{'attributes':[{'key':'service.name','value':{'stringValue':'codex'}}]},'scopeLogs':[{'logRecords':rows}]}]}),('traces',{'resourceSpans':[{'resource':{'attributes':[{'key':'service.name','value':{'stringValue':'codex'}}]},'scopeSpans':[{'spans':spans}]}]})]:
    req=urllib.request.Request(base+'/v1/'+signal,json.dumps(body).encode(),headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'})
-   with urllib.request.urlopen(req) as response:assert response.status==200
+   with settled_urlopen(req) as response:assert response.status==200
   with sync_playwright() as p:
    browser=p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox']);page=browser.new_page(viewport={'width':1440,'height':1000});errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
    page.goto(base);page.locator('#token').fill(token);page.locator('#loginform button').click();expect(page.locator('.session')).to_have_count(1);assert 'Folder unavailable' not in page.locator('#sessions').inner_text()
