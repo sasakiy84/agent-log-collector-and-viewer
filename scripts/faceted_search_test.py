@@ -29,7 +29,7 @@ with tempfile.TemporaryDirectory() as folder:
    def reveal(selector):
     if not page.locator(selector).evaluate('(e)=>e.open'):page.locator(selector+'>summary').click()
    def time_picker():reveal('#searchtime')
-   def text_options():reveal('#textoptions')
+   def text_options():reveal('#searchoptions')
    def facets():reveal('#facetoptions')
    page.goto(base);page.locator('#token').fill(token);page.locator('#loginform button').click();expect(page.locator('.session')).to_have_count(5);assert not analysis
    time_picker();page.locator('#searchrange').select_option('custom');page.locator('#searchfrom').fill('2026-11-14T09:00');page.locator('#searchto').fill('2026-11-15T09:00');page.locator('#applysearchfilters').click();expect(page.locator('.session')).to_have_count(4);assert 'from=2026-11-14T00' in page.url
@@ -50,17 +50,16 @@ with tempfile.TemporaryDirectory() as folder:
    page.locator('[name=searchkind][value=conversation]').check();expect(page.locator('.session')).to_have_count(3)
    page.locator('[name=searchkind][value=error]').uncheck();page.locator('[name=searchkind][value=conversation]').uncheck();expect(page.locator('.session')).to_have_count(3)
    page.locator('#search').fill('alpha beta');expect(page.locator('.session')).to_have_count(1)
-   text_options();page.locator('#textmatch').select_option('any');expect(page.locator('.session')).to_have_count(2)
-   text_options();page.locator('#textmatch').select_option('all');expect(page.locator('.session')).to_have_count(1)
+   text_options();page.locator('#textmatch').select_option('any');page.locator('#searchoptionsform button[type=submit]').click();expect(page.locator('.session')).to_have_count(2)
+   text_options();page.locator('#textmatch').select_option('all');page.locator('#searchoptionsform button[type=submit]').click();expect(page.locator('.session')).to_have_count(1)
    text_options();page.locator('#searchexclude').fill('failure')
    if initial_output:page.screenshot(path=initial_output+'/ui-search-text-options.png',full_page=True)
-   page.locator('#applytextfilters').click();expect(page.locator('.session')).to_have_count(0)
-   text_options();page.locator('#searchexclude').fill('');page.locator('#applytextfilters').click();expect(page.locator('.session')).to_have_count(1)
+   page.locator('#searchoptionsform button[type=submit]').click();expect(page.locator('.session')).to_have_count(0)
+   text_options();page.locator('#searchexclude').fill('');page.locator('#searchoptionsform button[type=submit]').click();expect(page.locator('.session')).to_have_count(1)
    page.locator('#searchanalysis summary').click();expect(page.locator('#analysisrows tr')).to_have_count(1);expect(page.locator('#analysisrows tr td').nth(0)).to_have_text('1');expect(page.locator('#analysisrows tr td').nth(2)).to_have_text('1')
    page.locator('#analysisgroup').select_option('project');expect(page.locator('#analysisrows th')).to_have_text('A');expect(page.locator('#analysisstatus')).to_have_text('')
    requests=len(analysis);page.wait_for_timeout(350);assert len(analysis)==requests,'Unexpected auto refresh'
-   with page.expect_navigation():page.locator('#exportmatches').click()
-   expect(page.locator('.session')).to_have_count(1);expect(page.locator('#exportchildren')).not_to_be_checked();expect(page.locator('#showdiagnostics')).not_to_be_checked();expect(page.locator('#exportrecords')).to_have_text('3 records')
+   assert '/export' not in page.url;expect(page.locator('.session')).to_have_count(1)
    with page.expect_download() as download:page.locator('#downloadexport').click()
    with zipfile.ZipFile(download.value.path()) as archive:
     manifest=json.loads(archive.read('manifest.json'));assert manifest['sessions']==1 and manifest['records']==3,manifest;assert manifest['filters']['project']==['name:A','name:B'],manifest;assert manifest['filters']['source']==['codex','claude'],manifest

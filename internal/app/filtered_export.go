@@ -16,7 +16,7 @@ import (
 // internal conversations and archive-locked data that has not been deleted.
 func exportSessionFilter(q url.Values) sessionFilter {
 	f := parseSessionFilter(q)
-	f.IncludeLocked = true
+	f.IncludeLocked = q.Get("include_locked") != "0"
 	if !q.Has("diagnostics") {
 		f.Diagnostics = true
 	}
@@ -75,7 +75,7 @@ func writeFilteredExport(ctx context.Context, tx *sql.Tx, sessions *sql.Rows, ar
 		return err
 	}
 	filters := map[string]any{}
-	for _, key := range []string{"project", "folder", "q", "id_key", "id_value", "source", "skill", "plugin", "from", "to", "origin", "event_kind", "text_mode", "exclude", "include_children"} {
+	for _, key := range []string{"project", "folder", "q", "id_key", "id_value", "source", "skill", "plugin", "from", "to", "origin", "event_kind", "text_mode", "exclude", "include_children", "include_locked"} {
 		if q.Has(key) {
 			if len(q[key]) > 1 {
 				filters[key] = q[key]

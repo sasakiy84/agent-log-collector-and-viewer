@@ -107,11 +107,9 @@ const inspectorCache = new Map();
 let selected = location.pathname.startsWith("/sessions/")
   ? decodeURIComponent(location.pathname.slice(10))
   : "";
-const archiveMode = location.pathname === "/archive";
 const skillsMode = location.pathname === "/skills";
-const exportMode = location.pathname === "/export";
-let exportDownloadURL = "";
 let exportQueryPending = false;
+let archiveRequested = new URL(location.href).searchParams.get("manage") === "inactive";
 const listURL = new URL(location.href);
 let searchScope = readSearchScope(listURL.searchParams);
 let projectSelections = [...new Set(listURL.searchParams.getAll("project").map(canonicalProjectID))];
@@ -127,9 +125,7 @@ let folder = listURL.searchParams.has("folder")
 if (projectSelections.length > 1) project = null;
 $("#showdiagnostics").checked = listURL.searchParams.has("diagnostics")
   ? listURL.searchParams.get("diagnostics") === "1"
-  : exportMode;
-$("#exportcontrols").hidden = !exportMode;
-$("#exportchildren").checked = listURL.searchParams.get("include_children") !== "0";
+  : false;
 query = listURL.searchParams.get("q") || "";
 let idKey = listURL.searchParams.get("id_key") || "",
   idValue = listURL.searchParams.get("id_value") || "";
@@ -165,7 +161,7 @@ if (selected) {
 }
 $("#search").value = query;
 syncIdentifierSearch();
-if (!selected && !archiveMode)
+if (!selected)
   sessionStorage.setItem("sessionsURL", location.pathname + location.search);
 $("#detailpage > .back").href = sessionStorage.getItem("sessionsURL") || "/";
 function updateDocumentTitle() {
@@ -178,11 +174,9 @@ function updateDocumentTitle() {
       ? preview.project
       : typeof preview?.cwd === "string" && preview.cwd ? folderName(preview.cwd) : "";
     parts = [$("#sessiontitle").textContent, context];
-  } else if (archiveMode) {
-    parts = ["Archive"];
   } else {
     const scope = projectScopeName() || (folder !== null ? folderName(folder) : "");
-    parts = [scope, skillsMode ? "Skills" : exportMode ? "Export" : "Sessions"];
+    parts = [scope, skillsMode ? "Skills" : "Sessions"];
   }
   document.title = [...parts, "Agentlog"]
     .map((part) => String(part || "").replace(/\s+/g, " ").trim())
@@ -193,6 +187,7 @@ async function apiResponse(path, signal) {
   $("#logout").hidden = r.headers.get("X-Agentlog-Auth") === "disabled";
   if (r.status === 401) {
     closeInspector(false);
+    if ($("#archivepanel").open) $("#archivepanel").close();
     $("#login").hidden = false;
     $("#workspace").hidden = true;
     updateDocumentTitle();
@@ -222,13 +217,11 @@ function titleFor(id, p) {
 function listParameters() {
   const p = new URLSearchParams();
   appendSearchScope(p);
-  if (exportMode && !$("#exportchildren").checked) p.set("include_children", "0");
   if (skillFilter) {
     p.set("skill", skillFilter);
     p.set("plugin", skillPlugin);
   }
   if ($("#showdiagnostics").checked) p.set("diagnostics", "1");
-  else if (exportMode) p.set("diagnostics", "0");
   if (query) p.set("q", query);
   if (idValue) {
     p.set("id_value", idValue);
@@ -240,7 +233,8 @@ function listState() {
   const p = listParameters();
   if (folder !== null) p.set("folder", folder);
   if (sessionOffset) p.set("offset", sessionOffset);
-  history.replaceState(null, "", (exportMode ? "/export" : "/") + (p.size ? "?" + p : ""));
+  if (archiveRequested || $("#archivepanel").open) p.set("manage", "inactive");
+  history.replaceState(null, "", "/" + (p.size ? "?" + p : ""));
   sessionStorage.setItem("sessionsURL", location.pathname + location.search);
 }
 function folderName(path) {
@@ -257,23 +251,15 @@ function renderListHeading(total) {
     ? "Skill: " + skillFilter + (skillPlugin ? " · " + skillPlugin : "")
     : "";
   $("#listtitle").textContent =
-    (exportMode ? "Export · " : "") + (selectedProjects().length
+    (selectedProjects().length
       ? projectScopeName()
       : folder !== null
         ? folderName(folder)
         : "All sessions");
-  $("#foldersback").hidden = !exportMode;
-  if (exportMode) {
-    $("#foldersback").textContent = "Sessions";
-    $("#foldersback").href = project === null ? "/" : "/?" + new URLSearchParams({ project });
-  }
   const path = project?.startsWith("path:") ? project.slice(5) : folder;
   $("#folderpath").hidden = !path;
   $("#folderpath").textContent = path || "";
-  $("#listcount").textContent = `${total.toLocaleString()} sessions`;
-  $("#listcolumn").textContent = "Session";
-  $("#countcolumn").textContent = exportMode ? "Records" : "Events";
-  sessionPager.noun = "sessions";
+  $("#listcount").textContent = `${total.toLocaleString()} ${total === 1 ? "session" : "sessions"}`;
   renderProjects();
 }
 function detailState(latest) {
@@ -691,20 +677,16 @@ async function refresh(scrollMode) {
   activeRequest = controller;
   const serial = ++requestSerial;
   $("#workspace").setAttribute("aria-busy", "true");
-  for (const pager of [sessionPager, eventPager, archivePager, skillsPager])
+  for (const pager of [sessionPager, eventPager, skillsPager])
     pager.setLoading(true);
   $("#origin").disabled = true;
-  if (exportMode) $("#downloadexport").disabled = true;
+  $("#downloadexport").disabled = true;
   try {
     if (skillsMode) {
       await Promise.all([
         refreshSkills(controller.signal),
         loadProjects(controller.signal),
       ]);
-      if (!controller.signal.aborted && scrollMode === "top")
-        window.scrollTo({ top: 0, behavior: "instant" });
-    } else if (archiveMode) {
-      await refreshArchive(controller.signal);
       if (!controller.signal.aborted && scrollMode === "top")
         window.scrollTo({ top: 0, behavior: "instant" });
     } else if (selected) {
@@ -733,7 +715,7 @@ async function refresh(scrollMode) {
       params.set("offset", sessionOffset);
       if (folder !== null) params.set("folder", folder);
       const [response] = await Promise.all([
-          apiResponse((exportMode ? "/api/export/sessions?" : "/api/sessions?") + params, controller.signal),
+          apiResponse("/api/sessions?" + params, controller.signal),
           loadProjects(controller.signal),
         ]),
         data = await response.json();
@@ -749,33 +731,26 @@ async function refresh(scrollMode) {
         projectSelections: [...projectSelections],
         searchScope: structuredClone(searchScope),
         diagnostics: $("#showdiagnostics").checked,
-        exportChildren: $("#exportchildren").checked,
         skillFilter,
         skillPlugin,
       };
       listState();
       renderSessions(data, Number(response.headers.get("X-Total-Count")));
       refreshSearchAnalysis(controller.signal);
-      if (exportMode) {
-        $("#exportrecords").textContent = Number(response.headers.get("X-Record-Count")).toLocaleString() + " records";
-        const download = new URLSearchParams(params);
-        download.delete("offset");
-        exportDownloadURL = "/api/export/download?" + download;
-        $("#downloadexport").disabled = exportQueryPending || !Number(response.headers.get("X-Total-Count"));
-      }
+      $("#downloadexport").disabled = exportQueryPending || !Number(response.headers.get("X-Total-Count"));
       if (scrollMode === "top")
         window.scrollTo({ top: 0, behavior: "instant" });
     }
     if (controller.signal.aborted) return;
     $("#login").hidden = true;
     $("#workspace").hidden = false;
-    $("#listpage").hidden = !!selected || archiveMode || skillsMode;
+    $("#listpage").hidden = !!selected || skillsMode;
     $("#skillpage").hidden = !skillsMode;
-    $("#detailpage").hidden = !selected || archiveMode || skillsMode;
-    $("#archivepage").hidden = !archiveMode;
+    $("#detailpage").hidden = !selected || skillsMode;
     updateDocumentTitle();
     $("#error").textContent = "";
     if (selected) placeTimeline(scrollMode, anchor, serial);
+    if (archiveRequested && !selected && !skillsMode) { archiveRequested = false; openArchive(); }
   } catch (e) {
     if (e.name === "AbortError") return;
     if (selected && meta) {
@@ -797,8 +772,7 @@ async function refresh(scrollMode) {
       $("#skillsort").value = skillsSort;
       renderProjects();
       $("#skillsearch").value = skillsQuery;
-    } else if (archiveMode && archiveData) {
-      archiveOffset = archiveData.offset;
+
     } else if (sessionData) {
       ({
         offset: sessionOffset,
@@ -813,7 +787,6 @@ async function refresh(scrollMode) {
         skillPlugin,
       } = sessionData);
       $("#showdiagnostics").checked = sessionData.diagnostics;
-      $("#exportchildren").checked = sessionData.exportChildren;
       renderSearchControls();
       $("#search").value = query;
       syncIdentifierSearch();
@@ -823,15 +796,14 @@ async function refresh(scrollMode) {
     $("#error").textContent = e.message;
     if ($("#login").hidden) {
       $("#workspace").hidden = false;
-      $("#listpage").hidden = !!selected || archiveMode || skillsMode;
+      $("#listpage").hidden = !!selected || skillsMode;
       $("#skillpage").hidden = !skillsMode;
-      $("#detailpage").hidden = !selected || archiveMode || skillsMode;
-      $("#archivepage").hidden = !archiveMode;
-    }
+      $("#detailpage").hidden = !selected || skillsMode;
+      }
   } finally {
     if (serial === requestSerial) {
       $("#workspace").removeAttribute("aria-busy");
-      for (const pager of [sessionPager, eventPager, archivePager, skillsPager])
+      for (const pager of [sessionPager, eventPager, skillsPager])
         pager.setLoading(false);
       $("#origin").disabled = false;
     }
@@ -892,25 +864,35 @@ document.querySelectorAll("[data-view]").forEach(
 );
 syncEventFilters();
 setupProjects();
-$("#downloadexport").onclick = () => {
-  if (exportDownloadURL) location.assign(exportDownloadURL);
-};
-$("#exportchildren").onchange = () => { sessionOffset = 0; refresh(); };
+function matchingExportURL() {
+  const params = listParameters();
+  if (folder !== null) params.set("folder", folder);
+  params.set("diagnostics", $("#showdiagnostics").checked ? "1" : "0");
+  params.set("include_children", "0");
+  params.set("include_locked", "0");
+  return "/api/export/download?" + params;
+}
+$("#downloadexport").onclick = () => location.assign(matchingExportURL());
 
 function syncIdentifierSearch() {
   $("#identifierfield").value = idKey;
   $("#identifiervalue").value = idValue;
-  $("#idfilterstatus").textContent = idValue ? " · Active" : "";
+  $("#clearidsearch").hidden = skillsMode || !idValue;
+  renderSearchOptionStatus();
 }
-$("#idsearchform").onsubmit = (e) => {
+$("#searchoptionsform").onsubmit = (e) => {
   e.preventDefault();
-  idKey = $("#identifierfield").value.trim();
-  idValue = $("#identifiervalue").value;
-  sessionOffset = 0;
+  applyTextOptions();
+  if (!skillsMode) {
+    idKey = $("#identifierfield").value.trim();
+    idValue = $("#identifiervalue").value;
+  }
+  sessionOffset = skillsOffset = 0;
   syncIdentifierSearch();
-  $("#idsearch").open = false;
-  $("#idsearch summary").focus({ preventScroll: true });
-  listState();
+  $("#searchoptions").open = false;
+  $("#searchoptions summary").focus({ preventScroll: true });
+  renderSearchControls();
+  if (!skillsMode) listState();
   refresh();
 };
 $("#clearidsearch").onclick = () => {
@@ -924,10 +906,8 @@ let timer,
   composingSearch = false;
 function scheduleSearch() {
   clearTimeout(timer);
-  if (exportMode) {
-    exportQueryPending = true;
-    $("#downloadexport").disabled = true;
-  }
+  exportQueryPending = true;
+  $("#downloadexport").disabled = true;
   timer = setTimeout(() => {
     exportQueryPending = false;
     query = $("#search").value;
@@ -944,10 +924,8 @@ $("#showdiagnostics").onchange = () => {
 $("#search").addEventListener("compositionstart", () => {
   composingSearch = true;
   clearTimeout(timer);
-  if (exportMode) {
-    exportQueryPending = true;
-    $("#downloadexport").disabled = true;
-  }
+  exportQueryPending = true;
+  $("#downloadexport").disabled = true;
 });
 $("#search").addEventListener("compositionend", () => {
   composingSearch = false;
@@ -988,7 +966,7 @@ const archivePager = new Pagination($("#archivepagination"), {
   noun: "folders",
   onChange: (page) => {
     archiveOffset = (page - 1) * 200;
-    refresh("top");
+    loadArchive("top");
   },
 });
 $("#origin").onchange = () => {

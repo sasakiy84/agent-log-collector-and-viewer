@@ -4,6 +4,7 @@ let archiveOffset = 0,
   archiveData = null,
   archiveStream = null,
   archiveStreamJob = "";
+let archiveRequest = null;
 const bytes = (n) => {
   const units = ["B", "KiB", "MiB", "GiB", "TiB"];
   let i = 0;
@@ -24,6 +25,7 @@ async function archivePost(path, body) {
     body: JSON.stringify(body),
   });
   if (r.status === 401) {
+    $("#archivepanel").close();
     $("#login").hidden = false;
     $("#workspace").hidden = true;
     updateDocumentTitle();
@@ -43,9 +45,7 @@ function updateArchiveSelection() {
     .querySelectorAll("[data-archive-folder]")
     .forEach(
       (el) =>
-        (el.checked =
-          archiveActive(archiveData?.job) ||
-          archiveSelection.has(el.dataset.archiveFolder)),
+        (el.checked = archiveSelection.has(el.dataset.archiveFolder)),
     );
 }
 async function refreshArchive(signal) {
@@ -57,10 +57,11 @@ async function refreshArchive(signal) {
   archiveData = data;
   archiveOffset = data.offset;
   $("#archivetotal").textContent =
-    `${data.total_folders.toLocaleString()} folders · ${data.total_sessions.toLocaleString()} sessions · ${bytes(data.total_bytes)}`;
+    `${data.total_folders.toLocaleString()} ${data.total_folders === 1 ? "folder" : "folders"} · ${data.total_sessions.toLocaleString()} ${data.total_sessions === 1 ? "session" : "sessions"} · ${bytes(data.total_bytes)}`;
   $("#archivecutoff").textContent =
-    `Last activity before ${new Date(data.cutoff).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}`;
+    `All projects · Last activity before ${new Date(data.cutoff).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}`;
   $("#archiveselection").hidden = !!archiveActive(data.job);
+  $("#archiveitems").hidden = !!archiveActive(data.job);
   $("#archiveitems").innerHTML = data.folders.length
     ? data.folders
         .map(
@@ -83,6 +84,7 @@ async function refreshArchive(signal) {
     offset: data.offset,
     size: 200,
   });
+  $("#archivepagination").hidden = !!archiveActive(data.job);
   renderArchiveJob(data.job);
   watchArchive(data.job);
 }
@@ -105,7 +107,7 @@ function renderArchiveJob(job) {
   if (job.status === "preparing")
     content = `<h2>Creating ZIP</h2><p id="archiveprogress">${esc(archiveProgress(job))}</p>${cancel}`;
   if (job.status === "ready")
-    content = `<h2>Ready to download</h2><p>${job.session_count} sessions · ${job.record_count.toLocaleString()} records · ${bytes(job.archive_bytes)}</p><a id="archivedownload" class="button primary" href="/api/archives/${encodeURIComponent(job.id)}/download" download>Download ZIP</a> ${cancel}<details><summary>SHA-256</summary><code class="archivehash">${esc(job.sha256)}</code></details><form id="archivedeleteform"><label>Download confirmed: type <strong>DOWNLOADED</strong><input id="archiveconfirmation" autocomplete="off" spellcheck="false" required placeholder="DOWNLOADED"></label><button id="archivedelete" class="danger" disabled>Delete archived data</button></form><p id="archiveactionerror" role="alert"></p>`;
+    content = `<h2>Ready to download</h2><p>${job.session_count} sessions · ${job.record_count.toLocaleString()} records · ${bytes(job.archive_bytes)}</p><a id="archivedownload" class="button primary" href="/api/archives/${encodeURIComponent(job.id)}/download" download>Download ZIP</a> ${cancel}<details><summary>SHA-256</summary><code class="archivehash">${esc(job.sha256)}</code></details><form id="archivedeleteform"><label><span>Type <strong>DOWNLOADED</strong> after checking the ZIP</span><input id="archiveconfirmation" autocomplete="off" spellcheck="false" required placeholder="DOWNLOADED"></label><button id="archivedelete" class="danger" disabled>Delete archived data</button></form><p id="archiveactionerror" role="alert"></p>`;
   if (job.status === "deleting")
     content = `<h2>Deleting archived records</h2><p id="archiveprogress">${esc(archiveProgress(job))}</p>`;
   if (job.status === "compacting")
@@ -138,7 +140,7 @@ function renderArchiveJob(job) {
   }
 }
 function watchArchive(job) {
-  if (!archiveBusy(job)) {
+  if (!$("#archivepanel").open || !archiveBusy(job)) {
     archiveStream?.close();
     archiveStream = null;
     archiveStreamJob = "";
@@ -156,10 +158,10 @@ function watchArchive(job) {
     stream.close();
     archiveStream = null;
     archiveStreamJob = "";
-    $("#error").textContent = "Progress connection lost. Reload the page.";
+    $("#archiveerror").textContent = "Progress connection lost. Close and reopen this panel.";
   };
   stream.addEventListener("archive", (event) => {
-    if (archiveStream !== stream) return;
+    if (archiveStream !== stream || !$("#archivepanel").open) return;
     const updated = JSON.parse(event.data);
     if (archiveData) archiveData.job = updated;
     renderArchiveJob(updated);
@@ -167,7 +169,7 @@ function watchArchive(job) {
       stream.close();
       archiveStream = null;
       archiveStreamJob = "";
-      if (updated.status !== "ready") refresh();
+      loadArchive().then(() => refresh());
     }
   });
 }
@@ -180,15 +182,50 @@ async function archiveAction(path, body) {
   try {
     await archivePost(path, body);
     archiveSelection.clear();
+    await loadArchive();
     await refresh();
   } catch (e) {
-    const target = $("#archiveactionerror") || $("#error");
+    const target = $("#archiveactionerror") || $("#archiveerror");
     target.textContent = e.message;
     updateArchiveSelection();
     if ($("#archiveconfirmation")) $("#archiveconfirmation").oninput();
   }
 }
+async function loadArchive(scrollMode) {
+  if (!$("#archivepanel").open) return;
+  archiveRequest?.abort();
+  const controller = new AbortController();
+  archiveRequest = controller;
+  archivePager.setLoading(true);
+  $("#archiveerror").textContent = "";
+  try {
+    await refreshArchive(controller.signal);
+    if (scrollMode === "top") $(".data-panel-body").scrollTop = 0;
+  } catch (error) {
+    if (error.name !== "AbortError") {
+      if (archiveData) archiveOffset = archiveData.offset;
+      $("#archiveerror").textContent = error.message;
+    }
+  } finally { if (archiveRequest === controller) archivePager.setLoading(false); }
+}
+function openArchive() {
+  $("#dataoptions").open = false;
+  if (!$("#archivepanel").open) $("#archivepanel").showModal();
+  listState();
+  loadArchive();
+}
 function setupArchive() {
+  $("#openarchive").onclick = openArchive;
+  $("#closearchive").onclick = () => $("#archivepanel").close();
+  $("#archivepanel").addEventListener("close", () => {
+    archiveRequest?.abort();
+    archiveStream?.close();
+    archiveStream = null;
+    archiveStreamJob = "";
+    archiveRequested = false;
+    if (!selected && !skillsMode) listState();
+    if ($("#login").hidden) $("#dataoptions summary").focus({ preventScroll: true });
+  });
   $("#archiveclear").onclick = () => {
     archiveSelection.clear();
     updateArchiveSelection();

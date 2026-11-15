@@ -37,6 +37,13 @@ function localDateValue(value) {
   if (!Number.isFinite(d.getTime())) return "";
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 19);
 }
+function renderSearchOptionStatus() {
+  $("#searchoptionstatus").textContent = searchScope.exclude || searchScope.textMode !== "all" || !skillsMode && idValue ? " · Active" : "";
+}
+function applyTextOptions() {
+  searchScope.textMode = $("#textmatch").value;
+  searchScope.exclude = $("#searchexclude").value.trim();
+}
 function renderSearchControls() {
   $("#searchfrom").value = localDateValue(searchScope.from);
   $("#searchto").value = localDateValue(searchScope.to);
@@ -49,7 +56,7 @@ function renderSearchControls() {
     document.querySelectorAll(`input[name=${name}]`).forEach((el) => { el.checked = values.includes(el.value); });
   const n = searchScope.sources.length + searchScope.origins.length + (skillsMode ? 0 : searchScope.kinds.length);
   $("#facetcount").textContent = n ? " · " + n : "";
-  $("#textfilterstatus").textContent = searchScope.exclude || searchScope.textMode !== "all" ? " · Active" : "";
+  renderSearchOptionStatus();
   const timeLabel = (value) => new Date(value).toLocaleString(undefined, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
   $("#searchtimelabel").textContent = searchScope.range === "all" ? "All time" : searchScope.range !== "custom" ? $("#searchrange").selectedOptions[0].textContent : [searchScope.from ? timeLabel(searchScope.from) : "Any start", searchScope.to ? timeLabel(searchScope.to) : "Any end"].join(" – ");
   $("#searchtime summary").title = $("#searchtimelabel").textContent;
@@ -66,7 +73,7 @@ function applySearchControls({ time = false } = {}) {
     const from = time ? readBound("#searchfrom", searchScope.from) : searchScope.from, to = time ? readBound("#searchto", searchScope.to) : searchScope.to;
     if (from && to && new Date(from) >= new Date(to)) throw Error("From must be earlier than To.");
     const checked = (name) => [...document.querySelectorAll(`input[name=${name}]:checked`)].map((el) => el.value);
-    searchScope = { from, to, range: from === searchScope.from && to === searchScope.to ? searchScope.range : from || to ? "custom" : "all", sources: checked("searchsource"), origins: checked("searchorigin"), kinds: skillsMode ? [] : checked("searchkind"), textMode: $("#textmatch").value, exclude: $("#searchexclude").value.trim() };
+    searchScope = { from, to, range: from === searchScope.from && to === searchScope.to ? searchScope.range : from || to ? "custom" : "all", sources: checked("searchsource"), origins: checked("searchorigin"), kinds: skillsMode ? [] : checked("searchkind"), textMode: searchScope.textMode, exclude: searchScope.exclude };
     searchScopeChanged();
     if (time) { $("#searchtime").open = false; $("#searchtime summary").focus({ preventScroll: true }); }
   } catch (e) { $("#searchfiltererror").textContent = e.message; }
@@ -92,8 +99,7 @@ function setupSearchControls() {
   main.prepend($("#searchcontrols"));
   $("#queryhost").append(skillsMode ? $("#skillsearch") : $("#search"));
   $("#sessionqueryhost").hidden = true;
-  $("#idsearchhost").append($("#idsearch"));
-  $("#idsearchhost").hidden = skillsMode;
+  $(".identifier-fields").hidden = skillsMode;
   $("#showdiagnostics").closest("label").hidden = skillsMode;
   const narrowScreen = matchMedia("(max-width: 720px)");
   $("#facetoptions").open = !narrowScreen.matches;
@@ -102,7 +108,6 @@ function setupSearchControls() {
   $("#eventtypefilters").hidden = skillsMode;
   renderSearchControls();
   $("#applysearchfilters").onclick = () => applySearchControls({ time: true });
-  $("#applytextfilters").onclick = () => { applySearchControls(); $("#textoptions").open = false; $("#textoptions summary").focus({ preventScroll: true }); };
   $("#searchrange").onchange = () => {
     const value = $("#searchrange").value;
     if (value === "custom") { $("#searchdates").hidden = false; $("#searchfrom").focus(); return; }
@@ -122,25 +127,23 @@ function setupSearchControls() {
     project = null; projectSelections = []; folder = null;
     idKey = idValue = skillFilter = skillPlugin = query = skillsQuery = "";
     $("#search").value = $("#skillsearch").value = "";
-    $("#showdiagnostics").checked = exportMode;
-    if (exportMode) $("#exportchildren").checked = true;
+    $("#showdiagnostics").checked = false;
     syncIdentifierSearch();
     searchScopeChanged();
-    $("#searchtime").open = $("#textoptions").open = false;
+    $("#searchtime").open = $("#searchoptions").open = false;
   };
-  for (const input of [$("#searchexclude"), $("#searchfrom"), $("#searchto")]) input.onkeydown = (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); applySearchControls({ time: input.type === "datetime-local" }); } };
-  $("#textmatch").onchange = () => applySearchControls();
+  for (const input of [$("#searchfrom"), $("#searchto")]) input.onkeydown = (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); applySearchControls({ time: input.type === "datetime-local" }); } };
   // Native disclosure widgets keep keyboard support, and outside/Escape closes overlays.
-  const overlays = [$("#searchtime"), $("#textoptions"), $("#idsearch")];
+  const overlays = [$("#searchtime"), $("#searchoptions"), $("#dataoptions")];
   document.addEventListener("click", (event) => overlays.forEach((details) => { if (!details.contains(event.target)) details.open = false; }));
   document.addEventListener("keydown", (event) => { if (event.key === "Escape") for (const details of overlays) if (details.open) { details.open = false; if (details.contains(document.activeElement)) details.querySelector("summary").focus(); } });
-  $("#searchanalysis").hidden = skillsMode || exportMode;
+  $("#searchanalysis").hidden = skillsMode;
   $("#searchanalysis").ontoggle = () => { if ($("#searchanalysis").open) refreshSearchAnalysis(); else analysisRequest?.abort(); };
   $("#analysisgroup").onchange = () => refreshSearchAnalysis();
 }
 let analysisRequest = null;
 async function refreshSearchAnalysis(signal) {
-  if (!$("#searchanalysis").open || selected || skillsMode || archiveMode || exportMode) return;
+  if (!$("#searchanalysis").open || selected || skillsMode) return;
   analysisRequest?.abort();
   const controller = new AbortController(); analysisRequest = controller;
   signal?.addEventListener("abort", () => controller.abort(), { once: true });
@@ -149,11 +152,6 @@ async function refreshSearchAnalysis(signal) {
   params.set("group", $("#analysisgroup").value);
   $("#analysisstatus").textContent = "Loading…";
   $("#analysisrows").replaceChildren();
-  const exportParams = new URLSearchParams(params);
-  exportParams.delete("group");
-  exportParams.set("diagnostics", $("#showdiagnostics").checked ? "1" : "0");
-  exportParams.set("include_children", "0");
-  $("#exportmatches").href = "/export?" + exportParams;
   try {
     const data = await api("/api/search/summary?" + params, controller.signal);
     if (controller.signal.aborted) return;

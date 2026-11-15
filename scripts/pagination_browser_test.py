@@ -63,11 +63,18 @@ with tempfile.TemporaryDirectory() as folder:
     rect=events.bounding_box();assert rect['y']>=0 and rect['y']+rect['height']<=844,width
     if width==390 and os.getenv('AGENTLOG_SCREENSHOT_DIR'):page.screenshot(path=str(output/'ui-pagination-mobile.png'))
    events.get_by_role('button',name='Show latest events',exact=True).click();current(events,10);assert 'page=' not in page.url
-   # Archive pagination shares totals, direct jumps and cross-page selections.
-   page.goto(base+'/archive');archive=page.locator('#archivepagination');current(archive,1);expect(archive.locator('.pagination-range')).to_have_text('1–200 / 1,002 sessions')
-   checkbox=page.locator('[data-archive-session]').first;selected=checkbox.get_attribute('data-archive-session');checkbox.check()
-   jump(archive,6);current(archive,6);expect(page.locator('.archive-row')).to_have_count(2);expect(page.locator('#archiveselected')).to_have_text('1 selected')
-   archive.get_by_role('button',name='Page 1',exact=True).click();current(archive,1);expect(page.locator(f'[data-archive-session="{selected}"]')).to_be_checked()
+   # Inactive-folder selection paginates inside the list's archive panel.
+   extra=[]
+   for i in range(201):
+    row=record(f'archive-{i}',i,'Archive fixture')
+    row['attributes'].append({'key':'cwd','value':{'stringValue':f'/work/folder-{i:03d}'}})
+    extra.append(row)
+   request=urllib.request.Request(base+'/v1/logs',json.dumps({'resourceLogs':[{'resource':{'attributes':[{'key':'service.name','value':{'stringValue':'claude'}}]},'scopeLogs':[{'logRecords':extra}]}]}).encode(),headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'})
+   with settled_urlopen(request) as response:assert response.status==200
+   page.goto(base+'/archive');expect(page.locator('#archivepanel')).to_be_visible();archive=page.locator('#archivepagination');current(archive,1);expect(archive.locator('.pagination-range')).to_have_text('1–200 / 202 folders')
+   checkbox=page.locator('[data-archive-folder]').first;selected=checkbox.get_attribute('data-archive-folder');checkbox.check()
+   jump(archive,2);current(archive,2);expect(page.locator('.archive-row')).to_have_count(2);expect(page.locator('#archiveselected')).to_have_text('1 folder selected')
+   archive.get_by_role('button',name='Page 1',exact=True).click();current(archive,1);expect(page.locator(f'[data-archive-folder="{selected}"]')).to_be_checked()
    # Exercise large page labels without constructing a million-record fixture.
    # This is the same embedded component and stylesheet used by all screens.
    page.evaluate("() => {window.stressPager=new Pagination(document.querySelector('#archivepagination'),{noun:'events',onChange:()=>{},onLatest:()=>{}})}")

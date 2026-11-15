@@ -28,12 +28,14 @@ with tempfile.TemporaryDirectory() as folder:
   with sync_playwright() as p:
    browser=p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox'])
    page=browser.new_page(viewport={'width':1280,'height':800});errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
-   page.goto(base+'/archive');page.locator('#token').fill(token);page.locator('#loginform button').click();expect(page.locator('.archive-row')).to_have_count(3)
+   page.goto(base);archive_requests=[];page.on('request',lambda r:archive_requests.append(r.url) if '/api/archive' in r.url else None);page.locator('#token').fill(token);page.locator('#loginform button').click();expect(page.locator('.session')).to_have_count(5);assert not archive_requests;page.locator('#dataoptions summary').click()
+   if os.getenv('AGENTLOG_SCREENSHOT'):page.screenshot(path=str(pathlib.Path(os.environ['AGENTLOG_SCREENSHOT']).with_name('ui-data-actions.png')),full_page=True)
+   page.locator('#openarchive').click();expect(page.locator('#archivepanel')).to_be_visible();expect(page.locator('.archive-row')).to_have_count(3)
    assert page.locator('#refresh,#subagentrefresh,#archiveall,[data-source]').count()==0
    assert 'DB data only' not in page.locator('body').inner_text()
    expect(page.locator('.archive-row').filter(has=page.locator('[data-archive-folder="/work/alpha"]'))).to_contain_text('2 sessions')
    if os.getenv('AGENTLOG_SCREENSHOT'):
-    page.screenshot(path=os.environ['AGENTLOG_SCREENSHOT'],full_page=True)
+    page.screenshot(path=os.environ['AGENTLOG_SCREENSHOT'])
    page.locator('[data-archive-folder="/work/alpha"]').check();expect(page.locator('#archiveselected')).to_have_text('1 folder selected');page.locator('#archivecreate').click()
    expect(page.locator('#archivedownload')).to_be_visible(timeout=30000)
    assert page.locator('#archivedelete').is_disabled();assert api('/api/stats')['events']==5
@@ -43,10 +45,13 @@ with tempfile.TemporaryDirectory() as folder:
    with zipfile.ZipFile(archive) as zipped:
     assert zipped.testzip() is None
     assert len([n for n in zipped.namelist() if n.startswith('sessions/')])==2
+   if os.getenv('AGENTLOG_SCREENSHOT'):page.screenshot(path=str(pathlib.Path(os.environ['AGENTLOG_SCREENSHOT']).with_name('ui-data-download-confirmation.png')))
+   page.locator('#closearchive').click();expect(page.locator('#archivepanel')).not_to_be_visible();page.locator('#dataoptions summary').click();page.locator('#openarchive').click();expect(page.locator('#archivedownload')).to_be_visible()
    page.locator('#archiveconfirmation').fill('DOWNLOADED')
    requests=[];page.on('request',lambda r:requests.append(r.url) if '/api/' in r.url else None)
    page.wait_for_timeout(5500);assert not requests,requests;assert page.locator('#archiveconfirmation').input_value()=='DOWNLOADED'
    page.set_viewport_size({'width':390,'height':844});assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
+   if os.getenv('AGENTLOG_SCREENSHOT'):page.screenshot(path=str(pathlib.Path(os.environ['AGENTLOG_SCREENSHOT']).with_name('ui-archive-mobile.png')))
    page.locator('#archivedelete').click();expect(page.locator('#archivejob h2')).to_have_text('Archive complete',timeout=30000)
    expect(page.locator('.archive-row')).to_have_count(2);assert api('/api/stats')['events']==3
    if os.getenv('AGENTLOG_TEST_LEGACY'):
@@ -60,7 +65,7 @@ with tempfile.TemporaryDirectory() as folder:
    expect(page.locator('#archivejob h2')).to_have_text('Archive complete',timeout=30000);expect(page.get_by_text('No inactive folders',exact=True)).to_be_visible()
    assert api('/api/stats')['events']==1
    api('/v1/logs',{'resourceLogs':logs});assert api('/api/stats')['events']==1
-   page.goto(base);expect(page.locator('.session')).to_have_count(1);assert page.locator('[data-source]').count()==0;assert page.locator('#refresh').count()==0
+   page.keyboard.press('Escape');expect(page.locator('#archivepanel')).not_to_be_visible();page.goto(base+'/archive');expect(page.locator('#archivepanel')).to_be_visible();page.keyboard.press('Escape');page.goto(base);expect(page.locator('.session')).to_have_count(1);assert page.locator('[data-source]').count()==0;assert page.locator('#refresh').count()==0
    assert not errors,errors;browser.close()
  finally:server.terminate();server.wait(timeout=20)
 print('PASS: folder/mixed-agent/multiple/unassigned selection, active-session protection, pushed progress, no refresh/polling, ZIP SHA/CRC, explicit deletion, replay suppression and mobile')
