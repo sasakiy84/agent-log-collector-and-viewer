@@ -13,6 +13,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 type exportManifest struct {
@@ -207,6 +208,7 @@ func TestExportUsesOneSnapshotWhileIngestionContinues(t *testing.T) {
 
 func TestCancelledExportIsNotFinalizedAndReleasesReader(t *testing.T) {
 	a := setup(t)
+	a.readers.SetMaxOpenConns(1)
 	save(t, a, recorded(t, "one", "otel", "codex", "one", "user_prompt", map[string]any{"prompt": "hello"}))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -221,7 +223,12 @@ func TestCancelledExportIsNotFinalizedAndReleasesReader(t *testing.T) {
 	if _, err := zip.NewReader(bytes.NewReader(writer.Body.Bytes()), int64(writer.Body.Len())); err == nil {
 		t.Fatal("cancelled export became a valid partial ZIP")
 	}
-	if inUse := a.readers.Stats().InUse; inUse != 0 {
-		t.Fatal("cancelled export leaked its reader", inUse)
+	// database/sql may finish context-triggered rollback asynchronously. With
+	// just one reader, a real subsequent query proves the connection is usable.
+	readCtx, readCancel := context.WithTimeout(context.Background(), time.Second)
+	defer readCancel()
+	var one int
+	if err := a.readers.QueryRowContext(readCtx, "SELECT 1").Scan(&one); err != nil || one != 1 {
+		t.Fatal("cancelled export prevented subsequent browsing", one, err)
 	}
 }
