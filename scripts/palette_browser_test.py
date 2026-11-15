@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Palette semantics, contrast and scroll visibility on desktop/mobile. Synthetic data."""
+"""Neutral panels, one accent, icons, contrast and scroll visibility on desktop/mobile. Synthetic data."""
 import json
 import os
 import socket
@@ -72,11 +72,19 @@ with tempfile.TemporaryDirectory() as folder:
             assert abs(page.locator(".tablehead").bounding_box()["y"] - page.locator(".topbar").bounding_box()["height"]) < 1
             page.goto(base + "/sessions/codex%3Apalette?page=1")
             expect(page.locator(".event")).to_have_count(85)
-            tones = {}
+            tones, icons = {}, {}
             for kind in ("user", "assistant", "tool", "model", "skill", "metric"):
                 heading = page.locator(f".event.{kind}:not(.error) .eventheading").first
                 tones[kind] = heading.evaluate("el=>getComputedStyle(el).backgroundColor")
-            assert len(set(tones.values())) == len(tones), tones
+                icons[kind] = heading.evaluate("el=>getComputedStyle(el,'::before').maskImage")
+            assert len(set(tones.values())) == 1, tones
+            assert len(set(icons.values())) == len(icons) and all(value != "none" for value in icons.values()), icons
+            for name in ('user-round', 'bot', 'wrench', 'gauge', 'chart-column', 'book-open', 'network', 'file-text'):
+                response = page.request.get(base + '/icons/' + name + '.svg')
+                assert response.status == 200 and '<svg' in response.text(), name
+            for selector in (".eventheading", ".inspectorheader", ".toolpair-heading"):
+                for node in page.locator(selector).all():
+                    assert node.evaluate("el=>getComputedStyle(el).borderLeftWidth") in ("0px", "1px")
             failed = page.locator(".event.error").nth(3)
             failed.evaluate("el=>el.scrollIntoView({block:'start'})")
             toolbar = page.locator(".logbar").bounding_box()
@@ -99,13 +107,14 @@ with tempfile.TemporaryDirectory() as folder:
               });
             }""")
             assert not failures, failures
-            # A primitive-token change updates multiple components without reload.
-            before = page.locator(".event.user .eventheading").first.evaluate("el=>getComputedStyle(el).backgroundColor")
-            page.evaluate("document.documentElement.style.setProperty('--indigo-3',getComputedStyle(document.documentElement).getPropertyValue('--indigo-4'))")
-            changed = page.locator(".event.user .eventheading").first.evaluate("el=>getComputedStyle(el).backgroundColor")
+            # One accent controls interactions; event headings stay neutral.
+            before = page.locator('.logbar [data-kind=""].active').evaluate("el=>getComputedStyle(el).color")
+            background = page.locator(".event.user .eventheading").first.evaluate("el=>getComputedStyle(el).backgroundColor")
+            page.evaluate("document.documentElement.style.setProperty('--accent','#233b8b')")
+            changed = page.locator('.logbar [data-kind=""].active').evaluate("el=>getComputedStyle(el).color")
             assert changed != before
-            assert page.locator('.logbar [data-kind=""].active').evaluate("el=>getComputedStyle(el).backgroundColor") == changed
-            page.evaluate("document.documentElement.style.removeProperty('--indigo-3')")
+            assert page.locator(".event.user .eventheading").first.evaluate("el=>getComputedStyle(el).backgroundColor") == background
+            page.evaluate("document.documentElement.style.removeProperty('--accent')")
             output = Path(os.getenv("AGENTLOG_SCREENSHOT_DIR", folder))
             output.mkdir(parents=True, exist_ok=True)
             page.screenshot(path=str(output / "ui-palette-scroll.png"))
@@ -127,4 +136,4 @@ with tempfile.TemporaryDirectory() as folder:
     finally:
         server.terminate()
         server.wait(timeout=20)
-print("PASS: distinct semantic tones, AA text contrast, CSS-variable propagation, sticky list/filters, unobscured drawer, fixed inspector header and mobile widths")
+print("PASS: neutral panel surfaces, one accent, distinct monochrome icons, AA text contrast, sticky list/filters, unobscured drawer, fixed inspector header and mobile widths")

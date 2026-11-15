@@ -222,8 +222,8 @@ input[type=search] {
   align-items:center;
   border-top:1px solid var(--line);
   border-bottom:1px solid var(--line);
-  padding:8px 0;
-  margin-top:14px;
+  padding:6px 0;
+  margin-top:12px;
   gap:12px;
 }
 .logbar label {
@@ -1329,8 +1329,8 @@ html {
   scroll-padding-top: calc(var(--appbar-height) + 12px);
 }
 ::selection {
-  color: var(--indigo-12);
-  background: var(--indigo-5);
+  color: var(--text);
+  background: var(--accent-fill);
 }
 .topbar {
   position: sticky;
@@ -1339,7 +1339,6 @@ html {
   height: var(--appbar-height);
   background: var(--surface);
   border-color: var(--border);
-  box-shadow: var(--sticky-shadow);
 }
 .tablehead,
 .skill-tablehead {
@@ -1349,32 +1348,12 @@ html {
   background: var(--surface);
   border-color: var(--border);
 }
-.session,
-.folder,
-.skill-row,
-.archive-row {
-  background: var(--surface);
-}
-:is(.session, .folder, .skill-row, .archive-row):nth-child(even) {
-  background: var(--surface-alt);
-}
-:is(.session, .folder, .skill-row, .archive-row):hover {
-  background: var(--accent-fill);
-}
-:is(.session, .folder) .source {
-  justify-self: start;
-  padding: 3px 6px;
-  border-radius: 4px;
-  color: var(--text-secondary);
-  background: var(--surface-muted);
-}
 .logbar {
   position: sticky;
   top: var(--appbar-height);
   z-index: 10;
   background: var(--surface);
   border-color: var(--border);
-  box-shadow: var(--sticky-shadow);
 }
 .event,
 #pageinfo,
@@ -1385,7 +1364,6 @@ html {
 #inspector {
   top: calc(var(--appbar-height) + var(--timeline-toolbar-height) + 12px);
   max-height: calc(100dvh - var(--appbar-height) - var(--timeline-toolbar-height) - 24px);
-  box-shadow: var(--panel-shadow);
 }
 .pagination {
   background: var(--surface);
@@ -1396,200 +1374,55 @@ html {
   scrollbar-color: var(--scroll-thumb) var(--surface-muted);
 }
 
-/* One semantic tone per event, shared by cards, previews and the inspector. */
-:where(.event, .preview-entry, #inspector, .toolpair) {
-  --event-fill: var(--slate-3);
-  --event-surface: var(--slate-2);
-  --event-border: var(--slate-6);
-  --event-mark: var(--slate-11);
-  --event-ink: var(--slate-12);
+/* A single neutral icon identifies each panel; accent marks interaction. */
+:where(.event, .preview-entry, #inspector) {
+  --panel-icon: url('/icons/file-text.svg');
 }
 :where(.event.user, .preview-entry.user, #inspector[data-kind="user"]) {
-  --event-fill: var(--indigo-3);
-  --event-surface: var(--indigo-2);
-  --event-border: var(--indigo-6);
-  --event-mark: var(--indigo-11);
-  --event-ink: var(--indigo-12);
+  --panel-icon: url('/icons/user-round.svg');
 }
-:where(.event.assistant, .event.agent, .preview-entry.assistant, .preview-entry.agent, #inspector[data-kind="assistant"], #inspector[data-kind="agent"]) {
-  --event-fill: var(--teal-3);
-  --event-surface: var(--teal-2);
-  --event-border: var(--teal-6);
-  --event-mark: var(--teal-11);
-  --event-ink: var(--teal-12);
+:where(.event.assistant, .preview-entry.assistant, #inspector[data-kind="assistant"]) {
+  --panel-icon: url('/icons/bot.svg');
 }
-:where(.event.tool, .preview-entry.tool, #inspector[data-kind="tool"], .toolpair) {
-  --event-fill: var(--violet-3);
-  --event-surface: var(--violet-2);
-  --event-border: var(--violet-6);
-  --event-mark: var(--violet-11);
-  --event-ink: var(--violet-12);
+:where(.event.tool, .preview-entry.tool, #inspector[data-kind="tool"]) {
+  --panel-icon: url('/icons/wrench.svg');
 }
 :where(.event.model, .preview-entry.model, #inspector[data-kind="model"]) {
-  --event-fill: var(--amber-3);
-  --event-surface: var(--amber-2);
-  --event-border: var(--amber-6);
-  --event-mark: var(--amber-11);
-  --event-ink: var(--amber-12);
+  --panel-icon: url('/icons/gauge.svg');
 }
 :where(.event.metric, .preview-entry.metric, #inspector[data-kind="metric"]) {
-  --event-fill: var(--cyan-3);
-  --event-surface: var(--cyan-2);
-  --event-border: var(--cyan-6);
-  --event-mark: var(--cyan-11);
-  --event-ink: var(--cyan-12);
+  --panel-icon: url('/icons/chart-column.svg');
 }
 :where(.event.skill, .preview-entry.skill, #inspector[data-kind="skill"]) {
-  --event-fill: var(--plum-3);
-  --event-surface: var(--plum-2);
-  --event-border: var(--plum-6);
-  --event-mark: var(--plum-11);
-  --event-ink: var(--plum-12);
+  --panel-icon: url('/icons/book-open.svg');
 }
-:where(.event.error, .preview-entry.error, #inspector[data-error="true"], .toolpair.error) {
-  --event-fill: var(--failure-fill);
-  --event-surface: var(--failure-surface);
-  --event-border: var(--failure-border);
-  --event-mark: var(--failure);
-  --event-ink: var(--failure-ink);
+:where(.event.agent, .preview-entry.agent, #inspector[data-kind="agent"]) {
+  --panel-icon: url('/icons/network.svg');
 }
-.event {
-  border-color: var(--event-border);
-  border-left: 3px solid var(--event-mark);
-  padding: 10px 12px;
-  background: var(--surface);
+.eventheading::before,
+.preview-heading::before,
+.inspectorheading h2::before {
+  content: '';
+  display: inline-block;
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
+  background: var(--muted);
+  mask: var(--panel-icon) center / contain no-repeat;
+  vertical-align: -2px;
 }
-.event:hover {
-  border-color: var(--event-mark);
-}
-.event.selected {
-  border-color: var(--accent-solid);
-  border-left-color: var(--event-mark);
-  background: var(--surface);
-  box-shadow: 0 0 0 1px var(--accent-solid);
-}
-.eventheading,
-.preview-heading {
-  padding: 6px 8px;
-  margin: -2px -4px 8px;
-  border-radius: 3px;
-  color: var(--event-ink);
-  background: var(--event-fill);
-}
-.eventheading .kind {
-  color: var(--event-ink);
-}
-.eventheading time,
-.preview-heading time {
-  color: var(--text-secondary);
-}
-.inspectorheader {
-  border-top: 3px solid var(--event-mark);
-  background: var(--event-surface);
-}
-.inspectorheading h2 {
-  color: var(--event-ink);
-}
-.inspectortabs {
-  background: var(--event-surface);
-}
-.inspectortabs [aria-selected="true"] {
-  color: var(--event-ink);
-  background: var(--event-fill);
-  box-shadow: inset 0 -2px var(--event-mark);
-}
-.preview-entry {
-  border: 1px solid var(--event-border);
-  border-left: 3px solid var(--event-mark);
-  border-radius: 5px;
-  background: var(--surface);
-  padding: 10px;
-  margin-bottom: 8px;
-}
-.toolpair-heading {
-  padding: 8px;
-  border-left: 3px solid var(--event-mark);
-  color: var(--event-ink);
-  background: var(--event-fill);
-}
-.failed {
-  color: var(--failure-ink);
-  background: var(--failure-fill);
-}
-.succeeded {
-  color: var(--success-ink);
-  background: var(--success-fill);
-}
-#error,
-#loginerror,
-.danger,
-.usage-error {
-  color: var(--failure-ink);
-}
-.primary {
-  background: var(--accent-solid);
-  color: var(--on-accent);
-}
-.primary:hover {
-  background: var(--accent-hover);
-}
-.subagent-link,
-.event-skills a,
-.session-skill {
-  padding: 3px 6px;
-  border-radius: 4px;
-}
-.subagent-link {
-  color: var(--teal-12);
-  background: var(--teal-3);
-}
-.event-skills a,
-.session-skill {
-  color: var(--plum-12);
-  background: var(--plum-3);
-  border-color: var(--plum-7);
-}
-.logbar [data-kind="tool"] {
-  color: var(--violet-11);
-}
-.logbar [data-kind="tool"].active {
-  color: var(--violet-12);
-  background: var(--violet-3);
-}
-.logbar [data-kind="error"] {
-  color: var(--failure);
-}
-.logbar [data-kind="error"].active {
-  color: var(--failure-ink);
-  background: var(--failure-fill);
-}
-.logbar [data-kind="metric"] {
-  color: var(--cyan-11);
-}
-.logbar [data-kind="metric"].active {
-  color: var(--cyan-12);
-  background: var(--cyan-3);
-}
-.logbar [data-kind="skill"] {
-  color: var(--plum-11);
-}
-.logbar [data-kind="skill"].active {
-  color: var(--plum-12);
-  background: var(--plum-3);
+.inspectorheading h2::before {
+  margin-right: 7px;
 }
 @media (max-width: 900px) {
   #inspector {
     top: 0;
     max-height: none;
-    box-shadow: none;
   }
 }
 @media (max-width: 720px) {
   :root {
     --appbar-height: 46px;
-  }
-  .event {
-    padding: 10px;
   }
 }
 @media (max-width: 400px) {
