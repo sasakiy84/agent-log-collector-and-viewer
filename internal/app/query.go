@@ -20,6 +20,9 @@ type SessionSummary struct {
 	Usage   UsageSummary `json:"usage"`
 }
 type SessionPage struct {
+	TotalCount int    `json:"total_count,omitempty"`
+	View       string `json:"view,omitempty"`
+	Kind       string `json:"kind,omitempty"`
 	SessionSummary
 	Offset   int             `json:"offset"`
 	Limit    int             `json:"limit"`
@@ -53,6 +56,10 @@ func sessionFilter(r *http.Request) (string, []any, error) {
 			query += ` AND s.session IN (SELECT d.session FROM event_search CROSS JOIN search_documents d ON d.rowid=event_search.rowid WHERE event_search MATCH ? GROUP BY d.session)`
 			args = append(args, match)
 		}
+	}
+	if r.URL.Query().Has("project") {
+		query += " AND s.project_key=?"
+		args = append(args, r.URL.Query().Get("project"))
 	}
 	if r.URL.Query().Has("folder") {
 		query += " AND " + directoryColumn + "=?"
@@ -134,6 +141,11 @@ func eventOrigin(r *http.Request) (string, bool) {
 	return origin, origin == "" || origin == "import" || origin == "otel"
 }
 func (a *App) session(w http.ResponseWriter, r *http.Request) {
+	filter, err := parseEventFilter(r.URL.Query().Get("view"), r.URL.Query().Get("kind"))
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
 	origin, ok := eventOrigin(r)
 	if !ok {
 		http.Error(w, "Invalid event origin", 400)
@@ -175,6 +187,16 @@ func (a *App) session(w http.ResponseWriter, r *http.Request) {
 		databaseError(w, r, err)
 		return
 	}
+	if r.URL.Query().Get("view") != "" || filter.Kind != "" {
+		page.TotalCount = page.Count
+		page.View = r.URL.Query().Get("view")
+		page.Kind = filter.Kind
+		page.Count, err = filteredTimelineCount(r.Context(), tx, id, origin, filter)
+		if err != nil {
+			databaseError(w, r, err)
+			return
+		}
+	}
 	page.Offset = offset(r)
 	page.Limit = 200
 	if raw := r.URL.Query().Get("limit"); raw != "" {
@@ -197,7 +219,7 @@ func (a *App) session(w http.ResponseWriter, r *http.Request) {
 		order = timelineLatest
 		size = page.Count - page.Offset
 	}
-	page.Events, err = readTimeline(r.Context(), tx, id, origin, size, page.Offset, order)
+	page.Events, err = readFilteredTimeline(r.Context(), tx, id, origin, size, page.Offset, order, filter)
 	if err != nil {
 		databaseError(w, r, err)
 		return
@@ -243,6 +265,10 @@ func (a *App) session(w http.ResponseWriter, r *http.Request) {
 		err = attachSkills(r.Context(), tx, page.Events)
 	}
 	if err != nil {
+		databaseError(w, r, err)
+		return
+	}
+	if err = attachModelCalls(r.Context(), tx, page.Events, origin); err != nil {
 		databaseError(w, r, err)
 		return
 	}
@@ -326,6 +352,10 @@ func (a *App) event(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	linked := []TimelineEvent{event}
+	if err = attachModelCalls(r.Context(), tx, linked, origin); err != nil {
+		databaseError(w, r, err)
+		return
+	}
 	if err = attachSubagents(r.Context(), tx, linked); err != nil {
 		databaseError(w, r, err)
 		return
