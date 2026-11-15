@@ -124,21 +124,11 @@ func sessionDirectory(ctx context.Context, tx *sql.Tx, session string) (string, 
 	}
 }
 
-// Populate folder metadata once for existing indexed sessions. The upgrade
-// reads narrow summaries and one indexed directory candidate per session.
-func (a *App) initDirectoryIndex() error {
-	tx, err := a.DB.Begin()
+// Backfill folder summaries in bounded, resumable session-key batches.
+func backfillDirectories(ctx context.Context, tx *sql.Tx, cursor string) (string, int, error) {
+	rows, err := tx.QueryContext(ctx, "SELECT session FROM session_catalog WHERE session>? ORDER BY session LIMIT 128", cursor)
 	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	var version int
-	if err = tx.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version >= 1 {
-		return err
-	}
-	rows, err := tx.Query("SELECT session FROM session_catalog")
-	if err != nil {
-		return err
+		return cursor, 0, err
 	}
 	sessions := []string{}
 	for rows.Next() {
@@ -151,19 +141,17 @@ func (a *App) initDirectoryIndex() error {
 	rowErr := rows.Err()
 	rows.Close()
 	if err != nil || rowErr != nil {
-		return errors.Join(err, rowErr)
+		return cursor, 0, errors.Join(err, rowErr)
 	}
 	for _, session := range sessions {
-		folder, e := sessionDirectory(context.Background(), tx, session)
-		if e != nil {
-			return e
+		folder, err := sessionDirectory(ctx, tx, session)
+		if err != nil {
+			return cursor, 0, err
 		}
-		if _, err = tx.Exec("UPDATE session_catalog SET preview=json_set(preview,'$.cwd',?) WHERE session=?", folder, session); err != nil {
-			return err
+		if _, err = tx.ExecContext(ctx, "UPDATE session_catalog SET preview=json_set(preview,'$.cwd',?) WHERE session=?", folder, session); err != nil {
+			return cursor, 0, err
 		}
+		cursor = session
 	}
-	if _, err = tx.Exec("PRAGMA user_version=1"); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return cursor, len(sessions), nil
 }

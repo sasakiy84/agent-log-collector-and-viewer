@@ -5,73 +5,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"log"
 	"strings"
 	"unicode/utf8"
 )
 
 // Raw payloads stay in events. These bounded presentations and indexed timeline
 // rows are rebuilt transactionally on ingestion, never on an ordinary GET.
-const readModelSchema = `
-CREATE TABLE IF NOT EXISTS event_cards(
- id TEXT PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,session TEXT NOT NULL,origin TEXT NOT NULL,
- source TEXT NOT NULL,parent TEXT NOT NULL,time TEXT NOT NULL,sequence INTEGER NOT NULL,is_user INTEGER NOT NULL,
- signal TEXT NOT NULL,trace TEXT NOT NULL,span TEXT NOT NULL,parent_span TEXT NOT NULL,detail BLOB NOT NULL);
-CREATE INDEX IF NOT EXISTS cards_page ON event_cards(session,origin,time,sequence,id);
-CREATE INDEX IF NOT EXISTS cards_preview ON event_cards(session,origin,is_user DESC,time,sequence,id);
-CREATE INDEX IF NOT EXISTS cards_directory ON event_cards(session,is_user DESC,time,sequence,id) WHERE json_type(detail,'$.cwd')='text' AND json_extract(detail,'$.cwd')<>'';
-CREATE TABLE IF NOT EXISTS timeline_entries(
- id TEXT PRIMARY KEY,session TEXT NOT NULL,source TEXT NOT NULL,parent TEXT NOT NULL,time TEXT NOT NULL,
- end TEXT NOT NULL,sequence INTEGER NOT NULL,is_user INTEGER NOT NULL,import_id TEXT NOT NULL,otel_id TEXT NOT NULL);
-CREATE INDEX IF NOT EXISTS timeline_page ON timeline_entries(session,time,sequence,id);
-CREATE INDEX IF NOT EXISTS timeline_preview ON timeline_entries(session,is_user DESC,time,sequence,id);
-CREATE UNIQUE INDEX IF NOT EXISTS timeline_pair_otel ON timeline_entries(otel_id) WHERE import_id<>'' AND otel_id<>'';
-CREATE INDEX IF NOT EXISTS timeline_end ON timeline_entries(session,end DESC);
-CREATE TABLE IF NOT EXISTS card_counts(session TEXT NOT NULL,origin TEXT NOT NULL,source TEXT NOT NULL,parent TEXT NOT NULL,count INTEGER NOT NULL,PRIMARY KEY(session,origin,source,parent)) WITHOUT ROWID;
-CREATE TABLE IF NOT EXISTS timeline_counts(session TEXT PRIMARY KEY,count INTEGER NOT NULL);
-CREATE TRIGGER IF NOT EXISTS card_count_insert AFTER INSERT ON event_cards BEGIN
- INSERT INTO card_counts VALUES(NEW.session,NEW.origin,NEW.source,NEW.parent,1) ON CONFLICT(session,origin,source,parent) DO UPDATE SET count=count+1;END;
-CREATE TRIGGER IF NOT EXISTS card_count_delete AFTER DELETE ON event_cards BEGIN
- UPDATE card_counts SET count=count-1 WHERE session=OLD.session AND origin=OLD.origin AND source=OLD.source AND parent=OLD.parent;
- DELETE FROM card_counts WHERE session=OLD.session AND origin=OLD.origin AND source=OLD.source AND parent=OLD.parent AND count=0;END;
-CREATE TRIGGER IF NOT EXISTS card_count_update AFTER UPDATE ON event_cards BEGIN
- UPDATE card_counts SET count=count-1 WHERE session=OLD.session AND origin=OLD.origin AND source=OLD.source AND parent=OLD.parent;
- DELETE FROM card_counts WHERE session=OLD.session AND origin=OLD.origin AND source=OLD.source AND parent=OLD.parent AND count=0;
- INSERT INTO card_counts VALUES(NEW.session,NEW.origin,NEW.source,NEW.parent,1) ON CONFLICT(session,origin,source,parent) DO UPDATE SET count=count+1;END;
-CREATE TRIGGER IF NOT EXISTS timeline_count_insert AFTER INSERT ON timeline_entries BEGIN
- INSERT INTO timeline_counts VALUES(NEW.session,1) ON CONFLICT(session) DO UPDATE SET count=count+1;END;
-CREATE TRIGGER IF NOT EXISTS timeline_count_delete AFTER DELETE ON timeline_entries BEGIN
- UPDATE timeline_counts SET count=count-1 WHERE session=OLD.session;
- DELETE FROM timeline_counts WHERE session=OLD.session AND count=0;END;
-CREATE TABLE IF NOT EXISTS session_catalog(
- session TEXT PRIMARY KEY,source TEXT NOT NULL,parent TEXT NOT NULL,count INTEGER NOT NULL,start TEXT NOT NULL,end TEXT NOT NULL,
- import_count INTEGER NOT NULL,import_start TEXT NOT NULL,import_end TEXT NOT NULL,
- otel_count INTEGER NOT NULL,otel_start TEXT NOT NULL,otel_end TEXT NOT NULL,preview BLOB NOT NULL);
-CREATE INDEX IF NOT EXISTS catalog_recent ON session_catalog(end DESC,session);
-CREATE INDEX IF NOT EXISTS catalog_source_recent ON session_catalog(source,end DESC,session);
-CREATE INDEX IF NOT EXISTS catalog_children ON session_catalog(parent,session);
-CREATE INDEX IF NOT EXISTS catalog_directory_recent ON session_catalog(COALESCE(json_extract(preview,'$.cwd'),''),end DESC,session);
-CREATE TABLE IF NOT EXISTS read_model_dirty(session TEXT NOT NULL,id TEXT NOT NULL,PRIMARY KEY(session,id)) WITHOUT ROWID;
-CREATE TABLE IF NOT EXISTS cards_dirty(id TEXT PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE);
-CREATE TRIGGER IF NOT EXISTS read_model_neighbors_UPDATE BEFORE UPDATE ON events WHEN EXISTS(SELECT 1 FROM event_keys WHERE event_id=OLD.id) BEGIN
- INSERT INTO read_model_dirty SELECT e.session,e.id FROM event_keys old JOIN event_keys neighbor ON neighbor.key=old.key
- JOIN events e ON e.id=neighbor.event_id WHERE old.event_id=OLD.id AND e.session=OLD.session AND e.source=OLD.source
- ON CONFLICT DO NOTHING;END;
-CREATE TRIGGER IF NOT EXISTS read_model_neighbors_DELETE BEFORE DELETE ON events WHEN EXISTS(SELECT 1 FROM event_keys WHERE event_id=OLD.id) BEGIN
- INSERT INTO read_model_dirty SELECT e.session,e.id FROM event_keys old JOIN event_keys neighbor ON neighbor.key=old.key
- JOIN events e ON e.id=neighbor.event_id WHERE old.event_id=OLD.id AND e.session=OLD.session AND e.source=OLD.source
- ON CONFLICT DO NOTHING;END;
-CREATE TRIGGER IF NOT EXISTS read_model_insert AFTER INSERT ON events BEGIN
- INSERT INTO read_model_dirty VALUES(NEW.session,NEW.id) ON CONFLICT DO NOTHING;
- INSERT INTO cards_dirty VALUES(NEW.id) ON CONFLICT DO NOTHING;END;
-CREATE TRIGGER IF NOT EXISTS read_model_update AFTER UPDATE ON events BEGIN
- INSERT INTO read_model_dirty VALUES(OLD.session,OLD.id) ON CONFLICT DO NOTHING;
- INSERT INTO read_model_dirty VALUES(NEW.session,NEW.id) ON CONFLICT DO NOTHING;
- INSERT INTO cards_dirty VALUES(NEW.id) ON CONFLICT DO NOTHING;END;
-CREATE TRIGGER IF NOT EXISTS read_model_delete AFTER DELETE ON events BEGIN
- INSERT INTO read_model_dirty VALUES(OLD.session,OLD.id) ON CONFLICT DO NOTHING;END;
-`
 
 func clip(s string, n int) string {
 	if len(s) <= n {
@@ -179,160 +118,52 @@ func storeCard(ctx context.Context, tx *sql.Tx, e Event, d Detail, doc document)
 }
 func refreshCards(ctx context.Context, tx *sql.Tx) error {
 	for {
-		rows, err := tx.QueryContext(ctx, "SELECT "+qualifiedColumns("e")+" FROM cards_dirty d JOIN events e ON e.id=d.id LIMIT 200")
-		if err != nil {
+		count, err := refreshCardsBatch(ctx, tx)
+		if err != nil || count == 0 {
 			return err
-		}
-		batch := []Event{}
-		size := 0
-		for rows.Next() {
-			e, eErr := scanEvent(rows)
-			if eErr != nil {
-				err = eErr
-				break
-			}
-			batch = append(batch, e)
-			size += len(e.Raw)
-			if size >= 8<<20 {
-				break
-			}
-		}
-		rowErr := rows.Err()
-		rows.Close()
-		if err != nil || rowErr != nil {
-			return errors.Join(err, rowErr)
-		}
-		if len(batch) == 0 {
-			return nil
-		}
-		for _, e := range batch {
-			doc, err := decodeDocument(e.Raw)
-			if err != nil {
-				return err
-			}
-			if err = storeCard(ctx, tx, e, describe(e, doc), doc); err != nil {
-				return err
-			}
-			if err = storeSearch(ctx, tx, e, doc); err != nil {
-				return err
-			}
 		}
 	}
 }
-func (a *App) initReadModel() error {
-	if _, err := a.DB.Exec(readModelSchema); err != nil {
-		return err
-	}
-	if _, err := a.DB.Exec(skillSchema); err != nil {
-		return err
-	}
-	if _, err := a.DB.Exec(subagentSchema); err != nil {
-		return err
-	}
-	if _, err := a.DB.Exec(usageSchema); err != nil {
-		return err
-	}
-	if _, err := a.DB.Exec(intervalSchema()); err != nil {
-		return err
-	}
-	tx, err := a.DB.Begin()
+func refreshCardsBatch(ctx context.Context, tx *sql.Tx) (int, error) {
+	batch, err := loadEventBatch(ctx, tx, "SELECT "+qualifiedColumns("e")+" FROM cards_dirty d JOIN events e ON e.id=d.id LIMIT 200")
 	if err != nil {
-		return err
+		return 0, err
 	}
-	_, err = tx.Exec(`INSERT OR IGNORE INTO cards_dirty SELECT e.id FROM events e LEFT JOIN event_cards c ON c.id=e.id WHERE c.id IS NULL;
- INSERT OR IGNORE INTO read_model_dirty SELECT e.session,e.id FROM events e JOIN cards_dirty d ON d.id=e.id;`)
-	if err == nil {
-		err = tx.Commit()
-	} else {
-		tx.Rollback()
-	}
-	if err != nil {
-		return err
-	}
-	var remaining int
-	if err = a.DB.QueryRow("SELECT COUNT(*) FROM cards_dirty").Scan(&remaining); err != nil {
-		return err
-	}
-	if remaining > 0 {
-		log.Printf("Preparing indexed session views for %d existing records (one-time upgrade)", remaining)
-	}
-	// Commit bounded batches so a restart can continue an interrupted upgrade.
-	for remaining > 0 {
-		tx, err = a.DB.Begin()
+	for _, e := range batch {
+		doc, err := decodeDocument(e.Raw)
 		if err != nil {
-			return err
+			return 0, err
 		}
-		rows, e := tx.Query("SELECT " + qualifiedColumns("e") + " FROM cards_dirty d JOIN events e ON e.id=d.id LIMIT 200")
-		if e != nil {
-			tx.Rollback()
-			return e
+		if err = storeCard(ctx, tx, e, describe(e, doc), doc); err != nil {
+			return 0, err
 		}
-		batch := []Event{}
-		size := 0
-		for rows.Next() {
-			record, e := scanEvent(rows)
-			if e != nil {
-				err = e
-				break
-			}
-			batch = append(batch, record)
-			size += len(record.Raw)
-			if size >= 8<<20 {
-				break
-			}
-		}
-		rowErr := rows.Err()
-		rows.Close()
-		if err != nil || rowErr != nil {
-			tx.Rollback()
-			return errors.Join(err, rowErr)
-		}
-		for _, record := range batch {
-			doc, e := decodeDocument(record.Raw)
-			if e != nil {
-				err = e
-				break
-			}
-			if err = storeCard(context.Background(), tx, record, describe(record, doc), doc); err != nil {
-				break
-			}
-			if err = storeSearch(context.Background(), tx, record, doc); err != nil {
-				break
-			}
-		}
-		if err == nil {
-			err = tx.Commit()
-		} else {
-			tx.Rollback()
-		}
-		if err != nil {
-			return err
-		}
-		remaining -= len(batch)
-		if len(batch) == 0 {
-			return fmt.Errorf("presentation backfill made no progress")
+		if err = storeSearch(ctx, tx, e, doc); err != nil {
+			return 0, err
 		}
 	}
+	return len(batch), nil
+}
+
+func (a *App) prepareReadModel(ctx context.Context) error {
+	if err := a.drainBatches(ctx, "session cards", refreshCardsBatch); err != nil {
+		return err
+	}
+	if err := inTransaction(ctx, a.DB, func(tx *sql.Tx) error { return clearChangedTimelineEntries(ctx, tx) }); err != nil {
+		return err
+	}
+	var err error
 	// Timeline upgrades also commit one session at a time. Completed sessions
 	// leave the durable dirty queue, so a restart does not repeat the entire job.
 	for {
 		var session string
 		err = a.DB.QueryRow("SELECT session FROM read_model_dirty d WHERE NOT EXISTS(SELECT 1 FROM archive_locks l WHERE l.session=d.session) LIMIT 1").Scan(&session)
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil
+			return inTransaction(ctx, a.DB, func(tx *sql.Tx) error { return refreshUsage(ctx, tx) })
 		}
 		if err != nil {
 			return err
 		}
-		tx, err = a.DB.Begin()
-		if err != nil {
-			return err
-		}
-		if err = refreshTimeline(context.Background(), tx, session); err == nil {
-			err = tx.Commit()
-		} else {
-			tx.Rollback()
-		}
+		err = inTransaction(ctx, a.DB, func(tx *sql.Tx) error { return refreshTimeline(ctx, tx, session) })
 		if err != nil {
 			return err
 		}
@@ -359,7 +190,7 @@ func refreshTimelines(ctx context.Context, tx *sql.Tx) error {
 	}
 	// A moved event may otherwise collide with its old session's view ID when
 	// the destination sorts before the source. Remove changed representatives first.
-	if _, err = tx.ExecContext(ctx, "DELETE FROM timeline_entries WHERE id IN (SELECT d.id FROM read_model_dirty d WHERE NOT EXISTS(SELECT 1 FROM archive_locks l WHERE l.session=d.session))"); err != nil {
+	if err = clearChangedTimelineEntries(ctx, tx); err != nil {
 		return err
 	}
 	for _, id := range sessions {
@@ -368,6 +199,11 @@ func refreshTimelines(ctx context.Context, tx *sql.Tx) error {
 		}
 	}
 	return refreshUsage(ctx, tx)
+}
+
+func clearChangedTimelineEntries(ctx context.Context, tx *sql.Tx) error {
+	_, err := tx.ExecContext(ctx, "DELETE FROM timeline_entries WHERE id IN (SELECT d.id FROM read_model_dirty d WHERE NOT EXISTS(SELECT 1 FROM archive_locks l WHERE l.session=d.session))")
+	return err
 }
 func refreshTimeline(ctx context.Context, tx *sql.Tx, session string) error {
 	var imports, otel int

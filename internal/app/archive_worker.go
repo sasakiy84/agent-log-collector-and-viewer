@@ -61,10 +61,7 @@ func (a *App) archiveWorker() {
 						_, e = tx.Exec("UPDATE archives SET status='failed',error=? WHERE id=? AND status IN ('preparing','deleting','compacting')", archiveFailure(err), job.ID)
 					}
 					if e == nil {
-						e = refreshCards(context.Background(), tx)
-						if e == nil {
-							e = refreshTimelines(context.Background(), tx)
-						}
+						e = refreshProjections(context.Background(), tx)
 						if e == nil {
 							e = tx.Commit()
 						} else {
@@ -85,16 +82,16 @@ func (a *App) archiveWorker() {
 	}
 }
 func (a *App) archiveConnection(ctx context.Context, readOnly bool) (*sql.DB, error) {
-	db, err := sql.Open("sqlite", a.dbPath)
+	uri, err := databaseURI(a.dbPath, readOnly)
+	if err != nil {
+		return nil, err
+	}
+	db, err := sql.Open("sqlite", uri)
 	if err != nil {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	pragma := "PRAGMA busy_timeout=5000;"
-	if readOnly {
-		pragma += "PRAGMA query_only=ON;"
-	}
-	if _, err = db.ExecContext(ctx, pragma); err != nil {
+	if err = db.PingContext(ctx); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -415,7 +412,7 @@ func (a *App) deleteArchive(ctx context.Context, job ArchiveJob) error {
 	if _, err = tx.ExecContext(ctx, "DELETE FROM archive_locks WHERE archive_id=?", job.ID); err != nil {
 		return err
 	}
-	if err = refreshTimelines(ctx, tx); err != nil {
+	if err = refreshProjections(ctx, tx); err != nil {
 		return err
 	}
 	if _, err = tx.ExecContext(ctx, "UPDATE archives SET status='compacting' WHERE id=?", job.ID); err != nil {

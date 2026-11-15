@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"strconv"
-	"strings"
 )
 
 // Exact integer rectangles keep interval lookups indexed even when a large
@@ -26,31 +25,6 @@ func intervalBounds(start, end string) [6]int64 {
 		bounds[3] = 86399
 	}
 	return bounds
-}
-func intervalSchema() string {
-	var sql strings.Builder
-	for _, kind := range []string{"INSERT", "DELETE"} {
-		ref, timing := "NEW", "AFTER"
-		if kind == "DELETE" {
-			ref, timing = "OLD", "BEFORE"
-		}
-		fmt.Fprintf(&sql, "CREATE TRIGGER IF NOT EXISTS usage_interval_%s %s %s ON usage_interval_data BEGIN\n", strings.ToLower(kind), timing, kind)
-		if kind == "INSERT" {
-			fmt.Fprintf(&sql, "INSERT INTO usage_interval_index VALUES(%[1]s.id,%[1]s.stream,%[1]s.stream,%[1]s.min_day,%[1]s.max_day,%[1]s.min_second,%[1]s.max_second,%[1]s.min_nano,%[1]s.max_nano);\n", ref)
-		}
-		fmt.Fprintf(&sql, `INSERT INTO usage_dirty SELECT p.session,p.origin,p.basis,p.group_key FROM usage_interval_index i CROSS JOIN usage_points p ON p.rowid=i.id
- WHERE i.min_stream<=%[1]s.stream AND i.max_stream>=%[1]s.stream AND i.min_day<=%[1]s.max_day AND i.max_day>=%[1]s.min_day
- AND i.min_second<=%[1]s.max_second AND i.max_second>=%[1]s.min_second AND i.min_nano<=%[1]s.max_nano AND i.max_nano>=%[1]s.min_nano
- AND p.start<%[1]s.end AND p.end>%[1]s.start ON CONFLICT DO NOTHING;
-`, ref)
-		if kind == "DELETE" {
-			sql.WriteString("DELETE FROM usage_interval_index WHERE id=OLD.id;\n")
-		}
-		sql.WriteString("END;\n")
-	}
-	sql.WriteString(`CREATE TRIGGER IF NOT EXISTS usage_interval_stream_delete AFTER DELETE ON usage_interval_data BEGIN
- DELETE FROM usage_streams WHERE id=OLD.stream AND NOT EXISTS(SELECT 1 FROM usage_interval_data WHERE stream=OLD.stream);END;`)
-	return sql.String()
 }
 func storeInterval(ctx context.Context, tx *sql.Tx, e Event, u *usagePoint) error {
 	if u.Basis != "metric-delta" || u.Series == "" {

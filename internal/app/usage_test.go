@@ -195,7 +195,7 @@ func TestUsageDecimalPrecisionAndUSDBackfill(t *testing.T) {
 	save(t, a, e)
 	usageWant(t, sessionUsage(t, a, "codex:alias", ""), "cost_usd", "0.000000000000000001")
 	// Rebuild derived usage as an older database would, including usage on ordinary logs.
-	if _, err := a.DB.Exec("DELETE FROM usage_points; DELETE FROM usage_groups; DELETE FROM usage_totals; DELETE FROM usage_summary; UPDATE usage_backfill SET cursor='',complete=0"); err != nil {
+	if _, err := a.DB.Exec("DELETE FROM usage_points; DELETE FROM usage_groups; DELETE FROM usage_totals; DELETE FROM usage_summary; UPDATE maintenance_jobs SET cursor='',complete=0 WHERE name='usage.v1'"); err != nil {
 		t.Fatal(err)
 	}
 	path := a.dbPath
@@ -252,7 +252,7 @@ func TestUsageUpgradeResumesWithoutCountingCompletedPointsTwice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = tx.Exec("DELETE FROM usage_points WHERE id='z'; UPDATE usage_backfill SET cursor='a',complete=0"); err == nil {
+	if _, err = tx.Exec("DELETE FROM usage_points WHERE id='z'; UPDATE maintenance_jobs SET cursor='a',complete=0 WHERE name='usage.v1'"); err == nil {
 		err = refreshUsage(context.Background(), tx)
 	}
 	if err != nil {

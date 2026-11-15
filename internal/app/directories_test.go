@@ -109,7 +109,7 @@ func TestFolderUpgradeRecoversExactLongPathsAndMetadataFallback(t *testing.T) {
 		save(t, a, e)
 	}
 	// Simulate v0.5.3's truncated card metadata and old catalog summaries.
-	if _, err := a.DB.Exec("UPDATE event_cards SET detail=json_set(detail,'$.cwd',?); UPDATE session_catalog SET preview=json_remove(preview,'$.cwd'); PRAGMA user_version=0", clip(prefix, 512)); err != nil {
+	if _, err := a.DB.Exec("UPDATE event_cards SET detail=json_set(detail,'$.cwd',?); UPDATE session_catalog SET preview=json_remove(preview,'$.cwd'); PRAGMA user_version=0; UPDATE maintenance_jobs SET cursor='',complete=0 WHERE name='directories.v1'", clip(prefix, 512)); err != nil {
 		t.Fatal(err)
 	}
 	dbPath := a.dbPath

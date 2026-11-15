@@ -132,7 +132,7 @@ func TestSearchUpgradeAndRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = db.Exec(`DROP TRIGGER search_document_delete;DROP TRIGGER search_event_insert;DROP TRIGGER search_event_update;DROP TABLE search_dirty;DROP TABLE search_documents;DROP TABLE event_search`)
+	_, err = db.Exec(`DROP TABLE schema_migrations; DROP TABLE maintenance_jobs; DROP TRIGGER trace_work_insert; DROP TRIGGER trace_work_update; DROP TRIGGER trace_work_delete; DROP TABLE trace_dirty; DROP TRIGGER search_document_delete;DROP TRIGGER search_event_insert;DROP TRIGGER search_event_update;DROP TABLE search_dirty;DROP TABLE search_documents;DROP TABLE event_search`)
 	db.Close()
 	if err != nil {
 		t.Fatal(err)

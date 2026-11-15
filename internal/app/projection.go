@@ -1,8 +1,23 @@
 package app
 
 import (
+	"context"
+	"database/sql"
 	"strings"
 )
+
+// All write paths publish the same derived state before committing. Trace
+// reassignment dirties cards/search first; timelines and totals depend on them.
+func refreshProjections(ctx context.Context, tx *sql.Tx) error {
+	for _, refresh := range []func(context.Context, *sql.Tx) error{
+		reconcileTraces, refreshCards, refreshSearch, refreshTimelines,
+	} {
+		if err := refresh(ctx, tx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // A pair is accepted only when both originals have exactly one compatible
 // counterpart, so repeated or contradictory identifiers remain visible.

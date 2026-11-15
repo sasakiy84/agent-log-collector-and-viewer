@@ -14,35 +14,6 @@ import (
 )
 
 const archiveConfirmation = "DOWNLOADED"
-const archiveSchema = `
-CREATE TABLE IF NOT EXISTS archived_usage_records(id_hash BLOB NOT NULL,raw_hash BLOB NOT NULL,PRIMARY KEY(id_hash,raw_hash),
- FOREIGN KEY(id_hash,raw_hash) REFERENCES archived_records(id_hash,raw_hash) ON DELETE CASCADE) WITHOUT ROWID;
-CREATE TABLE IF NOT EXISTS session_revisions(session TEXT PRIMARY KEY, revision INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS archives(
- id TEXT PRIMARY KEY,status TEXT NOT NULL,created_at TEXT NOT NULL,cutoff TEXT NOT NULL,
- session_count INTEGER NOT NULL DEFAULT 0,record_count INTEGER NOT NULL DEFAULT 0,raw_bytes INTEGER NOT NULL DEFAULT 0,
- processed_records INTEGER NOT NULL DEFAULT 0,archive_bytes INTEGER NOT NULL DEFAULT 0,sha256 TEXT NOT NULL DEFAULT '',
- verified_at TEXT NOT NULL DEFAULT '',download_at TEXT NOT NULL DEFAULT '',confirmed_at TEXT NOT NULL DEFAULT '',deleted_records INTEGER NOT NULL DEFAULT 0,
- reclaimed_bytes INTEGER NOT NULL DEFAULT 0,database_bytes_before INTEGER NOT NULL DEFAULT 0,error TEXT NOT NULL DEFAULT '',compaction_error TEXT NOT NULL DEFAULT '',rebuild_required INTEGER NOT NULL DEFAULT 0,rebuild_requested INTEGER NOT NULL DEFAULT 0);
-CREATE UNIQUE INDEX IF NOT EXISTS one_active_archive ON archives((1)) WHERE status IN ('preparing','ready','deleting','compacting');
-CREATE TABLE IF NOT EXISTS archive_sessions(
- archive_id TEXT NOT NULL REFERENCES archives(id),session TEXT NOT NULL,source TEXT NOT NULL,
- revision INTEGER NOT NULL,records INTEGER NOT NULL,raw_bytes INTEGER NOT NULL,last_activity TEXT NOT NULL,
- PRIMARY KEY(archive_id,session)) WITHOUT ROWID;
-CREATE TABLE IF NOT EXISTS archive_locks(session TEXT PRIMARY KEY,archive_id TEXT NOT NULL REFERENCES archives(id));
-CREATE TABLE IF NOT EXISTS archived_records(id_hash BLOB NOT NULL,raw_hash BLOB NOT NULL,PRIMARY KEY(id_hash,raw_hash)) WITHOUT ROWID;
-CREATE TRIGGER IF NOT EXISTS archive_insert_guard BEFORE INSERT ON events WHEN EXISTS(SELECT 1 FROM archive_locks WHERE session=NEW.session)
- BEGIN SELECT RAISE(ABORT,'session archive deletion is in progress'); END;
-CREATE TRIGGER IF NOT EXISTS archive_update_guard BEFORE UPDATE ON events WHEN EXISTS(SELECT 1 FROM archive_locks WHERE session IN (OLD.session,NEW.session))
- BEGIN SELECT RAISE(ABORT,'session archive deletion is in progress'); END;
-CREATE TRIGGER IF NOT EXISTS revision_insert AFTER INSERT ON events BEGIN
- INSERT INTO session_revisions VALUES(NEW.session,1) ON CONFLICT(session) DO UPDATE SET revision=revision+1; END;
-CREATE TRIGGER IF NOT EXISTS revision_update AFTER UPDATE ON events BEGIN
- INSERT INTO session_revisions VALUES(OLD.session,1) ON CONFLICT(session) DO UPDATE SET revision=revision+1;
- INSERT INTO session_revisions SELECT NEW.session,1 WHERE NEW.session<>OLD.session ON CONFLICT(session) DO UPDATE SET revision=revision+1; END;
-CREATE TRIGGER IF NOT EXISTS revision_delete AFTER DELETE ON events BEGIN
- INSERT INTO session_revisions VALUES(OLD.session,1) ON CONFLICT(session) DO UPDATE SET revision=revision+1; END;
-`
 
 type ArchiveJob struct {
 	ID               string `json:"id"`

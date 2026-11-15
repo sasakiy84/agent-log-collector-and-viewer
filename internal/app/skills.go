@@ -80,7 +80,7 @@ func (a *App) skills(w http.ResponseWriter, r *http.Request) {
 	}
 	var ready bool
 	if err == nil {
-		err = tx.QueryRowContext(r.Context(), "SELECT complete FROM skill_index_progress WHERE id=1").Scan(&ready)
+		err = tx.QueryRowContext(r.Context(), "SELECT complete FROM maintenance_jobs WHERE name=?", skillsJob).Scan(&ready)
 	}
 	if err == nil {
 		err = tx.Commit()
