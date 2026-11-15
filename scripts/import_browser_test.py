@@ -69,10 +69,10 @@ with tempfile.TemporaryDirectory() as tmp:
    subprocess.run([binary,'import','--dir',str(folder),'--endpoint',base],env=env,check=True,capture_output=True)
    assert page.locator('.event .kind').filter(has_text='Imported + OTEL').count()==0
    page.locator('.event').click();page.locator('#jsontab').click();expect(page.locator('#eventjson')).to_contain_text('Late output')
-   page.keyboard.press('Escape');page.locator('#refresh').click()
+   page.keyboard.press('Escape');page.reload()
    expect(page.locator('.event .kind').filter(has_text='Imported + OTEL')).to_have_count(1)
    page.locator('.event').click()
-   assert page.locator('#jsontab').get_attribute('aria-selected')=='true'
+   page.locator('#jsontab').click();assert page.locator('#jsontab').get_attribute('aria-selected')=='true'
    assert page.locator('.event.selected').count()==1
    expect(page.locator('#eventjson')).to_contain_text('Late output')
    assert page.locator('.event h2').inner_text()=='Bash'

@@ -12,7 +12,7 @@ Click a row to open matching sessions in the selected project. Session headers r
 
 Historical references support structured Read/read_file calls and direct cat/head/tail/sed reads, including quoted paths. Shell control flow, substitutions and redirections are excluded. Stored event content stays unchanged; this is conservative evidence recovery, not an exact historical invocation count.
 
-Existing cached history is indexed in resumable background batches after HTTP startup. New events update the index during ingestion. **Indexing history** indicates that historical totals are still being populated; **Refresh** reloads them. No browser polling is used. Archive deletion removes the corresponding skill evidence.
+Existing cached history is indexed in resumable background batches after HTTP startup. New events update the index during ingestion. **Indexing history** indicates that historical totals are still being populated; Reload the page to update them. No browser polling is used. Archive deletion removes the corresponding skill evidence.
 
 Codex emits skill metadata through its configured log exporter; no additional skill-specific setting is required. The current [Codex implementation](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/otel/src/skill_invocation.rs) defines these fields.
 

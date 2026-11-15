@@ -53,7 +53,7 @@ with tempfile.TemporaryDirectory() as temp:
    page.wait_for_timeout(5500)
    assert not requests,requests
    assert page.locator('.event').count()==5
-   page.locator('#refresh').click()
+   page.reload()
    page.wait_for_function("() => document.querySelector('#timeline').textContent.includes('live update arrived')")
    assert page.locator('.event').count()==6
    assert page.locator('.event .prose').first.inner_text()=='event 200'

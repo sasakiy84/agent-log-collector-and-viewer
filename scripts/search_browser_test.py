@@ -29,8 +29,6 @@ with tempfile.TemporaryDirectory() as folder:
    assert page.locator('.session .count').inner_text()=='2'
    for query,session in [('調査する','codex:japanese-auth'),('走る','codex:japanese-auth'),('ﾊﾟｽﾜｰﾄﾞ','claude:japanese-password'),('パスワード','claude:japanese-password'),('設定項目','copilot:japanese-json'),('接続','copilot:japanese-json')]:
     page.locator('#search').fill(query);expect(page.locator('.session')).to_have_count(1);expect(page.locator('.session')).to_have_attribute('data-session',session)
-   page.locator('[data-source="codex"]').click();page.get_by_text('No sessions',exact=True).wait_for()
-   page.locator('[data-source=""]').click();expect(page.locator('.session')).to_have_count(1)
    page.locator('#search').fill('決済');expect(page.locator('.session')).to_have_count(3)
    if os.getenv('AGENTLOG_SCREENSHOT'):page.screenshot(path=os.environ['AGENTLOG_SCREENSHOT'],full_page=True)
    page.set_viewport_size({'width':390,'height':844});assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')

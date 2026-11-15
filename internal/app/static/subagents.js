@@ -37,7 +37,7 @@ async function openSubagent(target,eventID){
 async function loadSubagent(offset){
  const state=subagentState;if(!state)return;
  subagentRequest?.abort();const controller=new AbortController();subagentRequest=controller;
- $('#inspectstatus').textContent='Loading subagent logs…';$('#subagentrefresh').disabled=true;subagentPager.setLoading(true);
+ $('#inspectstatus').textContent='Loading subagent logs…';subagentPager.setLoading(true);
  const params=new URLSearchParams(state.agent?{session:state.session,agent:state.agent}:{id:state.session,limit:'40'});
  if(!state.agent)params.set('view','activity');
  params.set(offset===null?'position':'offset',offset===null?'latest':String(offset));
@@ -49,10 +49,10 @@ async function loadSubagent(offset){
   if(error.name==='AbortError'||subagentState!==state)return;
   $('#inspectstatus').textContent=error.message==='Session not found.'?'':error.message;
   if(!state.page){$('#subagentevents').innerHTML=`<p class="preview-empty">${error.message==='Session not found.'?'Logs have not been collected.':'Unable to load subagent logs.'}</p>`;$('#subagentpagination').hidden=true}
- }finally{if(subagentState===state&&subagentRequest===controller){$('#subagentrefresh').disabled=false;subagentPager.setLoading(false)}}
+ }finally{if(subagentState===state&&subagentRequest===controller){subagentPager.setLoading(false)}}
 }
 function renderSubagentPreview(){
- const state=subagentState,page=state.page;showSubagentPreview();$('#subagentrefresh').disabled=false;subagentPager.setLoading(false);
+ const state=subagentState,page=state.page;showSubagentPreview();subagentPager.setLoading(false);
  $('#subagentevents').innerHTML=page.events.length?page.events.slice(0,page.limit).map(event=>{
   const p=event.detail;
   return `<section class="preview-entry ${esc(p.kind)} ${p.error?'error':''}"><div class="preview-heading"><h3>${esc(eventTitle(p))}</h3>${p.error?'<span class="status failed">Failed</span>':''}<time datetime="${esc(event.time)}">${esc(date(event.time))}</time></div>${p.blocks.map(b=>`<div class="block">${['Request','Response','Message',p.kind].includes(b.label)?'':`<div class="blocklabel">${esc(blockLabel(b,p))}</div>`}<${b.code?'pre':'div'} class="${b.code?'code':'prose'}">${esc(b.text)}</${b.code?'pre':'div'}></div>`).join('')}${subagentLinks(event.subagents)}${p.fields.length?`<dl class="fields">${p.fields.map(([k,v])=>`<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>`:''}</section>`;
@@ -62,7 +62,7 @@ function renderSubagentPreview(){
 }
 function setupSubagentPreview(){
  subagentPager=new Pagination($('#subagentpagination'),{noun:'events',onChange:page=>loadSubagent((page-1)*40),onLatest:()=>loadSubagent(null)});
- $('#subagentrefresh').onclick=()=>loadSubagent(null);
+
  $('#subagentback').onclick=()=>{
   subagentRequest?.abort();$('#inspectstatus').textContent='';
   if(subagentHistory.length){subagentState=subagentHistory.pop();if(subagentState.page)renderSubagentPreview();else{showSubagentPreview();loadSubagent(null)}}

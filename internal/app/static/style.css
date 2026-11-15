@@ -695,6 +695,8 @@ input[type=checkbox] {
   border-bottom:1px solid var(--line);
   font-size:13px;
 }
+.archive-folder-row {grid-template-columns:22px minmax(0,1fr) 100px;}
+.archive-folder-path {overflow-wrap:anywhere;}
 .archive-row span {
   min-width:0;
 }
@@ -774,7 +776,7 @@ input[type=checkbox] {
 #archiveselected {
   margin-left:auto;
 }
-#refresh {
+#logout {
   margin-left:auto;
 }
 #inspectstatus:not(:empty) {
@@ -1513,4 +1515,9 @@ html {
 }
 @media (max-width: 720px) {
  .skill-results .skill-row {grid-template-columns:1fr 1fr;gap:6px;}
+}
+
+@media(max-width:720px){
+ .archive-folder-row {grid-template-columns:20px minmax(0,1fr) 75px;gap:8px;}
+ .archive-folder-row>span:last-child {grid-column:auto;text-align:right;}
 }

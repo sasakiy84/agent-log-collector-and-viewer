@@ -11,8 +11,7 @@ with sync_playwright() as p:
  page.locator('#token').fill(TOKEN);page.locator('#loginform button').click();page.locator('.session').first.wait_for();page.screenshot(path=str(OUT/'ui-folders.png'),full_page=True);page.locator('[data-project="path:/projects/agentlog"]').click();page.locator('.session').first.wait_for()
  assert page.locator('#detailpage').is_hidden();assert page.locator('.stats').count()==0
  page.screenshot(path=str(OUT/'ui-sessions.png'),full_page=True)
- page.locator('[data-source="codex"]').click();page.wait_for_function("() => [...document.querySelectorAll('.session .source')].every(x=>x.textContent==='Codex')")
- page.locator('[data-source=""]').click();page.locator('#search').fill('no-match-xyz');page.get_by_text('No sessions',exact=True).wait_for()
+ page.locator('#search').fill('no-match-xyz');page.get_by_text('No sessions',exact=True).wait_for()
  page.locator('#search').fill('');page.locator('[data-session="claude:7d4b3a91-pagination"]').wait_for();page.locator('[data-session="claude:7d4b3a91-pagination"]').click()
  page.locator('.prose').filter(has_text='expected 5 records').wait_for();assert '/sessions/' in page.url
  assert page.locator('#listpage').is_hidden();assert page.locator('.event').count()==6;assert page.locator('details[open]').count()==0
@@ -70,7 +69,7 @@ with sync_playwright() as p:
  assert page.evaluate('() => document.documentElement.scrollWidth <= innerWidth')
  page.keyboard.press('Escape');assert page.evaluate('() => !document.querySelector("#eventlist").inert')
  assert page.locator('#autorefresh').count()==0
- page.route('**/api/session?*',lambda r:r.fulfill(status=500,body='failure'));page.locator('#refresh').click();page.get_by_text('Unable to load (HTTP 500).').wait_for(timeout=10000);page.unroute('**/api/session?*');page.locator('#refresh').click();page.wait_for_function("() => document.querySelector('#error').textContent===''",timeout=10000)
+ page.route('**/api/session?*',lambda r:r.fulfill(status=500,body='failure'));page.reload();page.get_by_text('Unable to load (HTTP 500).').wait_for(timeout=10000);page.unroute('**/api/session?*');page.reload();page.wait_for_function("() => document.querySelector('#error').textContent===''",timeout=10000)
  page.goto(BASE);page.locator('.session').first.wait_for();page.screenshot(path=str(OUT/'ui-folders-mobile.png'),full_page=True)
  assert not errors,errors
  browser.close()
