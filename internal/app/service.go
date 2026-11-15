@@ -136,8 +136,24 @@ func (a *App) accept(ctx context.Context, events []Event, wait bool) error {
 			if size+len(encoded) > limit {
 				return errInboxFull
 			}
-			_, err := tx.ExecContext(ctx, "INSERT INTO ingest_batches(data) VALUES(?)", encoded)
-			return err
+			result, err := tx.ExecContext(ctx, "INSERT INTO ingest_batches(data) VALUES(?)", encoded)
+			if err != nil {
+				return err
+			}
+			id, err := result.LastInsertId()
+			if err != nil {
+				return err
+			}
+			sessions := map[string]bool{}
+			for _, event := range events {
+				sessions[event.Session] = true
+			}
+			for session := range sessions {
+				if _, err = tx.ExecContext(ctx, "INSERT INTO ingest_sessions VALUES(?,?)", id, session); err != nil {
+					return err
+				}
+			}
+			return nil
 		})
 		if !errors.Is(err, errInboxFull) || !wait {
 			break
@@ -236,19 +252,6 @@ func (a *App) serviceAvailable(w http.ResponseWriter, r *http.Request) bool {
 		http.Error(w, "Archive operations are waiting for database preparation", 503)
 		return false
 	}
-	if r.Method == "POST" && r.URL.Path == "/api/archives" && a.inbox != nil {
-		var pending bool
-		if err := a.inbox.QueryRowContext(r.Context(), "SELECT EXISTS(SELECT 1 FROM ingest_batches)").Scan(&pending); err != nil {
-			databaseError(w, r, err)
-			return false
-		}
-		if pending {
-			w.Header().Set("Retry-After", "1")
-			http.Error(w, "Telemetry is still being indexed; retry after the queue drains", 409)
-			return false
-		}
-	}
-
 	return true
 }
 

@@ -171,6 +171,14 @@ func (a *App) createFolderArchive(ctx context.Context, cutoff string, all bool, 
 	if _, err = tx.ExecContext(ctx, query, args...); err != nil {
 		return ArchiveJob{}, err
 	}
+	pending, err := a.archiveHasPending(ctx, tx, id)
+	if err != nil {
+		return ArchiveJob{}, err
+	}
+	if pending {
+		return ArchiveJob{}, errArchiveStale
+	}
+
 	var count int64
 	if err = tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM archive_sessions WHERE archive_id=?", id).Scan(&count); err != nil {
 		return ArchiveJob{}, err

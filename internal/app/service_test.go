@@ -249,3 +249,37 @@ func TestBulkImportsReserveSpaceForLiveOTLP(t *testing.T) {
 		t.Fatal("incorrect queue accounting", batches, err)
 	}
 }
+
+func TestPendingIngestionOnlyBlocksItsOwnArchive(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "service.db")
+	a, err := Open(context.Background(), path, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	save(t, a, oldEvent(t, "old-record", "old"), oldEvent(t, "other-record", "other"))
+	// Keep an accepted batch pending without a view consumer, as during startup.
+	if err = a.openInbox(path); err != nil {
+		t.Fatal(err)
+	}
+	if w := request(a, "/v1/logs", logBody("codex", "old", "", ""), token); w.Code != 200 {
+		t.Fatal(w.Code)
+	}
+	w := archiveReq(a, "POST", "/api/archives", `{"sessions":["codex:old"],"cutoff":"2025-02-01T00:00:00Z"}`)
+	if w.Code != 409 {
+		t.Fatal("archived a session with unprocessed activity", w.Code, w.Body.String())
+	}
+	w = archiveReq(a, "POST", "/api/archives", `{"sessions":["codex:other"],"cutoff":"2025-02-01T00:00:00Z"}`)
+	if w.Code != 202 {
+		t.Fatal("unrelated history was blocked by ingestion", w.Code, w.Body.String())
+	}
+	var job ArchiveJob
+	if err = json.Unmarshal(w.Body.Bytes(), &job); err != nil {
+		t.Fatal(err)
+	}
+	waitArchive(t, a, job.ID, "ready")
+	w = archiveReq(a, "POST", "/api/archives/"+job.ID+"/cancel", `{}`)
+	if w.Code != 200 {
+		t.Fatal("pending ingestion blocked cancellation", w.Code, w.Body.String())
+	}
+}
