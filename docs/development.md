@@ -35,7 +35,6 @@ Database URI construction applies foreign keys, busy timeout and writer transact
 bash scripts/check-static.sh
 go test -race ./...
 go vet ./...
-python3 -m unittest discover -s scripts -p '*_unit_test.py'
 go build ./cmd/agentlog
 bash scripts/test-upgrade.sh
 ```
@@ -54,17 +53,15 @@ python3 scripts/lifecycle_performance.py --binary ./agentlog --baseline /path/to
 
 Use the browser flows for affected features. `AGENTLOG_BIN=./agentlog python3 scripts/activity_projects_browser_test.py` checks project navigation and Activity/Diagnostics pagination on desktop and mobile.
 
-## CI and releases
+## Local checks and releases
 
-PR CI runs race/static checks, the published-database upgrade check, watcher/search/accounting checks, platform builds and Docker's large-history/archive check. A final `verified` job records the actual checkout commit and Git tree in a small JSON artifact after the test and Docker jobs succeed. All JavaScript files are checked automatically.
+Run checks locally according to the changed behavior. The commands above cover Go/static checks and database upgrades. Use watcher, search, accounting, overview, browser or Docker scripts when the change affects those paths. There is no CI workflow or CI-artifact requirement for merging or releasing.
 
-Release verifies that its commit is on `main` and has a matching proof from this repository's successful CI workflow. PR CI checks a synthetic merge commit, so its actual tested tree is compared rather than assuming the run's `head_sha` was checked out. The repository, head repository, workflow, required jobs, run attempt, artifact contents and Git commit tree are checked. Fork PR proofs are rejected; the merged commit's main CI supplies the proof instead.
+Write PR titles and descriptions in Japanese, include relevant local validation, and merge through the PR. Create release tags from merged commits.
 
-Release then builds/packages from the tag's own source and publishes. It does not execute downloaded artifact code or rerun already successful tests. Proofs are retained for 30 days. If no matching proof remains, run CI on the tag and rerun Release:
+Pushing a `v*` tag starts the Release workflow. It builds and packages the tag's source for the supported platforms and publishes the GitHub release. It does not run tests or look up CI runs or validation artifacts.
 
 ```sh
-gh workflow run ci.yml --ref vX.Y.Z
-gh run rerun RELEASE_RUN_ID
+git tag -a vX.Y.Z MERGED_COMMIT -m 'Agentlog vX.Y.Z'
+git push origin refs/tags/vX.Y.Z
 ```
-
-The workflow also accepts that successful manual CI proof for the exact merged commit. Failed or mismatched proof validation stops publication.

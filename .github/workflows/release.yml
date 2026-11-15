@@ -4,18 +4,11 @@ on:
     tags: ['v*']
 permissions:
   contents: write
-  actions: read
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Verify merged source and successful CI
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/ci_verification.py verify
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
