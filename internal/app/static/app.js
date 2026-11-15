@@ -12,6 +12,22 @@ const label=s=>({codex:'Codex',claude:'Claude Code',copilot:'Copilot',other:'Oth
 const link=id=>'/sessions/'+encodeURIComponent(id);
 const date=s=>new Date(s).toLocaleString(undefined,{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
 const clock=s=>new Date(s).toLocaleTimeString(undefined,{hour12:false});
+// Labels belong to the view: cached cards and full inspector records use the
+// same wording without rewriting stored telemetry or rebuilding projections.
+function eventTitle(detail){
+ if(detail.kind!=='model'||detail.title==='Token usage')return detail.title;
+ if(detail.name.includes('sse_event'))return 'Model stream event';
+ return detail.fields.some(([label])=>['Input tokens','Output tokens','Cache read','Cache write','Reasoning','Cost (USD)','Billing multiplier','Nano AIU','Duration'].includes(label))?'Model call statistics':'Model API event';
+}
+function blockLabel(block,detail){
+ switch(block.label){
+  case 'Request':return 'User message';
+  case 'Response':return detail.kind==='assistant'?'Assistant message':'Model output';
+  case 'Input':return detail.kind==='model'?'Model input':block.label;
+  case 'Output':return detail.kind==='model'?'Model output':block.label;
+  default:return block.label;
+ }
+}
 let requestSerial=0,activeRequest=null,sessionOffset=0,eventOffset=null,eventLimit=200,source='',query='',kind='',origin='',pageOrigin='',events=[],meta=null;
 let sessionData=null;
 let inspectorTrigger=null;
@@ -35,7 +51,7 @@ function titleFor(id,p){if(p){const prompt=p.blocks.find(b=>/request|user/i.test
 function listParameters(){const p=new URLSearchParams();if(skillFilter){p.set('skill',skillFilter);p.set('plugin',skillPlugin)}if($('#showdiagnostics').checked)p.set('diagnostics','1');if(source)p.set('source',source);if(query)p.set('q',query);return p}
 function listState(){const p=listParameters();if(folder!==null)p.set('folder',folder);if(sessionOffset)p.set('offset',sessionOffset);history.replaceState(null,'','/'+(p.size?'?'+p:''));sessionStorage.setItem('sessionsURL',location.pathname+location.search)}
 function folderLink(path){const p=listParameters();p.set('folder',path);return '/?'+p}
-function folderName(path){return path?path.replace(/[\\/]+$/,'').split(/[\\/]/).pop()||path:'Unknown folder'}
+function folderName(path){return path?path.replace(/[\\/]+$/,'').split(/[\\/]/).pop()||path:'Folder unavailable'}
 function renderListHeading(total){
  const grouped=folder===null,p=listParameters();
  $('#skillfilter').hidden=!skillFilter;$('#skillfilterlabel').textContent=skillFilter?'Skill: '+skillFilter+(skillPlugin?' · '+skillPlugin:''):'';
@@ -72,7 +88,7 @@ function renderEvents(){
  $('#sessionskills').innerHTML=sessionSkillsHTML(meta.skills);bindSkillEvents($('#sessionskills'));
  $('#relations').innerHTML=(meta.parent?`<a href="${esc(link(meta.parent))}">Parent session</a>`:'')+subagentLinks(meta.children.map(id=>({session:id,label:id.split('/agent:').pop()})));
  $('#pageinfo').textContent=meta.count?`${meta.offset+1}–${meta.offset+slice.length} / ${meta.count}${kind||pageOrigin?' · '+visible.length+' matching on this page':''}`:'0 events';
- $('#timeline').innerHTML=visible.length?visible.map(([e,p])=>`<article class="event ${esc(p.kind)} ${p.error?'error':''}" id="span-${esc(e.span||e.id)}" data-event="${esc(e.id)}" role="button" tabindex="0" aria-label="${esc(p.title+' · '+clock(e.time))}" aria-expanded="${e.id===inspectedID}" aria-controls="inspector"><div class="eventcontent"><div class="eventheading"><h2>${esc(p.title)}</h2>${e.origins.length>1?'<span class="kind">Imported + OTEL</span>':''}${['tool','metric','skill'].includes(p.kind)?`<span class="kind">${esc(toolPhaseLabel(p))}</span>`:''}${p.error?'<span class="status failed">Failed</span>':String(p.attributes.success)==='true'?'<span class="status succeeded">Succeeded</span>':''}<time datetime="${esc(e.time)}" title="${esc(date(e.time))}">${esc(clock(e.time))}</time></div>${p.blocks.map(b=>`<div class="block ${b.label==='Error'?'failure-detail':''}">${['Request','Response','Message',p.kind].includes(b.label)?'':`<div class="blocklabel">${esc(b.label)}</div>`}<${b.code?'pre':'div'} class="${b.code?'code':'prose'}">${esc(b.text)}</${b.code?'pre':'div'}></div>`).join('')}${subagentLinks(e.subagents)}${eventSkillsHTML(e.skills)}${p.fields.length?`<dl class="fields">${p.fields.filter(([k])=>k!=='Result').map(([k,v])=>`<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>`:''}</div></article>`).join(''):'<p class="empty">No matching events on this page</p>';
+ $('#timeline').innerHTML=visible.length?visible.map(([e,p])=>`<article class="event ${esc(p.kind)} ${p.error?'error':''}" id="span-${esc(e.span||e.id)}" data-event="${esc(e.id)}" role="button" tabindex="0" aria-label="${esc(eventTitle(p)+' · '+clock(e.time))}" aria-expanded="${e.id===inspectedID}" aria-controls="inspector"><div class="eventcontent"><div class="eventheading"><h2>${esc(eventTitle(p))}</h2>${e.origins.length>1?'<span class="kind">Imported + OTEL</span>':''}${['tool','metric','skill'].includes(p.kind)?`<span class="kind">${esc(toolPhaseLabel(p))}</span>`:''}${p.error?'<span class="status failed">Failed</span>':String(p.attributes.success)==='true'?'<span class="status succeeded">Succeeded</span>':''}<time datetime="${esc(e.time)}" title="${esc(date(e.time))}">${esc(clock(e.time))}</time></div>${p.blocks.map(b=>`<div class="block ${b.label==='Error'?'failure-detail':''}">${['Request','Response','Message',p.kind].includes(b.label)?'':`<div class="blocklabel">${esc(blockLabel(b,p))}</div>`}<${b.code?'pre':'div'} class="${b.code?'code':'prose'}">${esc(b.text)}</${b.code?'pre':'div'}></div>`).join('')}${subagentLinks(e.subagents)}${eventSkillsHTML(e.skills)}${p.fields.length?`<dl class="fields">${p.fields.filter(([k])=>k!=='Result').map(([k,v])=>`<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>`:''}</div></article>`).join(''):'<p class="empty">No matching events on this page</p>';
  if(inspectedID && !visible.some(([e])=>e.id===inspectedID)) closeInspector(false);
  document.querySelectorAll('[data-event]').forEach(card=>{
   card.classList.toggle('selected',card.dataset.event===inspectedID);
@@ -133,9 +149,9 @@ function renderInspector(){
  const parent=events.find(x=>x.span===e.parent_span&&x.trace===e.trace&&x.source===e.source&&document.getElementById('span-'+x.span));
  const p=e.detail,value=v=>typeof v==='string'?v:JSON.stringify(v,null,2);
  $('#inspector').dataset.kind=p.kind;$('#inspector').dataset.error=String(p.error);
- $('#inspectortitle').textContent=p.title;$('#inspectortime').textContent=date(e.time)+' · '+label(e.source)+(p.kind==='tool'?' · '+toolPhaseLabel(p):'');
+ $('#inspectortitle').textContent=eventTitle(p);$('#inspectortime').textContent=date(e.time)+' · '+label(e.source)+(p.kind==='tool'?' · '+toolPhaseLabel(p):'');
  const properties=[['Sources',e.origins.map(x=>x==='import'?'Imported':'OTEL').join(' + ')],['Signal',e.signal],['Time',e.time],['Event',p.name],['Trace ID',e.trace],['Span ID',e.span],['Parent span',e.parent_span],['Session',e.session],...p.fields].filter(([,v])=>v!==undefined&&v!=='');
- $('#inspectdetails').innerHTML=subagentLinks(e.subagents)+eventSkillsHTML(e.skills)+toolPairHTML(e)+p.blocks.map(b=>`<div class="block ${b.label==='Error'?'failure-detail':''}"><div class="blocklabel">${esc(b.label)}</div><${b.code?'pre':'div'} class="${b.code?'code':'prose'}">${esc(b.text)}</${b.code?'pre':'div'}></div>`).join('')+
+ $('#inspectdetails').innerHTML=subagentLinks(e.subagents)+eventSkillsHTML(e.skills)+toolPairHTML(e)+p.blocks.map(b=>`<div class="block ${b.label==='Error'?'failure-detail':''}"><div class="blocklabel">${esc(blockLabel(b,p))}</div><${b.code?'pre':'div'} class="${b.code?'code':'prose'}">${esc(b.text)}</${b.code?'pre':'div'}></div>`).join('')+
  `<h3>Properties</h3><dl class="propertylist">${properties.map(([k,v])=>`<div><dt>${esc(k)}</dt><dd>${k==='Parent span'&&parent?`<a href="#span-${esc(parent.span)}" id="inspectparent">${esc(value(v))}</a>`:esc(value(v))}</dd></div>`).join('')}</dl>`+
  (p.conflicts?.length?`<h3>Source differences</h3><dl class="propertylist">${p.conflicts.map(c=>`<div><dt>${esc(c.field)}</dt><dd>${c.values.map(v=>`${v.origin==='import'?'Imported':'OTEL'}: ${esc(v.value)}`).join('\n')}</dd></div>`).join('')}</dl>`:'')+
  `<h3>Attributes</h3><dl class="propertylist">${Object.entries(p.attributes).map(([k,v])=>`<div><dt>${esc(k)}</dt><dd>${esc(value(v))}</dd></div>`).join('')||'<div>No attributes</div>'}</dl>`;

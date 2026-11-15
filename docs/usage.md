@@ -1,13 +1,14 @@
 # Reported usage
 
-Folder and session rows show reported input/output tokens, USD cost and error events. Session details add cache reads/writes, cache hit rate, reasoning tokens and average request time. The shortcut beside timeline pagination stays visible at the latest entries.
+Folder and session rows show reported input/output tokens, USD cost and error events. Session details add cache reads/writes, cached-input percentage, reasoning tokens and average request time. The shortcut beside timeline pagination stays visible at the latest entries.
 
 Totals cover the entire selected session/origin. Event-type filters and timeline pages do not change them. Folder/search/agent filters select whole sessions; folder totals combine each selected session once. Parent and child sessions retain their own usage.
 
+- Cached input is the percentage of input tokens served from cache, not the percentage of requests with a cache hit.
 - Input includes reported cache reads/writes. Native Anthropic input counts are normalized to this definition. Reasoning is a subset of output and is shown separately.
 - USD uses reported `cost_usd` events and `claude_code.cost.usage` counters with a USD unit. Copilot billing multipliers remain separate event attributes.
 - Request time uses reported durations, model span endpoints or `gen_ai.client.operation.duration` histogram sums/counts.
-- Errors count flagged logical timeline events; paired imported/OTEL copies count once.
+- Error events count flagged logical timeline events; paired imported/OTEL copies count once.
 - Missing values display **—**, recorded zeros display **0**. Coverage shows how many sessions report each field. **Partial** indicates incomplete coverage, excluded values or older Codex reports.
 
 Each metric family uses one report source. Imported Codex session counters take precedence for tokens; otherwise OTEL takes precedence over imports. Within an origin, cumulative metrics, delta metrics, request traces and usage events are preferred in that order. The selected basis and alternate origin reports appear under **Usage details**. This avoids adding overlapping representations of the same requests.
