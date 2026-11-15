@@ -4,7 +4,7 @@ services:
     build:
       context: .
     environment:
-      AGENTLOG_TOKEN: ${AGENTLOG_TOKEN:?Set AGENTLOG_TOKEN in .env (at least 16 characters)}
+      AGENTLOG_TOKEN: ${AGENTLOG_TOKEN:-}
       SQLITE_TMPDIR: /data
     command: ["--listen", "0.0.0.0:4318", "--db", "/data/agentlog.db"]
     ports:

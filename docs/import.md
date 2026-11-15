@@ -109,3 +109,5 @@ AGENTLOG_TOKEN=YOUR_TOKEN ./agentlog import --all \
 - The identifiers must be exported by both sources. Supported message attributes are `event.id`/`event_id`, `gen_ai.message.id`/`message.id`/`message_id`, and `prompt.id`/`prompt_id` for user messages; these namespaces are distinct. Tool IDs use `gen_ai.tool.call.id`, `tool_call_id`, `call_id` or `tool_use_id`. A model `gen_ai.response.id` is not a message ID.
 - Imported content is retained and missing information is supplemented from OTEL. Tokens, cost and duration are never added together. Differing values appear under **Source differences** in the inspector.
 - Combined cards are labeled **Imported + OTEL**. Their JSON tab contains both records; JSON export preserves original records. Choosing **Imported** or **OTEL** filters originals before grouping, counts and pagination, so details from the other origin are excluded.
+
+`AGENTLOG_TOKEN` is optional for unauthenticated collectors; omit it for local imports or watching. When set, it must contain at least 16 characters.

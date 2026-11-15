@@ -24,7 +24,7 @@ func (a *App) signature(v string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 func (a *App) bearer(r *http.Request) bool {
-	return subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+a.token)) == 1
+	return a.token == "" || subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+a.token)) == 1
 }
 func (a *App) authenticated(r *http.Request) bool {
 	if a.bearer(r) {
@@ -61,6 +61,10 @@ func (a *App) Handler() http.Handler {
 		})
 	}
 	mux.HandleFunc("POST /api/login", func(w http.ResponseWriter, r *http.Request) {
+		if a.token == "" {
+			write(w, map[string]bool{"ok": true})
+			return
+		}
 		var v struct{ Token string }
 		if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&v) != nil || subtle.ConstantTimeCompare([]byte(v.Token), []byte(a.token)) != 1 {
 			http.Error(w, "Unauthorized", 401)
@@ -109,6 +113,11 @@ func (a *App) Handler() http.Handler {
 	mux.Handle("GET /", http.FileServer(http.FS(sub)))
 	mux.HandleFunc("GET /sessions/{id}", serveShell)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mode := "required"
+		if a.token == "" {
+			mode = "disabled"
+		}
+		w.Header().Set("X-Agentlog-Auth", mode)
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'; object-src 'none'")
 		w.Header().Set("Referrer-Policy", "no-referrer")

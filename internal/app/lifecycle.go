@@ -57,8 +57,8 @@ func newApp(ctx context.Context, token string) (*App, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if len(token) < 16 {
-		return nil, fmt.Errorf("AGENTLOG_TOKEN must contain at least 16 characters")
+	if token != "" && len(token) < 16 {
+		return nil, fmt.Errorf("AGENTLOG_TOKEN must be empty or contain at least 16 characters")
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	return &App{ctx: ctx, cancel: cancel, token: token}, nil

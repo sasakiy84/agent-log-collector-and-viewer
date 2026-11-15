@@ -233,3 +233,24 @@ func TestRepeatedEventIDUsesLatestContent(t *testing.T) {
 		t.Fatal(n, raw)
 	}
 }
+
+func TestImportWithoutTokenOmitsAuthorization(t *testing.T) {
+	dir := t.TempDir()
+	p := file(t, dir, "local.jsonl", `{"type":"user","uuid":"local-message","sessionId":"local-session","timestamp":"2026-11-01T00:00:00Z","message":{"content":"hello"}}`)
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if _, present := r.Header["Authorization"]; present {
+			t.Error("empty bearer header sent")
+		}
+		w.Write([]byte("{}"))
+	}))
+	defer server.Close()
+	stats, err := importer.Run(context.Background(), importer.Options{Files: []string{p}, Endpoint: server.URL}, io.Discard)
+	if err != nil || calls != 1 || stats.Records != 1 {
+		t.Fatal(stats, calls, err)
+	}
+	if _, err = importer.Run(context.Background(), importer.Options{Files: []string{p}, Endpoint: server.URL, Token: "short"}, io.Discard); err == nil {
+		t.Fatal("configured short token accepted")
+	}
+}

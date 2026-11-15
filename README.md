@@ -17,7 +17,7 @@ A personal OpenTelemetry collector and session viewer for Codex CLI, Claude Code
 - Combine imported and OTEL events with shared IDs into one card while keeping both originals.
 - [Export a project or matching sessions](docs/export.md) as a streaming ZIP of complete logs.
 - Archive inactive sessions by folder; download a ZIP, confirm it, then delete archived data and reclaim space.
-- One Go binary with an embedded UI, SQLite storage and token authentication. No automatic log expiry.
+- One Go binary with an embedded UI, SQLite storage and optional token authentication. No automatic log expiry.
 
 ## Setup
 
@@ -31,20 +31,14 @@ Requires Docker with Compose v2.
 git clone https://github.com/sasakiy84/agent-log-collector-and-viewer.git
 cd agent-log-collector-and-viewer
 cp .env.example .env
-openssl rand -hex 32
-```
-
-Set the generated value as `AGENTLOG_TOKEN` in `.env`, then start:
-
-```sh
 docker compose up -d --build
 ```
 
 Existing databases build session and full-text indexes once on first startup; the upgrade is logged and interrupted upgrades resume.
 
-Open http://127.0.0.1:4318 and sign in with that token. SQLite data persists in a named volume across container recreation; `docker compose down --volumes` deletes it.
+Open http://127.0.0.1:4318. Authentication is disabled when `AGENTLOG_TOKEN` is unset or empty. To require authentication, set a secret of at least 16 characters in `.env` and sign in with it. SQLite data persists in a named volume across container recreation; `docker compose down --volumes` deletes it.
 
-Without Docker, download a binary from [Releases](https://github.com/sasakiy84/agent-log-collector-and-viewer/releases) and run `AGENTLOG_TOKEN=YOUR_TOKEN ./agentlog`.
+Without Docker, download a binary from [Releases](https://github.com/sasakiy84/agent-log-collector-and-viewer/releases) and run `./agentlog`. Set the `AGENTLOG_TOKEN` environment variable to enable authentication.
 
 ### 2. Set up HTTPS for remote access
 
@@ -66,7 +60,7 @@ Local collection and viewer, without CLI telemetry configuration or HTTPS:
 
 ```sh
 cp docs/examples/agentlog.watch.json agentlog.json
-AGENTLOG_TOKEN=YOUR_TOKEN ./agentlog --config agentlog.json
+./agentlog --config agentlog.json
 ```
 
 Send local files to an existing collector (including Docker):

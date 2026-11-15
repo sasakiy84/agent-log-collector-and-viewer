@@ -186,6 +186,7 @@ function updateDocumentTitle() {
 }
 async function apiResponse(path, signal) {
   const r = await fetch(path, { signal });
+  $("#logout").hidden = r.headers.get("X-Agentlog-Auth") === "disabled";
   if (r.status === 401) {
     closeInspector(false);
     $("#login").hidden = false;
