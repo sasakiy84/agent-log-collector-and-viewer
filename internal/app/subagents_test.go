@@ -158,3 +158,15 @@ func TestSubagentOwnerScopeAndStructuredResults(t *testing.T) {
 		}
 	}
 }
+
+func TestSubagentRuntimeTraceSession(t *testing.T) {
+	a := setup(t)
+	e := recorded(t, "trace-agent", "otel", "copilot", "unused", "gen_ai.assistant.message", map[string]any{"agent_id": "reviewer", "response": "Trace-linked child work"})
+	e.Session = "trace:copilot:abc"
+	save(t, a, e)
+	var p SessionPage
+	getJSON(t, a, "/api/subagent?session=trace%3Acopilot%3Aabc&agent=reviewer", &p)
+	if p.Count != 1 || p.Events[0].Detail.Blocks[0].Text != "Trace-linked child work" {
+		t.Fatal(p)
+	}
+}

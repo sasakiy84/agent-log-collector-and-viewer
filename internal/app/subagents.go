@@ -346,7 +346,7 @@ const agentTimelineIDs = `SELECT DISTINCT COALESCE((SELECT id FROM timeline_entr
 
 func (a *App) subagent(w http.ResponseWriter, r *http.Request) {
 	session, agent := r.URL.Query().Get("session"), r.URL.Query().Get("agent")
-	if !strings.HasPrefix(session, "copilot:") || agentID(agent) == "" {
+	if agentID(agent) == "" {
 		http.Error(w, "Invalid agent", 400)
 		return
 	}
@@ -367,6 +367,20 @@ func (a *App) subagent(w http.ResponseWriter, r *http.Request) {
 	}
 	if locked {
 		http.Error(w, "Session is being archived", 409)
+		return
+	}
+	var source string
+	err = tx.QueryRowContext(r.Context(), "SELECT source FROM session_catalog WHERE session=?", session).Scan(&source)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		databaseError(w, r, err)
+		return
+	}
+	if source != "copilot" {
+		http.Error(w, "Invalid agent session", 400)
 		return
 	}
 	page := SessionPage{SessionSummary: SessionSummary{ID: session, Source: "copilot"}, Limit: 40, Children: []string{}, Events: []TimelineEvent{}}
