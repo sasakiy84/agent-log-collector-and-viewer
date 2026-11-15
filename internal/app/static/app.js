@@ -1,5 +1,12 @@
 'use strict';
 const $=s=>document.querySelector(s);
+// Wrapped filters determine the sticky inset; keep drawer and scroll targets
+// below the toolbar at every viewport width and browser zoom level.
+const timelineToolbarObserver=new ResizeObserver(([entry])=>{
+ if(entry.contentRect.height>0)$('#detailpage').style.setProperty('--timeline-toolbar-height',entry.target.getBoundingClientRect().height+'px');
+});
+timelineToolbarObserver.observe($('.logbar'));
+
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const label=s=>({codex:'Codex',claude:'Claude Code',copilot:'Copilot',other:'Other'}[s]||s);
 const link=id=>'/sessions/'+encodeURIComponent(id);
@@ -100,7 +107,7 @@ async function openInspector(id){
  resetSubagentPreview();inspectorTrigger=document.querySelector(`#timeline [data-event="${CSS.escape(id)}"]`);
  inspectorRequest?.abort();const controller=new AbortController();inspectorRequest=controller;
  inspectedID=id;inspectorEvent=inspectorCache.get(id)||null;inspectedRecord=null;jsonEvent=null;$('#eventjson').textContent='';
- if(!inspectorEvent&&!events.some(event=>event.id===id)){ $('#inspectdetails').textContent='';$('#inspectortitle').textContent='Event details';$('#inspectortime').textContent='';setInspectorTab(inspectorTab) }
+ if(!inspectorEvent&&!events.some(event=>event.id===id)){ delete $('#inspector').dataset.kind;delete $('#inspector').dataset.error;$('#inspectdetails').textContent='';$('#inspectortitle').textContent='Event details';$('#inspectortime').textContent='';setInspectorTab(inspectorTab) }
  $('#inspector').hidden=false;$('#detailpage').classList.add('inspector-open');
  document.querySelectorAll('[data-event]').forEach(card=>{const active=card.dataset.event===id;card.classList.toggle('selected',active);card.setAttribute('aria-expanded',String(active))});
  $('#inspectstatus').textContent=inspectorEvent?'':'Loading details…';$('#copyjson').disabled=!inspectorEvent;
@@ -125,6 +132,7 @@ function renderInspector(){
  const e=inspectorEvent||events.find(e=>e.id===inspectedID);if(!e||e===inspectedRecord)return;inspectedRecord=e;
  const parent=events.find(x=>x.span===e.parent_span&&x.trace===e.trace&&x.source===e.source&&document.getElementById('span-'+x.span));
  const p=e.detail,value=v=>typeof v==='string'?v:JSON.stringify(v,null,2);
+ $('#inspector').dataset.kind=p.kind;$('#inspector').dataset.error=String(p.error);
  $('#inspectortitle').textContent=p.title;$('#inspectortime').textContent=date(e.time)+' · '+label(e.source)+(p.kind==='tool'?' · '+toolPhaseLabel(p):'');
  const properties=[['Sources',e.origins.map(x=>x==='import'?'Imported':'OTEL').join(' + ')],['Signal',e.signal],['Time',e.time],['Event',p.name],['Trace ID',e.trace],['Span ID',e.span],['Parent span',e.parent_span],['Session',e.session],...p.fields].filter(([,v])=>v!==undefined&&v!=='');
  $('#inspectdetails').innerHTML=subagentLinks(e.subagents)+eventSkillsHTML(e.skills)+toolPairHTML(e)+p.blocks.map(b=>`<div class="block ${b.label==='Error'?'failure-detail':''}"><div class="blocklabel">${esc(b.label)}</div><${b.code?'pre':'div'} class="${b.code?'code':'prose'}">${esc(b.text)}</${b.code?'pre':'div'}></div>`).join('')+
