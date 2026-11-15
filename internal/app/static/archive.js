@@ -58,15 +58,15 @@ async function refreshArchive(signal) {
   archiveOffset = data.offset;
   $("#archivetotal").textContent =
     `${data.total_folders.toLocaleString()} ${data.total_folders === 1 ? "folder" : "folders"} · ${data.total_sessions.toLocaleString()} ${data.total_sessions === 1 ? "session" : "sessions"} · ${bytes(data.total_bytes)}`;
-  $("#archivecutoff").textContent =
-    `All projects · Last activity before ${new Date(data.cutoff).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}`;
+  $("#archivecutoff").innerHTML =
+    `All projects · Last activity before <time datetime="${esc(data.cutoff)}">${esc(new Date(data.cutoff).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }))}</time>`;
   $("#archiveselection").hidden = !!archiveActive(data.job);
   $("#archiveitems").hidden = !!archiveActive(data.job);
   $("#archiveitems").innerHTML = data.folders.length
     ? data.folders
         .map(
           (f) =>
-            `<label class="archive-row archive-folder-row"><input type="checkbox" data-archive-folder="${esc(f.path)}" ${archiveActive(data.job) ? "disabled checked" : ""}><span><a href="${esc("/?" + new URLSearchParams({ folder: f.path }))}">${esc(f.path ? folderName(f.path) : "Unassigned")}</a>${f.path ? `<small class="archive-folder-path">${esc(f.path)}</small>` : ""}<small>${f.sessions.toLocaleString()} ${f.sessions === 1 ? "session" : "sessions"} · ${f.records.toLocaleString()} ${f.records === 1 ? "record" : "records"} · ${esc(new Date(f.last_activity).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }))}</small></span><span>${bytes(f.raw_bytes)}</span></label>`,
+            `<label class="archive-row archive-folder-row"><input type="checkbox" data-archive-folder="${esc(f.path)}" ${archiveActive(data.job) ? "disabled checked" : ""}><span><a href="${esc("/?" + new URLSearchParams({ folder: f.path }))}">${esc(f.path ? folderName(f.path) : "Unassigned")}</a>${f.path ? `<small class="archive-folder-path">${esc(f.path)}</small>` : ""}<small>${f.sessions.toLocaleString()} ${f.sessions === 1 ? "session" : "sessions"} · ${f.records.toLocaleString()} ${f.records === 1 ? "record" : "records"} · <time datetime="${esc(f.last_activity)}">${esc(new Date(f.last_activity).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }))}</time></small></span><span>${bytes(f.raw_bytes)}</span></label>`,
         )
         .join("")
     : '<p class="empty">No inactive folders</p>';

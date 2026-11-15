@@ -8,6 +8,7 @@ const timelineToolbarObserver = new ResizeObserver(([entry]) => {
       "--timeline-toolbar-height",
       entry.target.getBoundingClientRect().height + "px",
     );
+  fitInspectorHeight();
 });
 timelineToolbarObserver.observe($(".logbar"));
 
@@ -392,6 +393,29 @@ function setInspectorTab(tab) {
     $("#inspect" + name).hidden = name !== tab;
   }
 }
+let inspectorLayoutFrame = 0;
+let inspectorRevealRequested = false;
+function fitInspectorHeight({ reveal = false } = {}) {
+  inspectorRevealRequested ||= reveal;
+  if (inspectorLayoutFrame) return;
+  inspectorLayoutFrame = requestAnimationFrame(() => {
+    inspectorLayoutFrame = 0;
+    const reveal = inspectorRevealRequested;
+    inspectorRevealRequested = false;
+    const panel = $("#inspector");
+    if (panel.hidden || matchMedia("(max-width: 900px)").matches) {
+      panel.style.removeProperty("--inspector-available-height");
+      return;
+    }
+    let top = panel.getBoundingClientRect().top;
+    // Opening from a long session header must leave room for the body too.
+    if (reveal && top > innerHeight - 240) {
+      window.scrollBy(0, top - (innerHeight - 240));
+      top = panel.getBoundingClientRect().top;
+    }
+    panel.style.setProperty("--inspector-available-height", Math.max(0, innerHeight - top - 12) + "px");
+  });
+}
 function syncInspectorMode() {
   const modal =
     !!(inspectedID || subagentState) &&
@@ -408,6 +432,7 @@ function syncInspectorMode() {
   $(".topbar").inert = modal;
   if (modal && !$("#inspector").contains(document.activeElement))
     $("#closeinspector").focus({ preventScroll: true });
+  fitInspectorHeight();
 }
 async function openInspector(id) {
   resetSubagentPreview();
@@ -441,6 +466,7 @@ async function openInspector(id) {
   $("#copyjson").disabled = !inspectorEvent;
   renderInspector();
   syncInspectorMode();
+  fitInspectorHeight({ reveal: true });
   $("#closeinspector").focus({ preventScroll: true });
   if (inspectorEvent) return;
   try {
@@ -603,6 +629,7 @@ $("#copyjson").onclick = async () => {
   }
 };
 addEventListener("resize", syncInspectorMode);
+addEventListener("scroll", fitInspectorHeight, { passive: true });
 addEventListener("keydown", (e) => {
   if (!inspectedID && !subagentState) return;
   if (e.key === "Escape") {

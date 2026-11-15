@@ -133,6 +133,7 @@ with tempfile.TemporaryDirectory() as directory:
             page.set_viewport_size({'width': 390, 'height': 844})
             expect(page.locator('#projectsidebar')).to_be_visible()
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+            page.mouse.move(0,0);page.evaluate('document.activeElement?.blur()')
             page.screenshot(path=str(OUT / 'ui-projects-mobile.png'), full_page=True)
             assert not errors, errors
             browser.close()
