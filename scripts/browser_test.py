@@ -28,7 +28,7 @@ with sync_playwright() as p:
  page.locator('.event.error').click()
  assert page.locator('#inspector').is_visible()
  assert page.locator('.event.error').get_attribute('aria-expanded')=='true'
- assert page.locator('#inspectdetails').get_by_text('ShellError',exact=True).is_visible()
+ page.locator('#inspectdetails').get_by_text('ShellError',exact=True).wait_for()
  assert page.evaluate('() => !document.querySelector("#eventlist").inert')
  page.screenshot(path=str(OUT/'ui-event-details.png'),full_page=True)
  page.locator('#jsontab').click();page.locator('#eventjson').wait_for();page.wait_for_function("() => document.querySelector('#inspectstatus').textContent===''")
