@@ -6,6 +6,7 @@ function projectName(id){
  return folderName(id.startsWith('path:')?id.slice(5):id);
 }
 function renderProjects(){
+ $('#skillsnav').href='/skills'+(project!==null?'?'+new URLSearchParams({project}):'');
  const focused=document.activeElement?.dataset.project;
  const all=$('#allprojects');all.classList.toggle('active',project===null);all.setAttribute('aria-current',project===null?'true':'false');
  const rows=[...projects];
@@ -16,7 +17,7 @@ function renderProjects(){
  $('#moreprojects').hidden=projectsOffset+projects.length>=projectsTotal;
  $('#projectstatus').textContent=!projects.length&&projectsKey?'No projects':'';
 }
-function chooseProject(id){project=id;folder=null;sessionOffset=0;renderProjects();listState();refresh()}
+function chooseProject(id){project=id;renderProjects();if(skillsMode){skillsOffset=0}else{folder=null;sessionOffset=0;listState()}refresh()}
 async function loadProjects(signal,more=false){
  const key=JSON.stringify([$('#showdiagnostics').checked,projectsQuery]);
  if(!more&&projectsKey===key){renderProjects();return}

@@ -78,7 +78,8 @@ def presentation_normalized(value):
         return [presentation_normalized(item) for item in value]
     if isinstance(value, dict):
         return {key: presentation_normalized(item) for key, item in value.items()
-                if not (key in ('diagnostic', 'turn') and 'kind' in value and 'blocks' in value)}
+                if not (key in ('diagnostic', 'turn') and 'kind' in value and 'blocks' in value)
+                and not (key in ('uses', 'sort') and 'skills' in value and 'ready' in value)}
     return value
 
 
