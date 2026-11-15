@@ -1,0 +1,818 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "github-copilot"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "1.0.112"
+            }
+          },
+          {
+            "key": "service.namespace",
+            "value": {
+              "stringValue": "fixture-project"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "github.copilot"
+          },
+          "spans": [
+            {
+              "traceId": "11111111111111111111111111111111",
+              "spanId": "0000000000000001",
+              "parentSpanId": "0000000000000006",
+              "name": "execute_tool skill review",
+              "kind": 1,
+              "startTimeUnixNano": "1794764310178000000",
+              "endTimeUnixNano": "1794764310179000000",
+              "attributes": [
+                {
+                  "key": "gen_ai.operation.name",
+                  "value": {
+                    "stringValue": "execute_tool"
+                  }
+                },
+                {
+                  "key": "gen_ai.conversation.id",
+                  "value": {
+                    "stringValue": "fixture-session"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.name",
+                  "value": {
+                    "stringValue": "skill"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.call.id",
+                  "value": {
+                    "stringValue": "call-agentlog-view"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.type",
+                  "value": {
+                    "stringValue": "function"
+                  }
+                },
+                {
+                  "key": "gen_ai.provider.name",
+                  "value": {
+                    "stringValue": "openai"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.description",
+                  "value": {
+                    "stringValue": "Description omitted from the captured fixture."
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.call.arguments",
+                  "value": {
+                    "stringValue": "{\"skill\":\"review\"}"
+                  }
+                },
+                {
+                  "key": "gen_ai.skill.name",
+                  "value": {
+                    "stringValue": "review"
+                  }
+                },
+                {
+                  "key": "gen_ai.skill.description",
+                  "value": {
+                    "stringValue": "Synthetic review fixture"
+                  }
+                },
+                {
+                  "key": "gen_ai.skill.source.uri",
+                  "value": {
+                    "stringValue": "file:///workspace/fixture/skills/review/SKILL.md"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.call.result",
+                  "value": {
+                    "stringValue": "{\"content\":\"Skill \\\"review\\\" loaded successfully. Follow the instructions in the skill context.\"}"
+                  }
+                }
+              ],
+              "events": [],
+              "status": {
+                "code": 0
+              }
+            },
+            {
+              "traceId": "11111111111111111111111111111111",
+              "spanId": "0000000000000002",
+              "parentSpanId": "0000000000000006",
+              "name": "chat gpt-4.1",
+              "kind": 3,
+              "startTimeUnixNano": "1794764310164000000",
+              "endTimeUnixNano": "1794764310176000000",
+              "attributes": [
+                {
+                  "key": "gen_ai.operation.name",
+                  "value": {
+                    "stringValue": "chat"
+                  }
+                },
+                {
+                  "key": "gen_ai.provider.name",
+                  "value": {
+                    "stringValue": "openai"
+                  }
+                },
+                {
+                  "key": "gen_ai.request.model",
+                  "value": {
+                    "stringValue": "gpt-4.1"
+                  }
+                },
+                {
+                  "key": "gen_ai.conversation.id",
+                  "value": {
+                    "stringValue": "fixture-session"
+                  }
+                },
+                {
+                  "key": "gen_ai.request.stream",
+                  "value": {
+                    "boolValue": true
+                  }
+                },
+                {
+                  "key": "server.address",
+                  "value": {
+                    "stringValue": "127.0.0.1"
+                  }
+                },
+                {
+                  "key": "server.port",
+                  "value": {
+                    "intValue": "44935"
+                  }
+                },
+                {
+                  "key": "gen_ai.response.finish_reasons",
+                  "value": {
+                    "arrayValue": {
+                      "values": [
+                        {
+                          "stringValue": "tool_calls"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.input_tokens",
+                  "value": {
+                    "intValue": "100"
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.output_tokens",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.cache_read.input_tokens",
+                  "value": {
+                    "intValue": "20"
+                  }
+                },
+                {
+                  "key": "gen_ai.response.model",
+                  "value": {
+                    "stringValue": "gpt-4.1"
+                  }
+                },
+                {
+                  "key": "gen_ai.response.id",
+                  "value": {
+                    "stringValue": "chatcmpl-agentlog-1"
+                  }
+                },
+                {
+                  "key": "github.copilot.cost",
+                  "value": {
+                    "doubleValue": 0.0
+                  }
+                },
+                {
+                  "key": "github.copilot.server_duration",
+                  "value": {
+                    "doubleValue": 9.0
+                  }
+                },
+                {
+                  "key": "github.copilot.initiator",
+                  "value": {
+                    "stringValue": "user"
+                  }
+                },
+                {
+                  "key": "github.copilot.turn_id",
+                  "value": {
+                    "stringValue": "0"
+                  }
+                },
+                {
+                  "key": "github.copilot.interaction_id",
+                  "value": {
+                    "stringValue": "fixture-interaction"
+                  }
+                },
+                {
+                  "key": "gen_ai.response.time_to_first_chunk",
+                  "value": {
+                    "doubleValue": 0.009097906
+                  }
+                },
+                {
+                  "key": "gen_ai.input.messages",
+                  "value": {
+                    "stringValue": "[{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"<current_datetime>2026-11-15T17:38:30.156+00:00</current_datetime>\\n\\nInvoke the review skill, use view to read fixture.txt, then say Fixture read complete.\"}]}]"
+                  }
+                },
+                {
+                  "key": "gen_ai.output.messages",
+                  "value": {
+                    "stringValue": "[{\"role\":\"assistant\",\"parts\":[{\"type\":\"tool_call\",\"id\":\"call-agentlog-view\",\"name\":\"skill\",\"arguments\":{\"skill\":\"review\"}}]}]"
+                  }
+                }
+              ],
+              "events": [],
+              "status": {
+                "code": 0
+              }
+            },
+            {
+              "traceId": "11111111111111111111111111111111",
+              "spanId": "0000000000000003",
+              "parentSpanId": "0000000000000006",
+              "name": "execute_tool view",
+              "kind": 1,
+              "startTimeUnixNano": "1794764310193000000",
+              "endTimeUnixNano": "1794764310193000000",
+              "attributes": [
+                {
+                  "key": "gen_ai.operation.name",
+                  "value": {
+                    "stringValue": "execute_tool"
+                  }
+                },
+                {
+                  "key": "gen_ai.conversation.id",
+                  "value": {
+                    "stringValue": "fixture-session"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.name",
+                  "value": {
+                    "stringValue": "view"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.call.id",
+                  "value": {
+                    "stringValue": "call-agentlog-view"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.type",
+                  "value": {
+                    "stringValue": "function"
+                  }
+                },
+                {
+                  "key": "gen_ai.provider.name",
+                  "value": {
+                    "stringValue": "openai"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.description",
+                  "value": {
+                    "stringValue": "Description omitted from the captured fixture."
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.call.arguments",
+                  "value": {
+                    "stringValue": "{\"path\":\"/workspace/fixture/work/fixture.txt\"}"
+                  }
+                },
+                {
+                  "key": "github.copilot.tool.parameters.file_path",
+                  "value": {
+                    "stringValue": "/workspace/fixture/work/fixture.txt"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.call.result",
+                  "value": {
+                    "stringValue": "{\"content\":\"Synthetic file contents for Agentlog display test.\\n\"}"
+                  }
+                }
+              ],
+              "events": [],
+              "status": {
+                "code": 0
+              }
+            },
+            {
+              "traceId": "11111111111111111111111111111111",
+              "spanId": "0000000000000004",
+              "parentSpanId": "0000000000000006",
+              "name": "chat gpt-4.1",
+              "kind": 3,
+              "startTimeUnixNano": "1794764310189000000",
+              "endTimeUnixNano": "1794764310190000000",
+              "attributes": [
+                {
+                  "key": "gen_ai.operation.name",
+                  "value": {
+                    "stringValue": "chat"
+                  }
+                },
+                {
+                  "key": "gen_ai.provider.name",
+                  "value": {
+                    "stringValue": "openai"
+                  }
+                },
+                {
+                  "key": "gen_ai.request.model",
+                  "value": {
+                    "stringValue": "gpt-4.1"
+                  }
+                },
+                {
+                  "key": "gen_ai.conversation.id",
+                  "value": {
+                    "stringValue": "fixture-session"
+                  }
+                },
+                {
+                  "key": "gen_ai.request.stream",
+                  "value": {
+                    "boolValue": true
+                  }
+                },
+                {
+                  "key": "server.address",
+                  "value": {
+                    "stringValue": "127.0.0.1"
+                  }
+                },
+                {
+                  "key": "server.port",
+                  "value": {
+                    "intValue": "44935"
+                  }
+                },
+                {
+                  "key": "gen_ai.response.finish_reasons",
+                  "value": {
+                    "arrayValue": {
+                      "values": [
+                        {
+                          "stringValue": "tool_calls"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.input_tokens",
+                  "value": {
+                    "intValue": "100"
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.output_tokens",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.cache_read.input_tokens",
+                  "value": {
+                    "intValue": "20"
+                  }
+                },
+                {
+                  "key": "gen_ai.response.model",
+                  "value": {
+                    "stringValue": "gpt-4.1"
+                  }
+                },
+                {
+                  "key": "gen_ai.response.id",
+                  "value": {
+                    "stringValue": "chatcmpl-agentlog-2"
+                  }
+                },
+                {
+                  "key": "github.copilot.cost",
+                  "value": {
+                    "doubleValue": 0.0
+                  }
+                },
+                {
+                  "key": "github.copilot.server_duration",
+                  "value": {
+                    "doubleValue": 2.0
+                  }
+                },
+                {
+                  "key": "github.copilot.initiator",
+                  "value": {
+                    "stringValue": "agent"
+                  }
+                },
+                {
+                  "key": "github.copilot.turn_id",
+                  "value": {
+                    "stringValue": "1"
+                  }
+                },
+                {
+                  "key": "github.copilot.interaction_id",
+                  "value": {
+                    "stringValue": "fixture-interaction"
+                  }
+                },
+                {
+                  "key": "gen_ai.response.time_to_first_chunk",
+                  "value": {
+                    "doubleValue": 0.000651568
+                  }
+                },
+                {
+                  "key": "gen_ai.input.messages",
+                  "value": {
+                    "stringValue": "[{\"role\":\"tool\",\"parts\":[{\"type\":\"tool_call_response\",\"id\":\"call-agentlog-view\",\"response\":\"Skill \\\"review\\\" loaded successfully. Follow the instructions in the skill context.\"}]}]"
+                  }
+                },
+                {
+                  "key": "gen_ai.output.messages",
+                  "value": {
+                    "stringValue": "[{\"role\":\"assistant\",\"parts\":[{\"type\":\"tool_call\",\"id\":\"call-agentlog-view\",\"name\":\"view\",\"arguments\":{\"path\":\"/workspace/fixture/work/fixture.txt\"}}]}]"
+                  }
+                }
+              ],
+              "events": [],
+              "status": {
+                "code": 0
+              }
+            },
+            {
+              "traceId": "11111111111111111111111111111111",
+              "spanId": "0000000000000005",
+              "parentSpanId": "0000000000000006",
+              "name": "chat gpt-4.1",
+              "kind": 3,
+              "startTimeUnixNano": "1794764310197000000",
+              "endTimeUnixNano": "1794764310198000000",
+              "attributes": [
+                {
+                  "key": "gen_ai.operation.name",
+                  "value": {
+                    "stringValue": "chat"
+                  }
+                },
+                {
+                  "key": "gen_ai.provider.name",
+                  "value": {
+                    "stringValue": "openai"
+                  }
+                },
+                {
+                  "key": "gen_ai.request.model",
+                  "value": {
+                    "stringValue": "gpt-4.1"
+                  }
+                },
+                {
+                  "key": "gen_ai.conversation.id",
+                  "value": {
+                    "stringValue": "fixture-session"
+                  }
+                },
+                {
+                  "key": "gen_ai.request.stream",
+                  "value": {
+                    "boolValue": true
+                  }
+                },
+                {
+                  "key": "server.address",
+                  "value": {
+                    "stringValue": "127.0.0.1"
+                  }
+                },
+                {
+                  "key": "server.port",
+                  "value": {
+                    "intValue": "44935"
+                  }
+                },
+                {
+                  "key": "gen_ai.response.finish_reasons",
+                  "value": {
+                    "arrayValue": {
+                      "values": [
+                        {
+                          "stringValue": "stop"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.input_tokens",
+                  "value": {
+                    "intValue": "100"
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.output_tokens",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.cache_read.input_tokens",
+                  "value": {
+                    "intValue": "20"
+                  }
+                },
+                {
+                  "key": "gen_ai.response.model",
+                  "value": {
+                    "stringValue": "gpt-4.1"
+                  }
+                },
+                {
+                  "key": "gen_ai.response.id",
+                  "value": {
+                    "stringValue": "chatcmpl-agentlog-3"
+                  }
+                },
+                {
+                  "key": "github.copilot.cost",
+                  "value": {
+                    "doubleValue": 0.0
+                  }
+                },
+                {
+                  "key": "github.copilot.server_duration",
+                  "value": {
+                    "doubleValue": 2.0
+                  }
+                },
+                {
+                  "key": "github.copilot.initiator",
+                  "value": {
+                    "stringValue": "agent"
+                  }
+                },
+                {
+                  "key": "github.copilot.turn_id",
+                  "value": {
+                    "stringValue": "2"
+                  }
+                },
+                {
+                  "key": "github.copilot.interaction_id",
+                  "value": {
+                    "stringValue": "fixture-interaction"
+                  }
+                },
+                {
+                  "key": "gen_ai.response.time_to_first_chunk",
+                  "value": {
+                    "doubleValue": 0.000329399
+                  }
+                },
+                {
+                  "key": "gen_ai.input.messages",
+                  "value": {
+                    "stringValue": "[{\"role\":\"tool\",\"parts\":[{\"type\":\"tool_call_response\",\"id\":\"call-agentlog-view\",\"response\":\"Synthetic file contents for Agentlog display test.\\n\"}]}]"
+                  }
+                },
+                {
+                  "key": "gen_ai.output.messages",
+                  "value": {
+                    "stringValue": "[{\"role\":\"assistant\",\"parts\":[{\"type\":\"text\",\"content\":\"Fixture read complete.\"}]}]"
+                  }
+                }
+              ],
+              "events": [],
+              "status": {
+                "code": 0
+              }
+            },
+            {
+              "traceId": "11111111111111111111111111111111",
+              "spanId": "0000000000000006",
+              "parentSpanId": "",
+              "name": "invoke_agent",
+              "kind": 1,
+              "startTimeUnixNano": "1794764310157000000",
+              "endTimeUnixNano": "1794764310204000000",
+              "attributes": [
+                {
+                  "key": "gen_ai.operation.name",
+                  "value": {
+                    "stringValue": "invoke_agent"
+                  }
+                },
+                {
+                  "key": "gen_ai.provider.name",
+                  "value": {
+                    "stringValue": "openai"
+                  }
+                },
+                {
+                  "key": "gen_ai.conversation.id",
+                  "value": {
+                    "stringValue": "fixture-session"
+                  }
+                },
+                {
+                  "key": "server.address",
+                  "value": {
+                    "stringValue": "127.0.0.1"
+                  }
+                },
+                {
+                  "key": "server.port",
+                  "value": {
+                    "intValue": "44935"
+                  }
+                },
+                {
+                  "key": "github.copilot.context.skills",
+                  "value": {
+                    "stringValue": "[\"review\",\"customize-cloud-agent\",\"github-pr-media\",\"pr-stack\"]"
+                  }
+                },
+                {
+                  "key": "github.copilot.context.mcp_server_names",
+                  "value": {
+                    "stringValue": "[\"WorkIQ\",\"browser-use\",\"github-copilot-browser\",\"github-mcp-server\"]"
+                  }
+                },
+                {
+                  "key": "github.copilot.context.custom_agent_names",
+                  "value": {
+                    "stringValue": "[]"
+                  }
+                },
+                {
+                  "key": "github.copilot.agent.type",
+                  "value": {
+                    "stringValue": "builtin"
+                  }
+                },
+                {
+                  "key": "gen_ai.response.finish_reasons",
+                  "value": {
+                    "arrayValue": {
+                      "values": [
+                        {
+                          "stringValue": "stop"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.input_tokens",
+                  "value": {
+                    "intValue": "300"
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.output_tokens",
+                  "value": {
+                    "intValue": "30"
+                  }
+                },
+                {
+                  "key": "github.copilot.turn_count",
+                  "value": {
+                    "intValue": "3"
+                  }
+                },
+                {
+                  "key": "gen_ai.input.messages",
+                  "value": {
+                    "stringValue": "[{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"<current_datetime>2026-11-15T17:38:30.156+00:00</current_datetime>\\n\\nInvoke the review skill, use view to read fixture.txt, then say Fixture read complete.\"}]}]"
+                  }
+                },
+                {
+                  "key": "gen_ai.output.messages",
+                  "value": {
+                    "stringValue": "[{\"role\":\"assistant\",\"parts\":[{\"type\":\"text\",\"content\":\"Fixture read complete.\"}]}]"
+                  }
+                }
+              ],
+              "events": [
+                {
+                  "name": "github.copilot.user.message",
+                  "timeUnixNano": "1794764310157000000",
+                  "attributes": [
+                    {
+                      "key": "github.copilot.user.message.source",
+                      "value": {
+                        "stringValue": "user"
+                      }
+                    },
+                    {
+                      "key": "github.copilot.user.message.interaction_id",
+                      "value": {
+                        "stringValue": "fixture-interaction"
+                      }
+                    },
+                    {
+                      "key": "github.copilot.user.message.turn_id",
+                      "value": {
+                        "stringValue": "0"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "name": "github.copilot.skill.invoked",
+                  "timeUnixNano": "1794764310180000000",
+                  "attributes": [
+                    {
+                      "key": "gen_ai.skill.name",
+                      "value": {
+                        "stringValue": "review"
+                      }
+                    },
+                    {
+                      "key": "github.copilot.skill.invocation_trigger",
+                      "value": {
+                        "stringValue": "agent-invoked"
+                      }
+                    },
+                    {
+                      "key": "gen_ai.skill.description",
+                      "value": {
+                        "stringValue": "Synthetic review fixture"
+                      }
+                    },
+                    {
+                      "key": "gen_ai.skill.source.uri",
+                      "value": {
+                        "stringValue": "file:///workspace/fixture/skills/review/SKILL.md"
+                      }
+                    },
+                    {
+                      "key": "github.copilot.skill.source",
+                      "value": {
+                        "stringValue": "custom"
+                      }
+                    },
+                    {
+                      "key": "github.copilot.skill.content",
+                      "value": {
+                        "stringValue": "Read fixture.txt.\n"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "status": {
+                "code": 0
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

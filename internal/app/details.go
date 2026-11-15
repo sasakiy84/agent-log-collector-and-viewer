@@ -13,22 +13,24 @@ type Block struct {
 	Code  bool   `json:"code"`
 }
 type Detail struct {
-	Diagnostic bool           `json:"diagnostic,omitempty"`
-	Turn       string         `json:"turn,omitempty"`
-	ToolPhase  string         `json:"tool_phase,omitempty"`
-	Conflicts  []Conflict     `json:"conflicts,omitempty"`
-	Name       string         `json:"name"`
-	Kind       string         `json:"kind"`
-	Title      string         `json:"title"`
-	Blocks     []Block        `json:"blocks"`
-	Fields     [][2]string    `json:"fields"`
-	Error      bool           `json:"error"`
-	Model      any            `json:"model,omitempty"`
-	Host       any            `json:"host,omitempty"`
-	Cwd        any            `json:"cwd,omitempty"`
-	Project    any            `json:"project,omitempty"`
-	Tags       any            `json:"tags,omitempty"`
-	Attributes map[string]any `json:"attributes"`
+	sessionPrompt bool
+	SkillFacts    []SkillEvidence `json:"-"`
+	Diagnostic    bool            `json:"diagnostic,omitempty"`
+	Turn          string          `json:"turn,omitempty"`
+	ToolPhase     string          `json:"tool_phase,omitempty"`
+	Conflicts     []Conflict      `json:"conflicts,omitempty"`
+	Name          string          `json:"name"`
+	Kind          string          `json:"kind"`
+	Title         string          `json:"title"`
+	Blocks        []Block         `json:"blocks"`
+	Fields        [][2]string     `json:"fields"`
+	Error         bool            `json:"error"`
+	Model         any             `json:"model,omitempty"`
+	Host          any             `json:"host,omitempty"`
+	Cwd           any             `json:"cwd,omitempty"`
+	Project       any             `json:"project,omitempty"`
+	Tags          any             `json:"tags,omitempty"`
+	Attributes    map[string]any  `json:"attributes"`
 }
 
 func (p *Detail) field(label string, v any) {
@@ -38,6 +40,9 @@ func (p *Detail) field(label string, v any) {
 }
 func (p *Detail) block(label string, v any, code bool) {
 	if present(v) {
+		if text, ok := v.(string); ok && (text == "<REDACTED>" || text == "[REDACTED]") {
+			v = "Content not exported"
+		}
 		if code {
 			switch structured := decoded(v).(type) {
 			case map[string]any, []any:
@@ -72,6 +77,9 @@ func (p *Detail) messages(label string, v any) {
 				}
 				if text == nil && part["type"] == "tool_call" {
 					text = part
+				}
+				if text == nil && part["type"] == "tool_call_response" {
+					text = toolContent(part["response"])
 				}
 				if present(text) {
 					texts = append(texts, display(text))
@@ -142,13 +150,16 @@ func describe(e Event, d document) Detail {
 		in, params := obj(input), obj(parameters)
 		command := firstValue(a, "full_command")
 		if !present(command) {
-			command = firstValue(params, "full_command", "command")
+			command = firstValue(params, "full_command", "command", "bash_command")
 		}
 		if !present(command) {
 			command = firstValue(in, "command", "cmd")
 		}
 		p.block("Command", command, true)
 		file := firstValue(in, "file_path", "path")
+		if !present(file) {
+			file = firstValue(params, "file_path", "path")
+		}
 		if present(file) {
 			p.block("File", file, true)
 			p.field("Offset", in["offset"])
@@ -158,7 +169,7 @@ func describe(e Event, d document) Detail {
 		} else if parameters != nil && len(p.Blocks) == 0 {
 			p.block("Input", parameters, true)
 		}
-		p.block("Output", get("gen_ai.tool.call.result", "tool_result", "output", "result", "tool.output"), true)
+		p.block("Output", toolContent(get("gen_ai.tool.call.result", "tool_result", "output", "result", "tool.output")), true)
 		if present(get("file_path")) && !present(file) {
 			p.block("File", get("file_path"), true)
 		}
@@ -224,8 +235,12 @@ func describe(e Event, d document) Detail {
 		{"Reasoning", []string{"gen_ai.usage.reasoning.output_tokens", "reasoning_token_count"}},
 		{"Cost (USD)", []string{"cost_usd"}}, {"Billing multiplier", []string{"github.copilot.cost"}}, {"Nano AIU", []string{"github.copilot.nano_aiu"}},
 	} {
+		if f.label == "Input tokens" && e.Source == "claude" && a["gen_ai.usage.input_tokens"] == nil {
+			f.label = "Uncached input"
+		}
 		p.field(f.label, get(f.keys...))
 	}
+	providerDetails(e, &p, r)
 	ms := get("duration_ms", "interaction.duration_ms", "tool_duration_ms")
 	if ms == nil && r["startTimeUnixNano"] != nil && r["endTimeUnixNano"] != nil {
 		start, ok1 := new(big.Int).SetString(str(r["startTimeUnixNano"]), 10)
@@ -275,6 +290,9 @@ func describe(e Event, d document) Detail {
 	}
 	for _, v := range arr(r["events"]) {
 		event := obj(v)
+		if p.Kind == "tool" && event["name"] == "tool.output" {
+			continue
+		}
 		at := decodedAttributes(event["attributes"])
 		p.block(str(event["name"]), firstValue(at, "tool.output", "exception.message", "output", "content"), false)
 	}

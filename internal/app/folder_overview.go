@@ -137,7 +137,7 @@ func refreshFolderBatch(ctx context.Context, tx *sql.Tx) (int, error) {
 			return 0, nextErr
 		}
 		if nextErr == nil {
-			if next.Source == "codex" && (session == "unassigned:codex" || strings.HasPrefix(session, "trace:codex:")) {
+			if (next.Source == "codex" || next.Source == "claude" || next.Source == "copilot") && (session == "unassigned:"+next.Source || strings.HasPrefix(session, "trace:"+next.Source+":")) {
 				next.Diagnostic = 1
 			}
 			u, err := decodeUsage(next.Usage)

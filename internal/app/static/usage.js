@@ -14,6 +14,11 @@ const usageUSD = (value) => {
   const [whole, fraction] = value.split(".");
   return "$" + usageNumber(whole) + (fraction ? "." + fraction : "");
 };
+const usageAIU = (value) => {
+ if (value===undefined) return "—";
+ const nano=BigInt(value),whole=nano/1000000000n,frac=(nano%1000000000n).toString().padStart(9,"0").replace(/0+$/,"");
+ return usageIntegerFormat.format(whole)+(frac?"."+frac:"");
+};
 const usageTokenKeys = [
   "input_tokens",
   "output_tokens",
@@ -38,6 +43,7 @@ function usageTitle(s) {
     cache_write_tokens: "Cache write",
     reasoning_tokens: "Reasoning",
     cost_usd: "USD cost",
+    nano_aiu: "Nano AI units",
   };
   return (
     (Object.entries(labels)
@@ -63,6 +69,7 @@ function usageRow(s) {
           ? usageCompact(v.cache_write_tokens) + " cache write"
           : "";
   const extra = [
+    v.nano_aiu!==undefined ? `<span>${esc(usageAIU(v.nano_aiu))} AIU</span>` : "",
     v.cost_usd !== undefined ? `<span>${esc(usageUSD(v.cost_usd))}</span>` : "",
     errors > 0
       ? `<span class="usage-error">${esc(usageNumber(v.errors))} ${errors === 1n ? "error" : "errors"}</span>`
@@ -71,7 +78,7 @@ function usageRow(s) {
   ]
     .filter(Boolean)
     .join(" · ");
-  return `<span class="usage-row" title="${esc(usageTitle(s))}">${known ? `<span>${esc(usageCompact(v.input_tokens))} <span class="muted">in</span> · ${esc(usageCompact(v.output_tokens))} <span class="muted">out</span></span>` : partialTokens ? `<span>${esc(partialTokens)}</span>` : v.cost_usd !== undefined || errors > 0 ? "" : '<span class="muted">—</span>'}${extra ? `<small>${extra}</small>` : ""}</span>`;
+  return `<span class="usage-row" title="${esc(usageTitle(s))}">${known ? `<span>${esc(usageCompact(v.input_tokens))} <span class="muted">in</span> · ${esc(usageCompact(v.output_tokens))} <span class="muted">out</span></span>` : partialTokens ? `<span>${esc(partialTokens)}</span>` : v.cost_usd !== undefined || v.nano_aiu !== undefined || errors > 0 ? "" : '<span class="muted">—</span>'}${extra ? `<small>${extra}</small>` : ""}</span>`;
 }
 function usageBasis(value) {
   const origin = value?.startsWith("import/")
@@ -115,7 +122,7 @@ function usageDetails(s) {
   const v = s.values,
     known =
       usageTokenKeys.some((k) => v[k] !== undefined) ||
-      v.cost_usd !== undefined;
+      v.cost_usd !== undefined || v.nano_aiu !== undefined;
   const item = (label, value, title = "") =>
     `<div${title ? ` title="${esc(title)}"` : ""}><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`;
   let hit = "—";
@@ -153,5 +160,5 @@ function usageDetails(s) {
         )
         .join("")}</tbody></table>`
     : "";
-  return `<div class="usage-heading">Reported usage <span class="muted">· entire session</span>${usagePartial(s) ? '<span class="usage-partial">Partial</span>' : ""}</div>${known ? `<dl class="usage-totals">${item("Input", usageNumber(v.input_tokens), "Includes reported cache tokens")}${item("Output", usageNumber(v.output_tokens))}${item("Cache read", usageNumber(v.cache_read_tokens))}${item("Cached input", hit, "Cache-read tokens as a percentage of input tokens")}${item("USD cost", usageUSD(v.cost_usd), "Reported USD only; billing multipliers are separate")}${item("Error events", usageNumber(v.errors || "0"))}${v.output_tokens === undefined && v.reasoning_tokens !== undefined ? item("Reasoning", usageNumber(v.reasoning_tokens)) : ""}</dl>` : `<p class="usage-unreported">Usage not reported${BigInt(v.errors || "0") > 0n ? " · " + usageNumber(v.errors) + " errors" : ""}</p>`}<details class="usage-more"><summary>Usage details</summary><dl class="fields">${item("Cache write", usageNumber(v.cache_write_tokens))}${item("Reasoning", usageNumber(v.reasoning_tokens), "Included in output tokens")}${item("Avg request time", latency, v.duration_samples ? `${v.duration_samples} reported durations` : "")}${item("Tokens from", usageBasis(s.basis?.tokens))}${item("Cost from", usageBasis(s.basis?.cost))}</dl>${reporting ? `<p>${esc(reporting)}</p>` : ""}${variants}${s.overlap && !s.variants ? "<p>Each session uses one report source per metric.</p>" : ""}${s.excluded ? `<p>${s.excluded} reports excluded: invalid values, unsupported aggregation or overlapping intervals.</p>` : ""}${s.legacy ? "<p>Older Codex usage reports need reimporting for session totals. Watched files refresh automatically on restart.</p>" : ""}</details>`;
+  return `<div class="usage-heading">Reported usage <span class="muted">· entire session</span>${usagePartial(s) ? '<span class="usage-partial">Partial</span>' : ""}</div>${known ? `<dl class="usage-totals">${item("Input", usageNumber(v.input_tokens), "Includes reported cache tokens")}${item("Output", usageNumber(v.output_tokens))}${item("Cache read", usageNumber(v.cache_read_tokens))}${item("Cached input", hit, "Cache-read tokens as a percentage of input tokens")}${item("USD cost", usageUSD(v.cost_usd), "Reported USD only; billing multipliers are separate")}${v.nano_aiu!==undefined ? item("AI units",usageAIU(v.nano_aiu),"Copilot reports nano AI units on invocation spans; counted once, not currency") : ""}${item("Error events", usageNumber(v.errors || "0"))}${v.output_tokens === undefined && v.reasoning_tokens !== undefined ? item("Reasoning", usageNumber(v.reasoning_tokens)) : ""}</dl>` : `<p class="usage-unreported">Usage not reported${BigInt(v.errors || "0") > 0n ? " · " + usageNumber(v.errors) + " errors" : ""}</p>`}<details class="usage-more"><summary>Usage details</summary><dl class="fields">${item("Cache write", usageNumber(v.cache_write_tokens))}${item("Reasoning", usageNumber(v.reasoning_tokens), "Included in output tokens")}${item("Avg request time", latency, v.duration_samples ? `${v.duration_samples} reported durations` : "")}${item("Tokens from", usageBasis(s.basis?.tokens))}${item("Cost from", usageBasis(s.basis?.cost))}</dl>${reporting ? `<p>${esc(reporting)}</p>` : ""}${variants}${s.overlap && !s.variants ? "<p>Each session uses one report source per metric.</p>" : ""}${s.excluded ? `<p>${s.excluded} reports excluded: invalid values, unsupported aggregation or overlapping intervals.</p>` : ""}${s.legacy ? "<p>Older Codex usage reports need reimporting for session totals. Watched files refresh automatically on restart.</p>" : ""}</details>`;
 }

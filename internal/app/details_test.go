@@ -68,7 +68,7 @@ func TestAgentDetails(t *testing.T) {
 		t.Fatal(p)
 	}
 	p = detailFixture(t, "execute_tool", "traces", map[string]any{"gen_ai.tool.name": "read_file"}, map[string]any{"events": []any{map[string]any{"name": "tool.output", "attributes": []any{map[string]any{"key": "tool.output", "value": map[string]any{"stringValue": "file content"}}}}}})
-	if !hasBlock(p, "tool.output", "file content") {
+	if !hasBlock(p, "Output", "file content") {
 		t.Fatal(p)
 	}
 }

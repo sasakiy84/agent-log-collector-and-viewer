@@ -122,11 +122,24 @@ func usageMeasurement(e Event, doc document, p Detail) *usagePoint {
 		case "gen_ai.client.token.usage", "claude_code.token.usage":
 			typ := str(firstValue(a, "gen_ai.token.type", "type", "token.type"))
 			component = map[string]string{"input": "input_tokens", "output": "output_tokens", "cacheRead": "cache_read_tokens", "cache_read": "cache_read_tokens", "cacheCreation": "cache_write_tokens", "cache_write": "cache_write_tokens", "reasoning": "reasoning_tokens"}[typ]
+		case "gen_ai.client.inference.usage.input_tokens":
+			component = "input_tokens"
+		case "gen_ai.client.inference.usage.output_tokens":
+			component = "output_tokens"
+		case "gen_ai.client.inference.usage.cache_read.input_tokens":
+			component = "cache_read_tokens"
+		case "gen_ai.client.inference.usage.cache_write.input_tokens":
+			component = "cache_write_tokens"
+		case "gen_ai.client.inference.usage.reasoning.output_tokens":
+			component = "reasoning_tokens"
 		case "claude_code.cost.usage":
 			if strings.EqualFold(str(r["unit"]), "USD") {
 				component = "cost_usd"
 			}
-		case "gen_ai.client.operation.duration":
+		case "gen_ai.client.operation.duration", "gen_ai.client.inference.duration":
+			if e.Source == "copilot" && a["gen_ai.operation.name"] != nil && a["gen_ai.operation.name"] != "chat" {
+				return nil
+			}
 			if str(r["unit"]) == "s" {
 				component = "duration_ms"
 			}
@@ -185,6 +198,17 @@ func usageMeasurement(e Event, doc document, p Detail) *usagePoint {
 		}
 		return u
 	}
+	// Copilot invocation spans aggregate the child chat spans. Count model usage
+	// once at inference level; the invocation's AI units have their own family.
+	if e.Source == "copilot" && e.Signal == "traces" && a["gen_ai.operation.name"] == "invoke_agent" {
+		if e.ParentSpan == "" || present(a["server.address"]) {
+			put("nano_aiu", true, "github.copilot.nano_aiu")
+		}
+		if len(u.Values) == 0 {
+			return nil
+		}
+		return u
+	}
 	for component, keys := range map[string][]string{
 		"input_tokens": {"gen_ai.usage.input_tokens", "input_tokens", "input_token_count"}, "output_tokens": {"gen_ai.usage.output_tokens", "output_tokens", "output_token_count"},
 		"cache_read_tokens": {"gen_ai.usage.cache_read.input_tokens", "cache_read_tokens", "cached_token_count"}, "cache_write_tokens": {"gen_ai.usage.cache_write.input_tokens", "cache_creation_tokens", "cache_write_token_count"},
@@ -233,7 +257,7 @@ func usageMeasurement(e Event, doc document, p Detail) *usagePoint {
 		} else {
 			u.Values = map[string]string{"legacy": "1"}
 		}
-	} else if id, ok := firstValue(a, "gen_ai.response.id", "response.id", "response_id", "gen_ai.message.id", "message.id", "message_id").(string); ok && id != "" && len(id) <= 512 {
+	} else if id, ok := firstValue(a, "gen_ai.response.id", "response.id", "response_id", "request_id", "gen_ai.message.id", "message.id", "message_id").(string); ok && id != "" && len(id) <= 512 {
 		u.Key = usageHash([]string{"response", id})
 	} else if e.Trace != "" && e.Span != "" {
 		u.Key = "span:" + e.Trace + ":" + e.Span

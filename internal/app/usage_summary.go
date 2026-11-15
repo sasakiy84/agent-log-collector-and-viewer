@@ -115,6 +115,7 @@ func makeUsage(bases map[string]map[string]string) UsageSummary {
 			return v["cache_read_tokens"] != "" || v["cache_write_tokens"] != "" || v["reasoning_tokens"] != ""
 		})
 	}
+	chooseUsage(&s, bases, "ai_units", []string{"nano_aiu"}, func(v map[string]string) bool { return v["nano_aiu"] != "" })
 	chooseUsage(&s, bases, "cost", []string{"cost_usd"}, func(v map[string]string) bool { return v["cost_usd"] != "" })
 	chooseUsage(&s, bases, "latency", []string{"duration_ms", "duration_samples"}, func(v map[string]string) bool {
 		return v["duration_ms"] != "" && v["duration_samples"] != "" && v["duration_samples"] != "0"
@@ -143,7 +144,7 @@ func combinedUsage(imported, native UsageSummary, errors string) UsageSummary {
 		components []string
 	}{
 		{"tokens", []string{"input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "reasoning_tokens"}},
-		{"cost", []string{"cost_usd"}}, {"latency", []string{"duration_ms", "duration_samples"}},
+		{"ai_units", []string{"nano_aiu"}}, {"cost", []string{"cost_usd"}}, {"latency", []string{"duration_ms", "duration_samples"}},
 	} {
 		pick, origin := native, "otel"
 		if native.Basis[f.name] == "" || f.name == "tokens" && (imported.Basis[f.name] == "codex-total" || (native.Values["input_tokens"] == "" && native.Values["output_tokens"] == "") && (imported.Values["input_tokens"] != "" || imported.Values["output_tokens"] != "")) {

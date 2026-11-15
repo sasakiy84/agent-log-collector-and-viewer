@@ -5,12 +5,20 @@ import (
 	"database/sql"
 	"encoding/json"
 	"strings"
+	"time"
 )
 
 // Codex can store automatically injected context as user-role messages. Strip
 // only recognized, complete leading envelopes; ordinary markup stays intact.
 func userPromptText(text, source string) string {
 	text = strings.TrimSpace(text)
+	if source == "copilot" && strings.HasPrefix(text, "<current_datetime>") {
+		if end := strings.Index(text, "</current_datetime>"); end >= 0 {
+			if _, err := time.Parse(time.RFC3339Nano, text[len("<current_datetime>"):end]); err == nil {
+				text = strings.TrimSpace(text[end+len("</current_datetime>"):])
+			}
+		}
+	}
 	if source != "codex" {
 		return text
 	}
@@ -41,7 +49,7 @@ func userPromptText(text, source string) string {
 }
 
 func promptTitle(source string, d Detail) string {
-	if d.Kind != "user" {
+	if d.Kind != "user" && !(source == "copilot" && d.Kind == "agent" && d.sessionPrompt) {
 		return ""
 	}
 	for _, block := range userRequestBlocks(d) {
@@ -49,7 +57,7 @@ func promptTitle(source string, d Detail) string {
 			continue
 		}
 		text := userPromptText(block.Text, source)
-		if text == "" || text == "Content not exported" || source == "codex" && codexAutomaticPrompt(text, d.Model) {
+		if text == "" || text == "Content not exported" || text == "<REDACTED>" || text == "[REDACTED]" || source == "codex" && codexAutomaticPrompt(text, d.Model) {
 			continue
 		}
 		line, _, _ := strings.Cut(text, "\n")

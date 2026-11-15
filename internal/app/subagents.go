@@ -55,8 +55,11 @@ func agentTargets(e Event, d Detail) (bool, []agentTarget) {
 	}
 	add(at["child.session.id"], at["gen_ai.agent.name"], true)
 	add(at["agentlog.subagent.id"], at["gen_ai.agent.name"], false)
-	if at["gen_ai.operation.name"] == "invoke_agent" {
+	if at["gen_ai.operation.name"] == "invoke_agent" && (e.Source != "copilot" || d.Name == "gen_ai.agent.started" || d.Name == "gen_ai.agent.completed") {
 		add(at["gen_ai.agent.id"], at["gen_ai.agent.name"], false)
+	}
+	if e.Source == "copilot" && at["gen_ai.operation.name"] == "invoke_agent" && e.Signal == "traces" && e.Trace != "" && e.Span != "" && e.ParentSpan != "" && !present(at["server.address"]) {
+		add("trace:"+e.Trace+":"+e.Span, at["gen_ai.agent.name"], false)
 	}
 	if d.Kind != "tool" {
 		return launch, targets
@@ -105,7 +108,7 @@ func agentTargets(e Event, d Detail) (bool, []agentTarget) {
 	return launch, targets
 }
 func storeAgentData(ctx context.Context, tx *sql.Tx, e Event, d Detail) error {
-	owner, valid := agentIdentity(d.Attributes)
+	owner, valid := agentIdentity(e.Source, d.Attributes)
 	if !valid && d.Attributes["gen_ai.operation.name"] != "invoke_agent" {
 		return nil
 	}
@@ -301,8 +304,18 @@ func (a *App) subagent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid agent session", 400)
 		return
 	}
+	idsQuery, idsArgs := agentTimelineIDs, []any{session, agent}
+	if strings.HasPrefix(agent, "trace:") {
+		parts := strings.Split(agent, ":")
+		if len(parts) != 3 || len(parts[1]) != 32 || len(parts[2]) != 16 {
+			http.Error(w, "Invalid trace agent", 400)
+			return
+		}
+		idsQuery = traceAgentTimelineIDs
+		idsArgs = []any{session, parts[1], parts[2]}
+	}
 	page := SessionPage{SessionSummary: SessionSummary{ID: session, Source: "copilot"}, Limit: 40, Children: []string{}, Events: []TimelineEvent{}}
-	if err = tx.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM ("+agentTimelineIDs+")", session, agent).Scan(&page.Count); err != nil {
+	if err = tx.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM ("+idsQuery+")", idsArgs...).Scan(&page.Count); err != nil {
 		databaseError(w, r, err)
 		return
 	}
@@ -311,13 +324,22 @@ func (a *App) subagent(w http.ResponseWriter, r *http.Request) {
 		page.Offset = max(0, page.Count-1) / page.Limit * page.Limit
 	}
 	rows, err := tx.QueryContext(r.Context(), `SELECT p.id,`+qualifiedCardColumns("c")+` FROM
- (SELECT id,time,sequence,import_id,otel_id FROM timeline_entries WHERE id IN (`+agentTimelineIDs+`) ORDER BY time,sequence,id LIMIT ? OFFSET ?) p
- JOIN event_cards c ON c.id=p.import_id OR c.id=p.otel_id ORDER BY p.time,p.sequence,p.id,c.origin,c.id`, session, agent, page.Limit, page.Offset)
+ (SELECT id,time,sequence,import_id,otel_id FROM timeline_entries WHERE id IN (`+idsQuery+`) ORDER BY time,sequence,id LIMIT ? OFFSET ?) p
+ JOIN event_cards c ON c.id=p.import_id OR c.id=p.otel_id ORDER BY p.time,p.sequence,p.id,c.origin,c.id`, append(append([]any{}, idsArgs...), page.Limit, page.Offset)...)
 	if err == nil {
 		page.Events, err = decodeTimeline(rows)
 	}
 	if err == nil {
 		err = attachSubagents(r.Context(), tx, page.Events)
+		for i := range page.Events {
+			links := page.Events[i].Subagents
+			page.Events[i].Subagents = nil
+			for _, link := range links {
+				if link.Session != session || link.Agent != agent {
+					page.Events[i].Subagents = append(page.Events[i].Subagents, link)
+				}
+			}
+		}
 	}
 	if err == nil {
 		err = tx.Commit()
@@ -328,3 +350,15 @@ func (a *App) subagent(w http.ResponseWriter, r *http.Request) {
 	}
 	write(w, page)
 }
+
+// gen_ai.agent.id names an agent definition, not an invocation instance. Span
+// ancestry identifies each invocation exactly, including repeated same-name
+// agents, and never crosses a session or trace. This path runs only on preview.
+const traceAgentTimelineIDs = `WITH RECURSIVE trace_events AS MATERIALIZED (
+ SELECT e.id,e.span,e.parent_span,c.kind FROM events e JOIN event_cards c ON c.id=e.id
+ WHERE e.source='copilot' AND e.session=? AND e.trace=? AND e.span<>''
+), branch(span) AS (
+ SELECT span FROM trace_events WHERE span=? AND parent_span<>'' AND kind='agent'
+ UNION SELECT e.span FROM trace_events e JOIN branch b ON e.parent_span=b.span
+) SELECT DISTINCT COALESCE((SELECT id FROM timeline_entries t WHERE t.otel_id=e.id AND t.import_id<>'' AND t.otel_id<>''),e.id)
+ FROM trace_events e JOIN branch b ON e.span=b.span`

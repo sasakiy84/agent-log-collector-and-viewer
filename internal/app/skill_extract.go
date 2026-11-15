@@ -78,7 +78,7 @@ func skillReadPaths(command string) []string {
 	return words[1:]
 }
 func extractedSkills(e Event, d Detail) []SkillEvidence {
-	if e.Source != "codex" || strings.HasPrefix(e.Session, "trace:codex:") || e.Session == "unassigned:codex" {
+	if (e.Source != "codex" && e.Source != "claude" && e.Source != "copilot") || strings.HasPrefix(e.Session, "trace:") || strings.HasPrefix(e.Session, "unassigned:") {
 		return nil
 	}
 	if d.Name == "codex.skill_invocation" {
@@ -88,7 +88,12 @@ func extractedSkills(e Event, d Detail) []SkillEvidence {
 		}
 		return []SkillEvidence{{Name: name, Plugin: skillString(d.Attributes["skill.plugin_id"], 256), Scope: skillString(d.Attributes["skill.scope"], 64), Mode: skillString(d.Attributes["skill.invocation_type"], 64), Evidence: "reported"}}
 	}
-	refs := []SkillEvidence{}
+	refs := append([]SkillEvidence{}, d.SkillFacts...)
+	if e.Source == "claude" && eventSuffix(d.Name) == "skill_activated" {
+		if name := skillString(d.Attributes["skill.name"], 256); name != "" {
+			return []SkillEvidence{{Name: name, Plugin: skillString(d.Attributes["plugin.name"], 256), Scope: skillString(d.Attributes["skill.source"], 64), Mode: skillString(d.Attributes["invocation_trigger"], 64), Evidence: "reported", Instance: "activation"}}
+		}
+	}
 	seen := map[string]bool{}
 	add := func(f SkillEvidence) {
 		if f.Name != "" && !seen[f.Name] && len(refs) < 16 {
@@ -101,6 +106,18 @@ func extractedSkills(e Event, d Detail) []SkillEvidence {
 		if i := strings.LastIndex(name, "."); i >= 0 {
 			name = name[i+1:]
 		}
+		if name == "skill" {
+			params := obj(decoded(d.Attributes["tool_parameters"]))
+			input := obj(decoded(firstValue(d.Attributes, "gen_ai.tool.call.arguments", "tool_input", "arguments")))
+			skill := firstValue(d.Attributes, "skill_name")
+			if !present(skill) {
+				skill = firstValue(params, "skill_name")
+			}
+			if !present(skill) {
+				skill = firstValue(input, "skill", "name")
+			}
+			add(SkillEvidence{Name: skillString(skill, 256), Plugin: skillString(d.Attributes["plugin.name"], 256), Evidence: "reference"})
+		}
 		for _, b := range d.Blocks {
 			if b.Label == "Command" {
 				for _, path := range skillReadPaths(b.Text) {
@@ -109,7 +126,7 @@ func extractedSkills(e Event, d Detail) []SkillEvidence {
 			}
 			if b.Label == "File" {
 				switch name {
-				case "read", "read_file", "read_text", "get_file_contents", "view_file":
+				case "read", "read_file", "read_text", "get_file_contents", "view_file", "view":
 					add(skillFromPath(b.Text))
 				}
 			}
