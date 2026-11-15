@@ -1,3 +1,11 @@
+# Reported usage (current)
+
+- Incremental, exact-decimal accounting groups repeated responses and cumulative epochs, rejects overlapping delta intervals and conflicting reports, and caches per-session/origin totals. Folder reads combine those caches. Error counts follow logical timeline reconciliation and archive deletion.
+- Coverage includes zero/missing values, integers above JavaScript's safe range, tiny USD precision, inclusive Anthropic input, Codex repeated totals, reasoning/cache subsets, origin/signal alternatives, out-of-order intervals, second/day boundaries, deletion cleanup, resumable upgrade and full-history/filter scopes.
+- Chromium exercises folder/session figures, latest-position access, origin changes, cache ratio, USD, request time, error events, old Codex counter replay/labels, exact BigInt display and mobile bounds. Existing pagination/timeline/inspector flows continue to pass.
+- Against the published v0.6.0 binary, isolated Codex/Claude archive fixtures confirm unchanged files remain deleted across normalization changes. Current archives suppress both client formats while allowing changes confined to new counters/response IDs. Independent review findings are fixed.
+- [Rules](usage.md) · [Usage screenshot](ui-usage-session.png) · [Mobile](ui-usage-mobile.png). All screenshots use synthetic telemetry.
+
 # Folder overview (current)
 
 - Default navigation shows one row per full working-directory path, including all matching sessions before pagination. Each row shows its agents, session count and latest activity. Folder/session ordering is newest activity first; unknown metadata is one group, and distinct paths with the same basename stay separate.

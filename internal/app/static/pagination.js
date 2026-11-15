@@ -2,8 +2,9 @@
 
 // Shared by session lists, chronological timelines and archive selection.
 class Pagination {
- constructor(element,{noun,onChange,onLatest}){
+ constructor(element,{noun,onChange,onLatest,summary}){
   this.element=element;this.noun=noun;this.onChange=onChange;this.onLatest=onLatest;
+  this.summary=summary;
   this.total=0;this.page=1;this.pages=1;this.loading=false;
   element.addEventListener('click',event=>{
    const button=event.target.closest('button[data-page]');
@@ -30,7 +31,7 @@ class Pagination {
   let previous=0;
   const links=numbers.map(n=>{const gap=n-previous>1?'<span class="pagination-gap" aria-hidden="true">…</span>':'';previous=n;return gap+button(n,n,`Page ${n}`,n===this.page||total===0,n!==1&&n!==this.pages&&n!==this.page)}).join('');
   const id=this.element.id+'-jump';
-  this.element.innerHTML=`<span class="pagination-range" role="status">${total?`${(offset+1).toLocaleString()}–${Math.min(offset+size,total).toLocaleString()} / ${total.toLocaleString()}`:'0'} ${this.noun}</span><div class="pagination-pages">${button(this.page-1,'←','Previous page',this.page===1||!total)}${links}${button(this.page+1,'→','Next page',this.page===this.pages||!total)}${this.onLatest?button('latest','Latest','Show latest events',!total):''}</div><form class="pagination-jump"><label for="${id}">Page</label><input id="${id}" type="number" min="1" max="${this.pages}" step="1" value="${this.page}" aria-label="Page number" required${!total?' disabled':''}><span>/ ${this.pages.toLocaleString()}</span><button type="submit"${!total?' disabled':''}>Go</button></form>`;
+  this.element.innerHTML=`<span class="pagination-range" role="status">${total?`${(offset+1).toLocaleString()}–${Math.min(offset+size,total).toLocaleString()} / ${total.toLocaleString()}`:'0'} ${this.noun}${this.summary?this.summary():''}</span><div class="pagination-pages">${button(this.page-1,'←','Previous page',this.page===1||!total)}${links}${button(this.page+1,'→','Next page',this.page===this.pages||!total)}${this.onLatest?button('latest','Latest','Show latest events',!total):''}</div><form class="pagination-jump"><label for="${id}">Page</label><input id="${id}" type="number" min="1" max="${this.pages}" step="1" value="${this.page}" aria-label="Page number" required${!total?' disabled':''}><span>/ ${this.pages.toLocaleString()}</span><button type="submit"${!total?' disabled':''}>Go</button></form>`;
   // Remember boundary/current disabling independently from request locking.
   this.element.querySelectorAll('button,input').forEach(control=>control.dataset.unavailable=String(control.disabled));
   this.setLoading(this.loading);

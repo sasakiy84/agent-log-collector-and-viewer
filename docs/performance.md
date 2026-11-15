@@ -33,3 +33,5 @@ A partial directory-candidate index supplies the earliest user event with known 
 ```sh
 python3 scripts/performance_check.py --binary ./agentlog --folders
 ```
+
+Usage summaries are maintained incrementally from normalized reporting groups. With the same 150,000-record/500-session/20-folder synthetic fixture, warm medians after adding accounting were 2.90 ms for session lists, 7.55 ms for details and 2.82 ms for folders. Session counts, order and event identities matched v0.6.0. Reverse-order OTEL delta batches of 1k/2k/4k/10k records took 1.35/3.13/5.83/16.36 seconds including ingestion and full-text indexing; accounting uses an exact integer RTree rather than a suffix scan per interval. These local measurements are fixture-specific.
