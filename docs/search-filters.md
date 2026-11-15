@@ -10,7 +10,7 @@ Sessions, Skills and Export share a time range, project selection, agent and ori
 - **Text match**: AND (default) or OR over analyzed Japanese/English words. **Exclude words** removes records containing any analyzed exclusion term. These fields stay outside the ordinary text box. Skills instead searches the skill name/plugin/scope/path strings; exclusions remove matching skills.
 - **Advanced search** (Sessions/Export): an exact ID field/value, combined with the text and event filters. When combined, the ID and text/time/type/origin must belong to the same stored record.
 
-The session list shows sessions containing a matching record. Time is **event time**, not the session's start or last activity; a continuing session can therefore match an earlier range. Session titles, last activity, event counts and **Session usage** describe the full session. Internal and child sessions remain hidden by default.
+The session list shows sessions containing a matching record. Time is **event time**, not the session's start or last activity; nested skill filters use their invocation time, and day grouping uses the first matching invocation in each stored record; a continuing session can therefore match an earlier range. Session titles, last activity, event counts and **Session usage** describe the full session. Internal and child sessions remain hidden by default.
 
 **Analyze results** runs only when opened. Group matching stored-record counts, distinct sessions and error counts by UTC day, project, agent or event type. Import/OTEL copies are distinct records here; this is not the merged timeline's logical event count. Up to 100 groups are displayed, with an explicit notice when more exist. An open analysis updates when its conditions change; there is no polling. Analysis errors do not hide the session list.
 
@@ -34,7 +34,7 @@ Parameters are independent URL values rather than a query-language parser:
 | `q`, `text_mode` | Search text and `all` / `any` (default `all`) |
 | `exclude` | Exclude any matching word |
 | `id_key`, `id_value` | Existing exact-ID search; Sessions/Export only |
-| `diagnostics` | `1` includes internal Codex sessions in session search |
+| `diagnostics` | `1` includes internal sessions and unassigned provider telemetry in session search |
 | `include_children` | Export includes children by default; `0` restricts to roots |
 
 Example: `/api/sessions?project=name:shop&project=name:docs&source=codex&origin=otel&from=2026-11-01T00:00:00Z&to=2026-12-01T00:00:00Z&q=認証&event_kind=error`.

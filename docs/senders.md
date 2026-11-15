@@ -1,6 +1,6 @@
 # Sender configuration
 
-Examples include conversation and tool content.
+Examples include conversation and tool content. [Claude/Copilot rendering and validation](provider-display.md).
 
 ## Codex CLI
 

@@ -46,12 +46,13 @@ const clock = (s) => clockFormat.format(new Date(s));
 // Labels belong to the view: cached cards and full inspector records use the
 // same wording without rewriting stored telemetry or rebuilding projections.
 function eventTitle(detail) {
-  if (detail.kind !== "model" || detail.title === "Token usage")
+  if (detail.kind !== "model" || detail.title !== "Model request")
     return detail.title;
   if (detail.name.includes("sse_event")) return "Model stream event";
   return detail.fields.some(([label]) =>
     [
       "Input tokens",
+      "Uncached input",
       "Output tokens",
       "Cache read",
       "Cache write",
@@ -68,7 +69,10 @@ function eventTitle(detail) {
 function blockLabel(block, detail) {
   switch (block.label) {
     case "Request":
+    case "user":
       return "User message";
+    case "assistant": return "Assistant message";
+    case "tool": return "Tool output";
     case "Response":
       return detail.kind === "assistant" ? "Assistant message" : "Model output";
     case "Input":
