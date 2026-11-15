@@ -26,12 +26,23 @@ with tempfile.TemporaryDirectory() as folder:
    browser=p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox'])
    page=browser.new_page(viewport={'width':1440,'height':1000},timezone_id='Asia/Tokyo');errors=[];analysis=[]
    page.on('pageerror',lambda e:errors.append(str(e)));page.on('request',lambda r:analysis.append(r.url) if '/api/search/summary' in r.url else None)
+   def reveal(selector):
+    if not page.locator(selector).evaluate('(e)=>e.open'):page.locator(selector+'>summary').click()
+   def time_picker():reveal('#searchtime')
+   def text_options():reveal('#textoptions')
+   def facets():reveal('#facetoptions')
    page.goto(base);page.locator('#token').fill(token);page.locator('#loginform button').click();expect(page.locator('.session')).to_have_count(5);assert not analysis
-   page.locator('#searchrange').select_option('custom');page.locator('#searchfrom').fill('2026-11-14T09:00');page.locator('#searchto').fill('2026-11-15T09:00');page.locator('#applysearchfilters').click();expect(page.locator('.session')).to_have_count(4);assert 'from=2026-11-14T00' in page.url
-   saved=page.url;page.reload();expect(page.locator('.session')).to_have_count(4);expect(page.locator('#searchtimezone')).to_have_text('Asia/Tokyo');assert page.url==saved
+   time_picker();page.locator('#searchrange').select_option('custom');page.locator('#searchfrom').fill('2026-11-14T09:00');page.locator('#searchto').fill('2026-11-15T09:00');page.locator('#applysearchfilters').click();expect(page.locator('.session')).to_have_count(4);assert 'from=2026-11-14T00' in page.url
+   # From is inclusive, To is exclusive, and the UI can distinguish adjacent seconds.
+   time_picker();page.locator('#searchto').fill('2026-11-14T11:00');page.locator('#applysearchfilters').click();expect(page.locator('.session')).to_have_count(1)
+   time_picker();page.locator('#searchfrom').fill('2026-11-14T09:00:01');page.locator('#applysearchfilters').click();expect(page.locator('.session')).to_have_count(0);assert '00%3A00%3A01Z' in page.url
+   time_picker();page.locator('#searchfrom').fill('2026-11-14T09:00');page.locator('#searchto').fill('2026-11-15T09:00');page.locator('#applysearchfilters').click();expect(page.locator('.session')).to_have_count(4)
+   initial_output=os.getenv('AGENTLOG_SCREENSHOT_DIR')
+   if initial_output:pathlib.Path(initial_output).mkdir(parents=True,exist_ok=True);page.screenshot(path=initial_output+'/ui-search-overview.png',full_page=True)
+   saved=page.url;page.reload();expect(page.locator('.session')).to_have_count(4);time_picker();expect(page.locator('#searchtimezone')).to_have_text('Asia/Tokyo');assert page.url==saved;page.keyboard.press('Escape')
    page.locator('[data-project-check="name:A"]').check();expect(page.locator('.session')).to_have_count(1)
    page.locator('[data-project-check="name:B"]').check();expect(page.locator('.session')).to_have_count(3);expect(page.locator('#listtitle')).to_have_text('2 projects');assert page.url.count('project=')==2
-   page.locator('#facetoptions summary').click();page.locator('[name=searchsource][value=codex]').check();expect(page.locator('.session')).to_have_count(2)
+   facets();page.locator('[name=searchsource][value=codex]').check();expect(page.locator('.session')).to_have_count(2)
    page.locator('[name=searchsource][value=claude]').check();expect(page.locator('.session')).to_have_count(3)
    page.locator('[name=searchorigin][value=import]').check();expect(page.locator('.session')).to_have_count(1)
    page.locator('[name=searchorigin][value=otel]').check();expect(page.locator('.session')).to_have_count(3)
@@ -39,10 +50,12 @@ with tempfile.TemporaryDirectory() as folder:
    page.locator('[name=searchkind][value=conversation]').check();expect(page.locator('.session')).to_have_count(3)
    page.locator('[name=searchkind][value=error]').uncheck();page.locator('[name=searchkind][value=conversation]').uncheck();expect(page.locator('.session')).to_have_count(3)
    page.locator('#search').fill('alpha beta');expect(page.locator('.session')).to_have_count(1)
-   page.locator('#textmatch').select_option('any');expect(page.locator('.session')).to_have_count(2)
-   page.locator('#textmatch').select_option('all');expect(page.locator('.session')).to_have_count(1)
-   page.locator('#searchexclude').fill('failure');page.locator('#applysearchfilters').click();expect(page.locator('.session')).to_have_count(0)
-   page.locator('#searchexclude').fill('');page.locator('#applysearchfilters').click();expect(page.locator('.session')).to_have_count(1)
+   text_options();page.locator('#textmatch').select_option('any');expect(page.locator('.session')).to_have_count(2)
+   text_options();page.locator('#textmatch').select_option('all');expect(page.locator('.session')).to_have_count(1)
+   text_options();page.locator('#searchexclude').fill('failure')
+   if initial_output:page.screenshot(path=initial_output+'/ui-search-text-options.png',full_page=True)
+   page.locator('#applytextfilters').click();expect(page.locator('.session')).to_have_count(0)
+   text_options();page.locator('#searchexclude').fill('');page.locator('#applytextfilters').click();expect(page.locator('.session')).to_have_count(1)
    page.locator('#searchanalysis summary').click();expect(page.locator('#analysisrows tr')).to_have_count(1);expect(page.locator('#analysisrows tr td').nth(0)).to_have_text('1');expect(page.locator('#analysisrows tr td').nth(2)).to_have_text('1')
    page.locator('#analysisgroup').select_option('project');expect(page.locator('#analysisrows th')).to_have_text('A');expect(page.locator('#analysisstatus')).to_have_text('')
    requests=len(analysis);page.wait_for_timeout(350);assert len(analysis)==requests,'Unexpected auto refresh'
@@ -54,19 +67,29 @@ with tempfile.TemporaryDirectory() as folder:
    # Skill navigation retains the range and project/source selections, but not
    # the session body query or event-type facet.
    page.locator('#skillsnav').click();expect(page.locator('.skill-row')).to_have_count(1);expect(page.locator('#skillcount')).to_have_text('1 skill · ≈2 uses');expect(page.locator('#skilltitle')).to_have_text('2 projects · Skills');assert 'from=' in page.url
-   page.reload();expect(page.locator('#skillcount')).to_have_text('1 skill · ≈2 uses');page.locator('#facetoptions summary').click();page.locator('[name=searchorigin][value=otel]').uncheck();expect(page.locator('#skillcount')).to_have_text('1 skill · ≈1 use')
+   page.reload();expect(page.locator('#skillcount')).to_have_text('1 skill · ≈2 uses');facets();page.locator('[name=searchorigin][value=otel]').uncheck();expect(page.locator('#skillcount')).to_have_text('1 skill · ≈1 use')
    page.locator('.skill-row').click();expect(page.locator('.session')).to_have_count(1);expect(page.locator('.session')).to_have_attribute('data-session','codex:d');assert 'from=' in page.url and page.url.count('project=')==2
    page.locator('.session').click();expect(page.locator('#detailpage')).to_be_visible();page.locator('#detailpage>.back').click();expect(page.locator('.session')).to_have_count(1)
    # Invalid local input keeps the last valid results and URL.
-   saved=page.url;page.locator('#searchto').fill('2026-11-13T09:00');page.locator('#applysearchfilters').click();expect(page.locator('#searchfiltererror')).to_have_text('From must be earlier than To.');assert page.url==saved
-   page.locator('#resetsearchfilters').click();expect(page.locator('.session')).to_have_count(5);assert 'from=' not in page.url and 'project=' not in page.url
-   page.locator('#searchrange').select_option('86400');expect(page.locator('.session')).to_have_count(0);assert 'from=' in page.url;page.locator('#resetsearchfilters').click();expect(page.locator('.session')).to_have_count(5)
-   page.locator('#searchrange').select_option('custom');page.locator('#searchfrom').fill('2026-11-14T09:00');page.locator('#searchto').fill('2026-11-15T09:00');page.locator('#applysearchfilters').click();expect(page.locator('.session')).to_have_count(4);page.locator('#facetoptions summary').click();page.locator('#searchanalysis summary').click();expect(page.locator('#analysisrows tr')).to_have_count(1)
+   saved=page.url;time_picker();page.locator('#searchto').fill('2026-11-13T09:00');page.locator('#applysearchfilters').click();expect(page.locator('#searchfiltererror')).to_have_text('From must be earlier than To.');assert page.url==saved
+   page.keyboard.press('Escape');page.locator('#resetsearchfilters').click();expect(page.locator('.session')).to_have_count(5);assert 'from=' not in page.url and 'project=' not in page.url
+   time_picker();page.locator('#searchrange').select_option('86400');expect(page.locator('.session')).to_have_count(0);assert 'from=' in page.url;assert '.000' not in page.url;page.locator('#resetsearchfilters').click();expect(page.locator('.session')).to_have_count(5)
+   time_picker();page.locator('#searchrange').select_option('custom');page.locator('#searchfrom').fill('2026-11-14T09:00');page.locator('#searchto').fill('2026-11-15T09:00');page.locator('#applysearchfilters').click();expect(page.locator('.session')).to_have_count(4);facets();page.locator('#searchanalysis summary').click();expect(page.locator('#analysisrows tr')).to_have_count(1)
    page.locator('[data-project-check="name:A"]').check();page.locator('[data-project-check="name:B"]').check();page.locator('[name=searchsource][value=codex]').check();expect(page.locator('.session')).to_have_count(2);expect(page.locator('#analysisrows tr')).to_have_count(1)
    output=os.getenv('AGENTLOG_SCREENSHOT_DIR')
-   if output:pathlib.Path(output).mkdir(parents=True,exist_ok=True);page.screenshot(path=output+'/ui-search-facets.png',full_page=True)
-   page.set_viewport_size({'width':390,'height':844});assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
-   if output:page.screenshot(path=output+'/ui-search-facets-mobile.png',full_page=True)
+   if output:pathlib.Path(output).mkdir(parents=True,exist_ok=True);page.evaluate('document.activeElement?.blur();window.scrollTo(0,0)');page.screenshot(path=output+'/ui-search-facets.png',full_page=True)
+   time_picker();expect(page.locator('#searchfrom')).to_have_attribute('step','1')
+   if output:page.screenshot(path=output+'/ui-search-time.png',full_page=True)
+   page.keyboard.press('Escape')
+   page.set_viewport_size({'width':1024,'height':768});assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
+   if output:page.evaluate('document.activeElement?.blur();window.scrollTo(0,0)');page.screenshot(path=output+'/ui-search-laptop.png',full_page=True)
+   page.set_viewport_size({'width':390,'height':844});expect(page.locator('#facetoptions')).not_to_have_attribute('open','');assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
+   if output:page.evaluate('document.activeElement?.blur();window.scrollTo(0,0)');page.screenshot(path=output+'/ui-search-facets-mobile.png',full_page=True)
+   time_picker()
+   assert page.locator('.time-picker').bounding_box()['x']>=0
+   assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
+   if output:page.screenshot(path=output+'/ui-search-time-mobile.png',full_page=True)
+   page.keyboard.press('Escape')
    page.set_viewport_size({'width':1440,'height':1000});page.locator('#skillsnav').click();expect(page.locator('#skillcount')).to_have_text('1 skill · ≈2 uses')
    if output:page.screenshot(path=output+'/ui-search-skills.png',full_page=True)
    assert not errors,errors;browser.close()
