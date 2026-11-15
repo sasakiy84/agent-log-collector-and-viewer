@@ -33,6 +33,8 @@ def large_history(cid):
   database.unlink()
   for suffix in ['-wal','-shm']:pathlib.Path(str(database)+suffix).unlink(missing_ok=True)
   with sqlite3.connect(database) as db:
+   # Match a new collector database so archive deletion can reclaim disk pages.
+   db.execute('PRAGMA auto_vacuum=INCREMENTAL')
    db.execute('PRAGMA foreign_keys=ON')
    for schema in storage:db.execute(schema)
    def rows():
