@@ -26,10 +26,17 @@ def large_history(cid):
  with tempfile.TemporaryDirectory() as tmp:
   database=pathlib.Path(tmp)/'agentlog.db'
   subprocess.run([*docker,'cp',cid+':/data/agentlog.db',str(database)],check=True)
+  # Seed a fresh raw-history database. Derived accounting triggers use
+  # collector functions, so offline fixture creation starts with storage DDL.
   with sqlite3.connect(database) as db:
+   storage=[db.execute('SELECT sql FROM sqlite_master WHERE type=? AND name=?',('table',name)).fetchone()[0] for name in ['events','event_keys']]
+  database.unlink()
+  for suffix in ['-wal','-shm']:pathlib.Path(str(database)+suffix).unlink(missing_ok=True)
+  with sqlite3.connect(database) as db:
+   # Match a new collector database so archive deletion can reclaim disk pages.
+   db.execute('PRAGMA auto_vacuum=INCREMENTAL')
    db.execute('PRAGMA foreign_keys=ON')
-   db.execute('DELETE FROM event_keys')
-   db.execute('DELETE FROM events')
+   for schema in storage:db.execute(schema)
    def rows():
     for session in range(500):
      sid='codex:scale-'+f'{session:060d}'

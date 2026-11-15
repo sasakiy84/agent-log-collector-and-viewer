@@ -50,6 +50,9 @@ func Open(path, token string) (*App, error) {
 			err = a.initDirectoryIndex()
 		}
 		if err == nil {
+			err = a.initUsage()
+		}
+		if err == nil {
 			err = a.initSearchIndex()
 		}
 	}
@@ -97,6 +100,16 @@ func (a *App) Save(events []Event) error {
 		if err != nil {
 			return err
 		}
+		if legacy, ok := legacyUsageRaw(doc); ok {
+			fingerprint := sha256.Sum256(legacy)
+			if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM archived_records a WHERE id_hash=? AND raw_hash=?
+ AND NOT EXISTS(SELECT 1 FROM archived_usage_records v WHERE v.id_hash=a.id_hash AND v.raw_hash=a.raw_hash))`, idHash[:], fingerprint[:]).Scan(&archived); err != nil {
+				return err
+			}
+			if archived {
+				continue
+			}
+		}
 		detail := describe(e, doc)
 		e.Origin = "otel"
 		if detail.Attributes["agentlog.origin"] == "import" {
@@ -116,7 +129,7 @@ func (a *App) Save(events []Event) error {
 		if _, err = tx.Exec("DELETE FROM event_keys WHERE event_id=?", e.ID); err != nil {
 			return err
 		}
-		if err = storeCard(context.Background(), tx, e, detail); err != nil {
+		if err = storeCard(context.Background(), tx, e, detail, doc); err != nil {
 			return err
 		}
 		if err = storeSearch(context.Background(), tx, e, doc); err != nil {

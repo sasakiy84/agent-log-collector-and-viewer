@@ -158,6 +158,9 @@ func describe(e Event, d document) Detail {
 	case containsAny(name, "api_request", "llm_request", "response", "sse_event", "chat") || op == "chat":
 		p.Kind = "model"
 		p.Title = "Model request"
+		if e.Source == "codex" && str(a["agentlog.origin"]) == "import" && name == "gen_ai.client.operation" && present(a["agentlog.import.id"]) {
+			p.Title = "Token usage"
+		}
 	case op == "invoke_agent":
 		p.Kind = "agent"
 		p.Title = str(get("gen_ai.agent.name"))

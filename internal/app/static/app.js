@@ -38,12 +38,12 @@ function detailState(latest){const p=new URLSearchParams();if(!latest)p.set('pag
 function projectLabel(p){return [p?.project,...(Array.isArray(p?.tags)?p.tags:p?.tags?[p.tags]:[])].filter(Boolean).join(' · ')}
 function renderSessions(rows,total){
  renderListHeading(total);
- $('#sessions').innerHTML=rows.length?rows.slice(0,200).map(s=>`<a class="session" href="${esc(link(s.id))}" data-session="${esc(s.id)}"><div><h2>${esc(titleFor(s.id,s.preview))}</h2><small>${projectLabel(s.preview)?esc(projectLabel(s.preview))+' · ':''}${esc(s.id)}${s.parent?' · Subagent':''}</small></div><span class="source">${esc(label(s.source))}</span><time>${esc(date(s.end))}</time><span class="count">${s.count}</span></a>`).join(''):'<p class="empty">No sessions</p>';
+ $('#sessions').innerHTML=rows.length?rows.slice(0,200).map(s=>`<a class="session" href="${esc(link(s.id))}" data-session="${esc(s.id)}"><div><h2>${esc(titleFor(s.id,s.preview))}</h2><small>${projectLabel(s.preview)?esc(projectLabel(s.preview))+' · ':''}${esc(s.id)}${s.parent?' · Subagent':''}</small></div><span class="source">${esc(label(s.source))}</span><time>${esc(date(s.end))}</time>${usageRow(s.usage)}<span class="count">${s.count}</span></a>`).join(''):'<p class="empty">No sessions</p>';
  sessionPager.update({total,offset:sessionOffset,size:200});
 }
 function renderFolders(data){
  renderListHeading(data.total);
- $('#sessions').innerHTML=data.folders.length?data.folders.map(f=>`<a class="folder" href="${esc(folderLink(f.path))}" data-folder="${esc(f.path)}"><div><h2>${esc(folderName(f.path))}</h2>${f.path?`<small>${esc(f.path)}</small>`:''}</div><span class="source">${esc(f.sources.map(label).join(' · '))}</span><time>${esc(date(f.end))}</time><span class="count">${f.count.toLocaleString()}</span></a>`).join(''):'<p class="empty">No folders</p>';
+ $('#sessions').innerHTML=data.folders.length?data.folders.map(f=>`<a class="folder" href="${esc(folderLink(f.path))}" data-folder="${esc(f.path)}"><div><h2>${esc(folderName(f.path))}</h2>${f.path?`<small>${esc(f.path)}</small>`:''}</div><span class="source">${esc(f.sources.map(label).join(' · '))}</span><time>${esc(date(f.end))}</time>${usageRow(f.usage)}<span class="count">${f.count.toLocaleString()}</span></a>`).join(''):'<p class="empty">No folders</p>';
  sessionPager.update({total:data.total,offset:sessionOffset,size:200});
 }
 function renderEvents(){
@@ -53,6 +53,7 @@ function renderEvents(){
  if(inspected) inspectedID=inspected.id;
  const visible=parsed.filter(([,p])=>(!kind||(kind==='conversation'?(['user','assistant'].includes(p.kind)||(['model','agent'].includes(p.kind)&&p.blocks.some(b=>['user','assistant','Input','Output'].includes(b.label)))):kind==='error'?p.error:p.kind===kind)));
  $('#sessiontitle').textContent=titleFor(selected,meta.preview);
+ const usageKey=JSON.stringify(meta.usage);if($('#sessionusage').dataset.key!==usageKey){$('#sessionusage').innerHTML=usageDetails(meta.usage);$('#sessionusage').dataset.key=usageKey}
  $('#export').href='/api/export?session='+encodeURIComponent(selected)+'&origin='+encodeURIComponent(pageOrigin);
  const context={};for(const key of ['model','cwd','host','project','tags'])context[key]=parsed.map(([,p])=>p).find(p=>p[key])?.[key] ?? meta.preview?.[key];
  $('#sessionmeta').innerHTML=`<strong>${esc(label(meta.source))}</strong>${meta.start?`<span>${esc(date(meta.start))}</span>`:''}${context.model?`<span>${esc(context.model)}</span>`:''}${context.cwd?`<span>${esc(context.cwd)}</span>`:''}${context.host?`<span>${esc(context.host)}</span>`:''}${context.project?`<span>Project: ${esc(context.project)}</span>`:''}${context.tags?`<span>Tags: ${esc(Array.isArray(context.tags)?context.tags.join(', '):context.tags)}</span>`:''}<span class="sessionid">${esc(selected)}</span>`;
@@ -174,7 +175,8 @@ $('#search').addEventListener('compositionstart',()=>{composingSearch=true;clear
 $('#search').addEventListener('compositionend',()=>{composingSearch=false;scheduleSearch()});
 $('#search').oninput=e=>{if(!composingSearch&&!e.isComposing)scheduleSearch()};
 const sessionPager=new Pagination($('#sessionpagination'),{noun:'sessions',onChange:page=>{sessionOffset=(page-1)*200;refresh('top')}});
-const eventPager=new Pagination($('#eventpagination'),{noun:'events',onChange:page=>{eventLimit=200;eventOffset=page===eventPager.pages?null:(page-1)*200;refresh(page===eventPager.pages?'bottom':'top')},onLatest:()=>{eventOffset=null;eventLimit=200;refresh('bottom')}});
+const eventPager=new Pagination($('#eventpagination'),{noun:'events',summary:()=>meta?usageShortcut(meta.usage):'',onChange:page=>{eventLimit=200;eventOffset=page===eventPager.pages?null:(page-1)*200;refresh(page===eventPager.pages?'bottom':'top')},onLatest:()=>{eventOffset=null;eventLimit=200;refresh('bottom')}});
+$('#eventpagination').addEventListener('click',event=>{if(event.target.closest('.usage-shortcut')){event.preventDefault();$('#sessionusage').scrollIntoView({block:'start'});$('#sessionusage').focus({preventScroll:true})}});
 const archivePager=new Pagination($('#archivepagination'),{noun:'sessions',onChange:page=>{archiveOffset=(page-1)*200;refresh('top')}});
 $('#origin').onchange=()=>{origin=$('#origin').value;eventOffset=null;eventLimit=200;closeInspector(false);refresh('bottom')};
 const archiveSelection=new Set();let archiveAll=false,archiveOffset=0,archiveData=null;

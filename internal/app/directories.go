@@ -20,10 +20,11 @@ func directoryPath(value any) string {
 }
 
 type FolderSummary struct {
-	Path    string   `json:"path"`
-	Count   int      `json:"count"`
-	End     string   `json:"end"`
-	Sources []string `json:"sources"`
+	Path    string       `json:"path"`
+	Count   int          `json:"count"`
+	End     string       `json:"end"`
+	Sources []string     `json:"sources"`
+	Usage   UsageSummary `json:"usage"`
 }
 
 func (a *App) folders(w http.ResponseWriter, r *http.Request) {
@@ -45,6 +46,7 @@ func (a *App) folders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	off := pageOffset(offset(r), total, 200)
+	usageArgs := append([]any(nil), args...)
 	args = append(args, off)
 	rows, err := tx.QueryContext(r.Context(), query+" ORDER BY end DESC,path LIMIT 200 OFFSET ?", args...)
 	if err != nil {
@@ -66,6 +68,10 @@ func (a *App) folders(w http.ResponseWriter, r *http.Request) {
 	rows.Close()
 	if err != nil || rowErr != nil {
 		databaseError(w, r, errors.Join(err, rowErr))
+		return
+	}
+	if err = folderUsage(r.Context(), tx, filter, usageArgs, out); err != nil {
+		databaseError(w, r, err)
 		return
 	}
 	if err = tx.Commit(); err != nil {

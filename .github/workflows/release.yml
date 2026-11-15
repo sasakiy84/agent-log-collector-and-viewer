@@ -17,6 +17,7 @@ jobs:
       - run: go vet ./...
       - run: node --check internal/app/static/app.js
       - run: node --check internal/app/static/pagination.js
+      - run: node --check internal/app/static/usage.js
       - run: scripts/release.sh "${GITHUB_REF_NAME}"
       - env:
           GH_TOKEN: ${{ github.token }}

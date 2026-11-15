@@ -19,9 +19,11 @@ jobs:
       - run: go vet ./...
       - run: node --check internal/app/static/app.js
       - run: node --check internal/app/static/pagination.js
+      - run: node --check internal/app/static/usage.js
       - run: go build ./cmd/agentlog
       - run: python3 scripts/watch_test.py
       - run: python3 scripts/search_memory_test.py
+      - run: python3 scripts/usage_performance_test.py
       - run: scripts/release.sh ci
   docker:
     runs-on: ubuntu-latest
