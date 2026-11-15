@@ -125,7 +125,7 @@ func refreshFolderBatch(ctx context.Context, tx *sql.Tx) (int, error) {
 		if oldErr != nil && !errors.Is(oldErr, sql.ErrNoRows) {
 			return 0, oldErr
 		}
-		nextErr := tx.QueryRowContext(ctx, "SELECT "+directoryColumn+",source,end,"+usageColumn+",project_key FROM session_catalog s WHERE s.session=? AND NOT EXISTS(SELECT 1 FROM archive_locks WHERE session=s.session)", session).Scan(&next.Path, &next.Source, &next.End, &next.Usage, &next.Project)
+		nextErr := tx.QueryRowContext(ctx, "SELECT "+directoryColumn+",source,end,"+usageColumn+",project_key,internal FROM session_catalog s WHERE s.session=? AND NOT EXISTS(SELECT 1 FROM archive_locks WHERE session=s.session)", session).Scan(&next.Path, &next.Source, &next.End, &next.Usage, &next.Project, &next.Diagnostic)
 		if nextErr != nil && !errors.Is(nextErr, sql.ErrNoRows) {
 			return 0, nextErr
 		}
