@@ -13,11 +13,18 @@ def request(path,body=None,auth=token,timeout=5):
  req=urllib.request.Request(base()+path,b,headers={'Content-Type':'application/json','Authorization':'Bearer '+auth})
  with urllib.request.urlopen(req,timeout=timeout) as response:return json.load(response)
 def ready():
- deadline=time.monotonic()+180
- while time.monotonic()<deadline:
+ deadline=time.monotonic()+180;maximum=time.monotonic()+600;probe=time.monotonic()+5;previous='';logs=''
+ while time.monotonic()<min(deadline,maximum):
   try:return request('/api/stats')
-  except (OSError,subprocess.CalledProcessError):time.sleep(.2)
- raise RuntimeError('Compose service did not become ready')
+  except (OSError,subprocess.CalledProcessError):
+   if time.monotonic()>=probe:
+    logs=run('logs','--no-color','--tail','6','agentlog')
+    progress='\n'.join(line.split('|',1)[-1].strip().split(' ',2)[-1] for line in logs.splitlines() if any(term in line for term in ('Database preparation:', 'Preparing ', 'Prepared ', 'Maintenance ', 'Database migration ')))
+    if progress and progress!=previous:deadline=time.monotonic()+180;previous=progress
+    probe=time.monotonic()+5
+   time.sleep(.2)
+ raise RuntimeError('Compose startup stopped progressing:\n'+logs)
+
 def large_history(cid):
  # Seed only synthetic rows. A long history must not exhaust the 64 MiB /tmp
  # mount while SQLite materializes timeline groups and preview selection.
