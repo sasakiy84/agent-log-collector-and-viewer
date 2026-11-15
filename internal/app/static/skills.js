@@ -78,7 +78,7 @@ function setupSkills() {
   const sort = new URL(location.href).searchParams.get("sort");
   skillsSort = ["uses", "sessions", "recent"].includes(sort) ? sort : "uses";
   $("#skillsort").value = skillsSort;
-  if (skillsMode) $("#skillpage").prepend($("#projectsidebar"));
+  if (skillsMode) $(".skill-results").before($("#projectsidebar"));
   $("#skillsort").onchange = () => {
     skillsSort = $("#skillsort").value;
     skillsOffset = 0;

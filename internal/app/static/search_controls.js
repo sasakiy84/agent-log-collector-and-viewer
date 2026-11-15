@@ -1,7 +1,12 @@
 "use strict";
+function searchSecond(value) {
+  if (!value) return "";
+  const d = new Date(value);
+  return Number.isFinite(d.getTime()) ? new Date(Math.floor(d.getTime() / 1000) * 1000).toISOString().replace(".000Z", "Z") : value;
+}
 function readSearchScope(params) {
   return {
-    from: params.get("from") || "", to: params.get("to") || "",
+    from: searchSecond(params.get("from")), to: searchSecond(params.get("to")),
     range: params.has("from") || params.has("to") ? "custom" : "all",
     sources: [...new Set(params.getAll("source").filter(Boolean))],
     origins: [...new Set(params.getAll("origin"))],
@@ -30,7 +35,7 @@ function localDateValue(value) {
   if (!value) return "";
   const d = new Date(value);
   if (!Number.isFinite(d.getTime())) return "";
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 23);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 19);
 }
 function renderSearchControls() {
   $("#searchfrom").value = localDateValue(searchScope.from);
@@ -42,23 +47,28 @@ function renderSearchControls() {
   $("#searchexclude").value = searchScope.exclude;
   for (const [name, values] of [["searchsource", searchScope.sources], ["searchorigin", searchScope.origins], ["searchkind", searchScope.kinds]])
     document.querySelectorAll(`input[name=${name}]`).forEach((el) => { el.checked = values.includes(el.value); });
-  const n = searchScope.sources.length + searchScope.origins.length + (skillsMode ? 0 : searchScope.kinds.length) + Number(!!searchScope.exclude) + Number(searchScope.textMode !== "all");
+  const n = searchScope.sources.length + searchScope.origins.length + (skillsMode ? 0 : searchScope.kinds.length);
   $("#facetcount").textContent = n ? " · " + n : "";
+  $("#textfilterstatus").textContent = searchScope.exclude || searchScope.textMode !== "all" ? " · Active" : "";
+  const timeLabel = (value) => new Date(value).toLocaleString(undefined, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+  $("#searchtimelabel").textContent = searchScope.range === "all" ? "All time" : searchScope.range !== "custom" ? $("#searchrange").selectedOptions[0].textContent : [searchScope.from ? timeLabel(searchScope.from) : "Any start", searchScope.to ? timeLabel(searchScope.to) : "Any end"].join(" – ");
+  $("#searchtime summary").title = $("#searchtimelabel").textContent;
   $("#searchfiltererror").textContent = "";
 }
-function applySearchControls() {
+function applySearchControls({ time = false } = {}) {
   const readBound = (selector, current) => {
     const input = $(selector);
     if (!input.reportValidity()) throw Error("Check the date and time.");
     if (input.value === input.dataset.display) return current;
-    return input.value ? new Date(input.value).toISOString() : "";
+    return input.value ? searchSecond(input.value) : "";
   };
   try {
-    const from = readBound("#searchfrom", searchScope.from), to = readBound("#searchto", searchScope.to);
+    const from = time ? readBound("#searchfrom", searchScope.from) : searchScope.from, to = time ? readBound("#searchto", searchScope.to) : searchScope.to;
     if (from && to && new Date(from) >= new Date(to)) throw Error("From must be earlier than To.");
     const checked = (name) => [...document.querySelectorAll(`input[name=${name}]:checked`)].map((el) => el.value);
     searchScope = { from, to, range: from === searchScope.from && to === searchScope.to ? searchScope.range : from || to ? "custom" : "all", sources: checked("searchsource"), origins: checked("searchorigin"), kinds: skillsMode ? [] : checked("searchkind"), textMode: $("#textmatch").value, exclude: $("#searchexclude").value.trim() };
     searchScopeChanged();
+    if (time) { $("#searchtime").open = false; $("#searchtime summary").focus({ preventScroll: true }); }
   } catch (e) { $("#searchfiltererror").textContent = e.message; }
 }
 function searchScopeChanged() {
@@ -78,24 +88,35 @@ function projectCheckbox(id, checked) {
   searchScopeChanged();
 }
 function setupSearchControls() {
-  const host = skillsMode ? $(".skill-results .toolbar") : $(".session-results .toolbar");
-  host.after($("#searchcontrols"));
+  const main = skillsMode ? $("#skillpage") : $("#listpage");
+  main.prepend($("#searchcontrols"));
+  $("#queryhost").append(skillsMode ? $("#skillsearch") : $("#search"));
+  $("#sessionqueryhost").hidden = true;
+  $("#idsearchhost").append($("#idsearch"));
+  $("#idsearchhost").hidden = skillsMode;
+  $("#showdiagnostics").closest("label").hidden = skillsMode;
+  const narrowScreen = matchMedia("(max-width: 720px)");
+  $("#facetoptions").open = !narrowScreen.matches;
+  narrowScreen.addEventListener("change", (event) => { $("#facetoptions").open = !event.matches; });
   $("#searchtimezone").textContent = Intl.DateTimeFormat().resolvedOptions().timeZone;
   $("#eventtypefilters").hidden = skillsMode;
   renderSearchControls();
-  $("#applysearchfilters").onclick = applySearchControls;
+  $("#applysearchfilters").onclick = () => applySearchControls({ time: true });
+  $("#applytextfilters").onclick = () => { applySearchControls(); $("#textoptions").open = false; $("#textoptions summary").focus({ preventScroll: true }); };
   $("#searchrange").onchange = () => {
     const value = $("#searchrange").value;
-    if (value === "custom") { searchScope.range = "custom"; $("#searchdates").hidden = false; $("#searchfrom").focus(); return; }
+    if (value === "custom") { $("#searchdates").hidden = false; $("#searchfrom").focus(); return; }
     const now = new Date();
     searchScope.range = value;
-    searchScope.from = value === "all" ? "" : new Date(now.getTime() - Number(value) * 1000).toISOString();
-    searchScope.to = value === "all" ? "" : now.toISOString();
+    searchScope.from = value === "all" ? "" : searchSecond(new Date(now.getTime() - Number(value) * 1000));
+    searchScope.to = value === "all" ? "" : searchSecond(now);
     renderSearchControls();
     searchScopeChanged();
+    $("#searchtime").open = false;
+    $("#searchtime summary").focus({ preventScroll: true });
   };
   for (const selector of ["input[name=searchsource]", "input[name=searchorigin]", "input[name=searchkind]"])
-    document.querySelectorAll(selector).forEach((input) => { input.onchange = applySearchControls; });
+    document.querySelectorAll(selector).forEach((input) => { input.onchange = () => applySearchControls(); });
   $("#resetsearchfilters").onclick = () => {
     searchScope = readSearchScope(new URLSearchParams());
     project = null; projectSelections = []; folder = null;
@@ -105,9 +126,14 @@ function setupSearchControls() {
     if (exportMode) $("#exportchildren").checked = true;
     syncIdentifierSearch();
     searchScopeChanged();
+    $("#searchtime").open = $("#textoptions").open = false;
   };
-  for (const input of [$("#searchexclude"), $("#searchfrom"), $("#searchto")]) input.onkeydown = (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); applySearchControls(); } };
-  $("#textmatch").onchange = applySearchControls;
+  for (const input of [$("#searchexclude"), $("#searchfrom"), $("#searchto")]) input.onkeydown = (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); applySearchControls({ time: input.type === "datetime-local" }); } };
+  $("#textmatch").onchange = () => applySearchControls();
+  // Native disclosure widgets keep keyboard support, and outside/Escape closes overlays.
+  const overlays = [$("#searchtime"), $("#textoptions"), $("#idsearch")];
+  document.addEventListener("click", (event) => overlays.forEach((details) => { if (!details.contains(event.target)) details.open = false; }));
+  document.addEventListener("keydown", (event) => { if (event.key === "Escape") for (const details of overlays) if (details.open) { details.open = false; if (details.contains(document.activeElement)) details.querySelector("summary").focus(); } });
   $("#searchanalysis").hidden = skillsMode || exportMode;
   $("#searchanalysis").ontoggle = () => { if ($("#searchanalysis").open) refreshSearchAnalysis(); else analysisRequest?.abort(); };
   $("#analysisgroup").onchange = () => refreshSearchAnalysis();

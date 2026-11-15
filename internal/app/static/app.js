@@ -901,7 +901,6 @@ function syncIdentifierSearch() {
   $("#identifierfield").value = idKey;
   $("#identifiervalue").value = idValue;
   $("#idfilterstatus").textContent = idValue ? " · Active" : "";
-  if (idValue) $("#idsearch").open = true;
 }
 $("#idsearchform").onsubmit = (e) => {
   e.preventDefault();
@@ -909,6 +908,8 @@ $("#idsearchform").onsubmit = (e) => {
   idValue = $("#identifiervalue").value;
   sessionOffset = 0;
   syncIdentifierSearch();
+  $("#idsearch").open = false;
+  $("#idsearch summary").focus({ preventScroll: true });
   listState();
   refresh();
 };

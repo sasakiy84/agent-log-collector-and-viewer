@@ -1525,38 +1525,90 @@ html {
  .archive-folder-row>span:last-child {grid-column:auto;text-align:right;}
 }
 
-/* Search controls use native inputs; selections remain outside the text query. */
+/* Explorer layout: one query/time row above the persistent facet column. */
 .project-option { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 4px; align-items: center; }
 .project-option > input { margin: 0; accent-color: var(--accent); }
-#searchcontrols { margin: 0 0 12px; font-size: 12px; }
-.search-scopebar, #searchdates:not([hidden]), .analysis-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.search-scopebar label, .analysis-toolbar label { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); }
-#searchcontrols select, #searchcontrols input:not([type=checkbox]), .analysis-toolbar select { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--control-border); border-radius: 5px; padding: 6px 8px; min-width: 0; max-width: 100%; }
-#searchcontrols button { padding: 6px 9px; font-size: 12px; }
-#searchcontrols details { margin-top: 8px; }
-#searchcontrols summary, .search-analysis > summary { cursor: pointer; color: var(--text-secondary); width: fit-content; }
-.facet-fields { display: flex; flex-wrap: wrap; gap: 12px 20px; padding: 10px 0; }
-.facet-fields fieldset { border: 0; margin: 0; padding: 0; display: flex; flex-wrap: wrap; align-content: start; gap: 6px 12px; max-width: 420px; }
-.facet-fields legend { font-weight: 600; margin-bottom: 6px; }
-.facet-fields fieldset label { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
-.facet-fields input[type=checkbox] { margin: 0; accent-color: var(--accent); }
-.text-facets { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; width: 100%; }
-.text-facets label { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+#searchcontrols { grid-column: 1 / -1; min-width: 0; font-size: 12px; }
+:is(#listpage, #skillpage) { row-gap: 16px; }
+.search-querybar { display: flex; align-items: stretch; gap: 10px; }
+.search-query { display: flex; align-items: center; flex: 1; min-width: 120px; border: 1px solid var(--control-border); border-radius: 5px; background: var(--surface); }
+.search-query:focus-within { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.search-query-label { align-self: stretch; display: flex; align-items: center; padding: 0 12px; border-right: 1px solid var(--border); background: var(--surface-alt); color: var(--text-secondary); border-radius: 4px 0 0 4px; }
+#queryhost input[type=search] { flex: 1; min-width: 0; width: 100%; max-width: none; border: 0; border-radius: 0 5px 5px 0; padding: 11px 12px; background: transparent; color: var(--text); font-size: 13px; }
+#queryhost input:focus-visible { outline: 0; }
+.search-time { position: relative; flex-shrink: 0; max-width: 48%; }
+.search-time > summary { display: flex; align-items: center; height: 100%; min-height: 40px; gap: 10px; padding: 9px 12px; cursor: pointer; border: 1px solid var(--control-border); border-radius: 5px; background: var(--surface); font-variant-numeric: tabular-nums; }
+.search-time > summary::before { content: ''; flex-shrink: 0; width: 15px; height: 15px; background: url('/icons/clock.svg') center / contain no-repeat; opacity: .7; }
+.search-time > summary::after { content: '⌄'; margin-left: auto; color: var(--muted); }
+.search-time > summary::-webkit-details-marker { display: none; }
+#searchtimelabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:is(.search-time, #textoptions, #idsearch)[open] > summary { color: var(--accent); }
+.time-picker, .text-facets, .id-search form { position: absolute; z-index: 25; padding: 16px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); box-shadow: 0 8px 24px #00000014; }
+.time-picker { right: 0; top: calc(100% + 8px); width: 370px; max-width: calc(100vw - 32px); }
+.time-picker label, .text-facets label { display: grid; gap: 6px; color: var(--text-secondary); }
+#searchcontrols select, #searchcontrols input:not([type=checkbox]), .analysis-toolbar select { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--control-border); border-radius: 4px; padding: 8px; min-width: 0; max-width: 100%; }
+#queryhost input[type=search] { border: 0; font-size: 13px; padding: 11px 12px; }
+#searchdates:not([hidden]) { display: grid; gap: 12px; margin-top: 14px; }
+.time-picker-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; }
+.time-picker-footer .primary { width: auto; margin: 0; }
+.search-options { position: relative; display: flex; align-items: center; gap: 18px; min-height: 34px; margin-top: 4px; }
+.search-options summary { cursor: pointer; color: var(--text-secondary); width: fit-content; }
+#resetsearchfilters { margin-left: auto; border: 0; padding: 6px 0 6px 10px; color: var(--muted); background: transparent; }
+#resetsearchfilters:hover { color: var(--accent); }
+#textoptions { position: relative; }
+.text-facets { top: calc(100% + 10px); left: 0; width: 360px; max-width: calc(100vw - 40px); display: grid; gap: 14px; }
+.text-facets input[type=search] { max-width: none; }
+.text-facets button { justify-self: end; }
+.id-search { margin: 0; }
+.id-search form { left: 0; top: calc(100% + 4px); width: min(680px, 100%); gap: 10px; }
 #searchfiltererror:empty { display: none; }
-#searchfiltererror { color: var(--failure); margin: 6px 0 0; }
-.search-analysis { margin: 12px 0; font-size: 12px; }
+#searchfiltererror { color: var(--failure); padding: 8px 0 0; }
+#projectsidebar { top: calc(var(--appbar-height) + 12px); padding-right: 16px; }
+#projectsidebar h2 { margin-bottom: 10px; }
+#projectsearch { max-width: none; }
+#projectlist { max-height: 224px; overflow-y: auto; scrollbar-width: thin; }
+.project-choice { padding: 7px 8px; }
+#sidebarfilters { border-top: 1px solid var(--border); margin-top: 14px; padding-top: 14px; font-size: 12px; }
+#facetoptions > summary { color: var(--text-secondary); font-weight: 600; cursor: pointer; }
+.facet-fields { display: grid; gap: 16px; padding: 16px 0; }
+.facet-fields fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: 9px; }
+.facet-fields legend { font-weight: 600; padding: 0 0 10px; }
+.facet-fields fieldset label { display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-secondary); }
+.facet-fields input[type=checkbox], #sidebarfilters input { margin: 0; accent-color: var(--accent); }
+#sidebarfilters .diagnostics-toggle { display: flex; align-items: center; gap: 8px; padding: 12px 0 0; border-top: 1px solid var(--border); }
+.session-results .pageheading, .skill-results .pageheading { min-height: 32px; margin-bottom: 8px; }
+.session-results .pageheading h1, .skill-results .pageheading h1 { font-size: 19px; }
+.search-analysis { margin: 8px 0 14px; font-size: 12px; }
+.search-analysis > summary { cursor: pointer; color: var(--text-secondary); width: fit-content; }
 .search-analysis[open] { border: 1px solid var(--border); border-radius: 5px; padding: 10px; }
-.analysis-toolbar { margin-top: 10px; justify-content: space-between; }
+.analysis-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 10px; justify-content: space-between; }
+.analysis-toolbar label { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); }
 .search-analysis table { width: 100%; border-collapse: collapse; margin-top: 8px; font-variant-numeric: tabular-nums; }
 .search-analysis th, .search-analysis td { text-align: right; border-bottom: 1px solid var(--border); padding: 7px; }
 .search-analysis th:first-child { text-align: left; overflow-wrap: anywhere; }
 #analysisstatus:empty { display: none; }
 @media(max-width:720px) {
- #searchdates:not([hidden]) { width: 100%; }
- #searchdates label { width: 100%; display: grid; grid-template-columns: 34px minmax(0,1fr); }
- .text-facets label { width: 100%; }
- .text-facets input { flex: 1; }
- .facet-fields fieldset { max-width: 100%; }
+ #searchcontrols { padding-top: 14px; margin-bottom: 10px; }
+ .search-querybar { flex-wrap: wrap; gap: 8px; }
+ .search-query { flex-basis: 100%; }
+ .search-time { max-width: 100%; width: 100%; }
+ .search-time > summary { min-height: 36px; }
+ .time-picker { max-width: calc(100vw - 32px); width: 370px; }
+ .search-options { gap: 14px; }
+ #projectsidebar { position: static; max-height: none; padding: 0 0 14px; margin-bottom: 16px; }
+ #projectsidebar h2 { display: block; margin: 0 0 8px; }
+ #projectsearch { width: 100%; max-width: none; }
+ #projectlist { display: flex; max-height: 120px; flex-direction: row; flex-wrap: wrap; gap: 4px 8px; }
+ #projectlist .project-option { max-width: 100%; }
+ #projectlist .project-choice { margin: 0; }
+ #allprojects { margin-top: 4px; }
+ #sidebarfilters { margin-top: 10px; padding-top: 10px; }
+ .facet-fields { grid-template-columns: 1fr 1fr; gap: 16px 10px; }
+ .facet-fields fieldset:last-child { grid-column: 1 / -1; grid-template-columns: 1fr 1fr; }
+ #sidebarfilters .diagnostics-toggle { padding-top: 10px; }
+ .id-search form { width: 100%; }
+ .id-search label { width: 100%; }
  .search-analysis { overflow-x: auto; }
  .search-analysis th, .search-analysis td { padding: 6px 3px; }
+ :is(#sessionpagination, #skillpagination) { position: static; }
 }
