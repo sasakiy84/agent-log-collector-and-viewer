@@ -51,3 +51,19 @@ func diagnosticDetail(e Event, d Detail) bool {
 }
 
 func detailActivity(d Detail) bool { return !d.Diagnostic || d.Error }
+
+// Preserve conversations exported as message blocks inside a model/agent event.
+func detailConversation(d Detail) bool {
+	if d.Kind == "user" || d.Kind == "assistant" {
+		return true
+	}
+	if d.Kind == "model" || d.Kind == "agent" {
+		for _, b := range d.Blocks {
+			switch b.Label {
+			case "user", "assistant", "Input", "Output":
+				return true
+			}
+		}
+	}
+	return false
+}

@@ -25,7 +25,9 @@ func (f eventFilter) predicate(alias string) string {
 	}
 	switch f.Kind {
 	case "conversation":
-		parts = append(parts, prefix+"kind IN ('user','assistant')")
+		parts = append(parts, prefix+"conversation=1")
+	case "skill":
+		parts = append(parts, prefix+"has_skill=1")
 	case "error":
 		parts = append(parts, prefix+"is_error=1")
 	case "":
@@ -83,6 +85,8 @@ func refreshPresentation(ctx context.Context, tx *sql.Tx) error {
 			_, err = tx.ExecContext(ctx, `UPDATE timeline_entries SET
  activity=MAX(COALESCE((SELECT activity FROM event_cards WHERE id=import_id),0),COALESCE((SELECT activity FROM event_cards WHERE id=otel_id),0)),
  kind=COALESCE((SELECT kind FROM event_cards WHERE id=import_id),(SELECT kind FROM event_cards WHERE id=otel_id),'event'),
+ has_skill=MAX(COALESCE((SELECT has_skill FROM event_cards WHERE id=import_id),0),COALESCE((SELECT has_skill FROM event_cards WHERE id=otel_id),0)),
+ conversation=MAX(COALESCE((SELECT conversation FROM event_cards WHERE id=import_id),0),COALESCE((SELECT conversation FROM event_cards WHERE id=otel_id),0)),
  is_error=MAX(COALESCE((SELECT is_error FROM event_cards WHERE id=import_id),0),COALESCE((SELECT is_error FROM event_cards WHERE id=otel_id),0)) WHERE id=?`, id)
 			if err != nil {
 				return err
@@ -158,7 +162,7 @@ func backfillPresentation(ctx context.Context, tx *sql.Tx, cursor string) (strin
 			if err != nil {
 				return cursor, 0, err
 			}
-			if _, err = tx.ExecContext(ctx, "UPDATE event_cards SET detail=?,activity=?,kind=?,is_error=?,turn=? WHERE id=?", encoded, detailActivity(d), d.Kind, d.Error, d.Turn, e.ID); err != nil {
+			if _, err = tx.ExecContext(ctx, "UPDATE event_cards SET detail=?,activity=?,kind=?,is_error=?,turn=?,conversation=?,has_skill=EXISTS(SELECT 1 FROM skill_events WHERE event_id=?) WHERE id=?", encoded, detailActivity(d), d.Kind, d.Error, d.Turn, detailConversation(d), e.ID, e.ID); err != nil {
 				return cursor, 0, err
 			}
 		}

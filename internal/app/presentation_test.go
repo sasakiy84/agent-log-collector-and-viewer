@@ -43,6 +43,20 @@ func TestActivityFiltersBeforePagination(t *testing.T) {
 	}
 }
 
+func TestActivityKeepsEmbeddedConversationsAndSkillReferences(t *testing.T) {
+	a := setup(t)
+	save(t, a, recorded(t, "embedded", "otel", "copilot", "chat", "chat", map[string]any{"gen_ai.operation.name": "chat", "gen_ai.input.messages": `[{"role":"user","content":"question"}]`, "gen_ai.output.messages": `[{"role":"assistant","content":"answer"}]`}), recorded(t, "reference", "import", "codex", "skills", "gen_ai.tool.start", map[string]any{"tool_name": "exec_command", "arguments": `{"cmd":"cat /work/skills/review/SKILL.md"}`}))
+	var p SessionPage
+	getJSON(t, a, "/api/session?id=copilot:chat&view=activity&kind=conversation", &p)
+	if p.Count != 1 || len(p.Events) != 1 {
+		t.Fatal("embedded conversation hidden", p)
+	}
+	getJSON(t, a, "/api/session?id=codex:skills&view=activity&kind=skill", &p)
+	if p.Count != 1 || len(p.Events) != 1 || len(p.Events[0].Skills) != 1 {
+		t.Fatal("skill reference hidden", p)
+	}
+}
+
 func modelSpan(t *testing.T, id, session, span, parent, name string, values map[string]any) Event {
 	t.Helper()
 	e := recorded(t, id, "otel", "codex", session, name, values)

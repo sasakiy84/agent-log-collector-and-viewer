@@ -99,9 +99,15 @@ func backfillSkills(ctx context.Context, tx *sql.Tx, cursor string) (string, int
 		if err = storeSkillFacts(ctx, tx, v.event, d); err != nil {
 			break
 		}
+		if _, err = tx.ExecContext(ctx, "UPDATE event_cards SET has_skill=EXISTS(SELECT 1 FROM skill_events WHERE event_id=?) WHERE id=? AND has_skill<>EXISTS(SELECT 1 FROM skill_events WHERE event_id=?)", v.event.ID, v.event.ID, v.event.ID); err != nil {
+			break
+		}
 	}
 
 	if err != nil {
+		return cursor, 0, err
+	}
+	if err = refreshPresentation(ctx, tx); err != nil {
 		return cursor, 0, err
 	}
 	return cursor, len(batch), nil

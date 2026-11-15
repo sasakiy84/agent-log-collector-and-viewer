@@ -70,7 +70,7 @@ with tempfile.TemporaryDirectory() as folder:
             page.locator(".session").nth(50).scroll_into_view_if_needed()
             assert page.locator(".topbar").bounding_box()["y"] == 0
             assert abs(page.locator(".tablehead").bounding_box()["y"] - page.locator(".topbar").bounding_box()["height"]) < 1
-            page.goto(base + "/sessions/codex%3Apalette?page=1")
+            page.goto(base + "/sessions/codex%3Apalette?page=1&view=diagnostics")
             expect(page.locator(".event")).to_have_count(85)
             tones, icons = {}, {}
             for kind in ("user", "assistant", "tool", "model", "skill", "metric"):
@@ -122,7 +122,7 @@ with tempfile.TemporaryDirectory() as folder:
                 page.locator("#closeinspector").click()
                 page.set_viewport_size({"width": width, "height": 844})
                 failed.evaluate("el=>el.scrollIntoView({block:'start'})")
-                page.wait_for_function("Math.abs(document.querySelector('.logbar').getBoundingClientRect().height-parseFloat(getComputedStyle(document.querySelector('#detailpage')).getPropertyValue('--timeline-toolbar-height')))<1")
+                page.wait_for_function("() => Math.abs(document.querySelector('.logbar').getBoundingClientRect().height-parseFloat(getComputedStyle(document.querySelector('#detailpage')).getPropertyValue('--timeline-toolbar-height')))<1")
                 toolbar = page.locator(".logbar").bounding_box()
                 assert failed.bounding_box()["y"] >= toolbar["y"] + toolbar["height"] - 1
                 assert page.evaluate("document.documentElement.scrollWidth<=innerWidth"), page.evaluate("({width:innerWidth,scroll:document.documentElement.scrollWidth,offenders:[...document.querySelectorAll('body *')].filter(el=>el.getBoundingClientRect().right>innerWidth+1).slice(0,12).map(el=>({tag:el.tagName,id:el.id,class:el.className,right:el.getBoundingClientRect().right}))})")

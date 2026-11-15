@@ -1,10 +1,18 @@
 ALTER TABLE event_cards ADD COLUMN activity INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE event_cards ADD COLUMN kind TEXT NOT NULL DEFAULT 'event';
 ALTER TABLE event_cards ADD COLUMN is_error INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE event_cards ADD COLUMN has_skill INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE event_cards ADD COLUMN conversation INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE event_cards ADD COLUMN turn TEXT NOT NULL DEFAULT '';
 ALTER TABLE timeline_entries ADD COLUMN activity INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE timeline_entries ADD COLUMN kind TEXT NOT NULL DEFAULT 'event';
 ALTER TABLE timeline_entries ADD COLUMN is_error INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE timeline_entries ADD COLUMN has_skill INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE timeline_entries ADD COLUMN conversation INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX cards_skill_page ON event_cards(session,origin,time,sequence,id) WHERE has_skill=1;
+CREATE INDEX cards_conversation_page ON event_cards(session,origin,time,sequence,id) WHERE conversation=1;
+CREATE INDEX timeline_skill_page ON timeline_entries(session,time,sequence,id) WHERE has_skill=1;
+CREATE INDEX timeline_conversation_page ON timeline_entries(session,time,sequence,id) WHERE conversation=1;
 CREATE INDEX cards_activity_page ON event_cards(session,origin,activity,time,sequence,id);
 CREATE INDEX cards_kind_page ON event_cards(session,origin,kind,time,sequence,id);
 CREATE INDEX cards_error_page ON event_cards(session,origin,time,sequence,id) WHERE is_error=1;
