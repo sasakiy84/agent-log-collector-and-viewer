@@ -334,7 +334,7 @@ func (a *App) deleteArchive(ctx context.Context, job ArchiveJob) error {
 		if err != nil {
 			return err
 		}
-		rows, err := tx.QueryContext(ctx, "SELECT id,raw FROM events WHERE session=? LIMIT 200", session)
+		rows, err := tx.QueryContext(ctx, "SELECT id,raw,name,origin,source FROM events WHERE session=? LIMIT 200", session)
 		if err != nil {
 			tx.Rollback()
 			return err
@@ -342,16 +342,27 @@ func (a *App) deleteArchive(ctx context.Context, job ArchiveJob) error {
 		type fingerprint struct {
 			id              string
 			idHash, rawHash [32]byte
+			legacyHash      []byte
 		}
 		records := []fingerprint{}
 		var bytes int
 		for rows.Next() {
 			var id string
+			var name, origin, source string
 			var raw []byte
-			if err = rows.Scan(&id, &raw); err != nil {
+			if err = rows.Scan(&id, &raw, &name, &origin, &source); err != nil {
 				break
 			}
-			records = append(records, fingerprint{id, sha256.Sum256([]byte(id)), sha256.Sum256(raw)})
+			record := fingerprint{id: id, idHash: sha256.Sum256([]byte(id)), rawHash: sha256.Sum256(raw)}
+			if origin == "import" && name == "gen_ai.client.operation" && (source == "codex" || source == "claude") {
+				if doc, e := decodeDocument(raw); e == nil {
+					if legacy, ok := legacyUsageRaw(doc); ok {
+						hash := sha256.Sum256(legacy)
+						record.legacyHash = append([]byte(nil), hash[:]...)
+					}
+				}
+			}
+			records = append(records, record)
 			bytes += len(raw)
 			if bytes >= 8<<20 {
 				break
@@ -366,6 +377,17 @@ func (a *App) deleteArchive(ctx context.Context, job ArchiveJob) error {
 		for _, record := range records {
 			if _, err = tx.ExecContext(ctx, "INSERT OR IGNORE INTO archived_records(id_hash,raw_hash) VALUES(?,?)", record.idHash[:], record.rawHash[:]); err != nil {
 				break
+			}
+			if record.legacyHash != nil {
+				if _, err = tx.ExecContext(ctx, "INSERT OR IGNORE INTO archived_records(id_hash,raw_hash) VALUES(?,?)", record.idHash[:], record.legacyHash); err != nil {
+					break
+				}
+				// Legacy projections from usage-aware archives only suppress an
+				// exact old-format replay. New-format counter/response-ID edits
+				// are compared against their complete current-format hash.
+				if _, err = tx.ExecContext(ctx, "INSERT OR IGNORE INTO archived_usage_records VALUES(?,?),(?,?)", record.idHash[:], record.rawHash[:], record.idHash[:], record.legacyHash); err != nil {
+					break
+				}
 			}
 			if _, err = tx.ExecContext(ctx, "DELETE FROM events WHERE id=?", record.id); err != nil {
 				break

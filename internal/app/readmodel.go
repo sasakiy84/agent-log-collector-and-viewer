@@ -154,7 +154,7 @@ func summaryDetail(d Detail) Detail {
 	d.Conflicts = nil
 	return d
 }
-func storeCard(ctx context.Context, tx *sql.Tx, e Event, d Detail) error {
+func storeCard(ctx context.Context, tx *sql.Tx, e Event, d Detail, doc document) error {
 	presentation, err := json.Marshal(cardDetail(d))
 	if err != nil {
 		return err
@@ -163,6 +163,9 @@ func storeCard(ctx context.Context, tx *sql.Tx, e Event, d Detail) error {
  session=excluded.session,origin=excluded.origin,source=excluded.source,parent=excluded.parent,time=excluded.time,sequence=excluded.sequence,
  is_user=excluded.is_user,signal=excluded.signal,trace=excluded.trace,span=excluded.span,parent_span=excluded.parent_span,detail=excluded.detail`,
 		e.ID, e.Session, e.Origin, e.Source, e.Parent, e.Time, e.Sequence, d.Kind == "user", e.Signal, e.Trace, e.Span, e.ParentSpan, presentation)
+	if err == nil {
+		err = storeUsage(ctx, tx, e, doc, d)
+	}
 	if err == nil {
 		_, err = tx.ExecContext(ctx, "DELETE FROM cards_dirty WHERE id=?", e.ID)
 	}
@@ -201,7 +204,7 @@ func refreshCards(ctx context.Context, tx *sql.Tx) error {
 			if err != nil {
 				return err
 			}
-			if err = storeCard(ctx, tx, e, describe(e, doc)); err != nil {
+			if err = storeCard(ctx, tx, e, describe(e, doc), doc); err != nil {
 				return err
 			}
 			if err = storeSearch(ctx, tx, e, doc); err != nil {
@@ -212,6 +215,12 @@ func refreshCards(ctx context.Context, tx *sql.Tx) error {
 }
 func (a *App) initReadModel() error {
 	if _, err := a.DB.Exec(readModelSchema); err != nil {
+		return err
+	}
+	if _, err := a.DB.Exec(usageSchema); err != nil {
+		return err
+	}
+	if _, err := a.DB.Exec(intervalSchema()); err != nil {
 		return err
 	}
 	tx, err := a.DB.Begin()
@@ -272,7 +281,7 @@ func (a *App) initReadModel() error {
 				err = e
 				break
 			}
-			if err = storeCard(context.Background(), tx, record, describe(record, doc)); err != nil {
+			if err = storeCard(context.Background(), tx, record, describe(record, doc), doc); err != nil {
 				break
 			}
 			if err = storeSearch(context.Background(), tx, record, doc); err != nil {
@@ -346,7 +355,7 @@ func refreshTimelines(ctx context.Context, tx *sql.Tx) error {
 			return err
 		}
 	}
-	return nil
+	return refreshUsage(ctx, tx)
 }
 func refreshTimeline(ctx context.Context, tx *sql.Tx, session string) error {
 	var imports, otel int
@@ -429,6 +438,11 @@ func refreshTimeline(ctx context.Context, tx *sql.Tx, session string) error {
  ON CONFLICT(session) DO UPDATE SET source=excluded.source,parent=excluded.parent,count=excluded.count,start=excluded.start,end=excluded.end,
  import_count=excluded.import_count,import_start=excluded.import_start,import_end=excluded.import_end,otel_count=excluded.otel_count,otel_start=excluded.otel_start,otel_end=excluded.otel_end,preview=excluded.preview`,
 			session, session, session, session, imports, iStart, iEnd, otel, oStart, oEnd, detail, session)
+	}
+	if err == nil {
+		_, err = tx.ExecContext(ctx, `INSERT OR IGNORE INTO timeline_errors
+ SELECT t.id,t.session FROM read_model_dirty d CROSS JOIN timeline_entries t ON t.id=d.id
+ WHERE d.session=? AND EXISTS(SELECT 1 FROM event_errors WHERE id IN(t.import_id,t.otel_id))`, session)
 	}
 	if err == nil {
 		_, err = tx.ExecContext(ctx, "DELETE FROM read_model_dirty WHERE session=?", session)

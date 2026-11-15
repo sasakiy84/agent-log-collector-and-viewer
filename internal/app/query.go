@@ -10,13 +10,14 @@ import (
 )
 
 type SessionSummary struct {
-	ID      string  `json:"id"`
-	Source  string  `json:"source"`
-	Parent  string  `json:"parent"`
-	Count   int     `json:"count"`
-	Start   string  `json:"start"`
-	End     string  `json:"end"`
-	Preview *Detail `json:"preview"`
+	ID      string       `json:"id"`
+	Source  string       `json:"source"`
+	Parent  string       `json:"parent"`
+	Count   int          `json:"count"`
+	Start   string       `json:"start"`
+	End     string       `json:"end"`
+	Preview *Detail      `json:"preview"`
+	Usage   UsageSummary `json:"usage"`
 }
 type SessionPage struct {
 	SessionSummary
@@ -71,7 +72,7 @@ func (a *App) sessions(w http.ResponseWriter, r *http.Request) {
 	}
 	off := pageOffset(offset(r), total, 200)
 	args = append(args, off)
-	rows, err := tx.QueryContext(r.Context(), "SELECT session,source,parent,count,start,end,preview"+query+" ORDER BY end DESC,session LIMIT 201 OFFSET ?", args...)
+	rows, err := tx.QueryContext(r.Context(), "SELECT s.session,s.source,s.parent,s.count,s.start,s.end,s.preview,"+usageColumn+query+" ORDER BY s.end DESC,s.session LIMIT 201 OFFSET ?", args...)
 	if err != nil {
 		databaseError(w, r, err)
 		return
@@ -80,7 +81,8 @@ func (a *App) sessions(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var summary SessionSummary
 		var encoded []byte
-		if err = rows.Scan(&summary.ID, &summary.Source, &summary.Parent, &summary.Count, &summary.Start, &summary.End, &encoded); err != nil {
+		var usage string
+		if err = rows.Scan(&summary.ID, &summary.Source, &summary.Parent, &summary.Count, &summary.Start, &summary.End, &encoded, &usage); err != nil {
 			break
 		}
 		var detail Detail
@@ -88,6 +90,9 @@ func (a *App) sessions(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		summary.Preview = &detail
+		if summary.Usage, err = decodeUsage(usage); err != nil {
+			break
+		}
 		out = append(out, summary)
 	}
 	rowErr := rows.Err()
@@ -148,12 +153,17 @@ func (a *App) session(w http.ResponseWriter, r *http.Request) {
 	}
 	page := SessionPage{SessionSummary: SessionSummary{ID: id}, Children: []string{}}
 	var preview []byte
-	err = tx.QueryRowContext(r.Context(), "SELECT source,parent,"+columns+",preview FROM session_catalog WHERE session=?", id).Scan(&page.Source, &page.Parent, &page.Count, &page.Start, &page.End, &preview)
+	var usage string
+	err = tx.QueryRowContext(r.Context(), "SELECT source,parent,"+columns+",preview,COALESCE((SELECT summary FROM usage_summary u WHERE u.session=session_catalog.session AND u.origin=?),'{}') FROM session_catalog WHERE session=?", origin, id).Scan(&page.Source, &page.Parent, &page.Count, &page.Start, &page.End, &preview, &usage)
 	if errors.Is(err, sql.ErrNoRows) {
 		http.NotFound(w, r)
 		return
 	}
 	if err != nil {
+		databaseError(w, r, err)
+		return
+	}
+	if page.Usage, err = decodeUsage(usage); err != nil {
 		databaseError(w, r, err)
 		return
 	}

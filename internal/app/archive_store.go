@@ -15,6 +15,8 @@ import (
 
 const archiveConfirmation = "DOWNLOADED"
 const archiveSchema = `
+CREATE TABLE IF NOT EXISTS archived_usage_records(id_hash BLOB NOT NULL,raw_hash BLOB NOT NULL,PRIMARY KEY(id_hash,raw_hash),
+ FOREIGN KEY(id_hash,raw_hash) REFERENCES archived_records(id_hash,raw_hash) ON DELETE CASCADE) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS session_revisions(session TEXT PRIMARY KEY, revision INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS archives(
  id TEXT PRIMARY KEY,status TEXT NOT NULL,created_at TEXT NOT NULL,cutoff TEXT NOT NULL,

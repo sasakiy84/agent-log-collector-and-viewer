@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -58,7 +59,22 @@ func (p *state) codex(v map[string]any, line int) error {
 		case "token_count":
 			u := m(m(d["info"])["last_token_usage"])
 			if len(u) > 0 {
-				return p.output("gen_ai.client.operation", map[string]any{"gen_ai.operation.name": "chat", "gen_ai.usage.input_tokens": u["input_tokens"], "gen_ai.usage.output_tokens": u["output_tokens"], "gen_ai.usage.cache_read.input_tokens": u["cached_input_tokens"]}, fmt.Sprint(line))
+				fields := map[string]any{"gen_ai.operation.name": "chat", "gen_ai.usage.input_tokens": u["input_tokens"], "gen_ai.usage.output_tokens": u["output_tokens"], "gen_ai.usage.cache_read.input_tokens": u["cached_input_tokens"], "gen_ai.usage.cache_write.input_tokens": u["cache_write_input_tokens"], "gen_ai.usage.reasoning.output_tokens": u["reasoning_output_tokens"]}
+				total := m(m(d["info"])["total_token_usage"])
+				if len(total) > 0 {
+					fields["agentlog.usage.counter"] = true
+					if reported, ok := new(big.Int).SetString(s(total["total_tokens"]), 10); ok {
+						input, okI := new(big.Int).SetString(s(total["input_tokens"]), 10)
+						output, okO := new(big.Int).SetString(s(total["output_tokens"]), 10)
+						if !okI || !okO || reported.Cmp(input.Add(input, output)) != 0 {
+							fields["agentlog.usage.counter_incomplete"] = true
+						}
+					}
+					for key, value := range map[string]any{"input_tokens": total["input_tokens"], "output_tokens": total["output_tokens"], "cache_read_tokens": total["cached_input_tokens"], "cache_write_tokens": total["cache_write_input_tokens"], "reasoning_tokens": total["reasoning_output_tokens"]} {
+						fields["agentlog.usage.total."+key] = value
+					}
+				}
+				return p.output("gen_ai.client.operation", fields, fmt.Sprint(line))
 			}
 		default:
 			p.skipped++
@@ -137,7 +153,16 @@ func (p *state) claude(v map[string]any, line int) error {
 		}
 	}
 	if u := m(msg["usage"]); len(u) > 0 {
-		return p.output("gen_ai.client.operation", map[string]any{"gen_ai.operation.name": "chat", "gen_ai.usage.input_tokens": u["input_tokens"], "gen_ai.usage.output_tokens": u["output_tokens"], "gen_ai.usage.cache_read.input_tokens": u["cache_read_input_tokens"], "gen_ai.usage.cache_write.input_tokens": u["cache_creation_input_tokens"]}, id+"|usage")
+		input := u["input_tokens"]
+		if total, ok := new(big.Int).SetString(s(input), 10); ok {
+			for _, key := range []string{"cache_read_input_tokens", "cache_creation_input_tokens"} {
+				if count, ok := new(big.Int).SetString(s(u[key]), 10); ok {
+					total.Add(total, count)
+				}
+			}
+			input = json.Number(total.String())
+		}
+		return p.output("gen_ai.client.operation", map[string]any{"gen_ai.operation.name": "chat", "gen_ai.usage.input_tokens": input, "gen_ai.usage.output_tokens": u["output_tokens"], "gen_ai.usage.cache_read.input_tokens": u["cache_read_input_tokens"], "gen_ai.usage.cache_write.input_tokens": u["cache_creation_input_tokens"], "gen_ai.response.id": msg["id"], "agentlog.usage.input_includes_cache": true}, id+"|usage")
 	}
 	return nil
 }
