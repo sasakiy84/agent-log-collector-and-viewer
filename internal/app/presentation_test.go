@@ -170,11 +170,11 @@ func TestProjectsNavigationAndSessionFiltering(t *testing.T) {
 		Total, Sessions int
 	}
 	getJSON(t, a, "/api/projects", &projects)
-	if projects.Total != 4 || projects.Sessions != 5 {
+	if projects.Total != 3 || projects.Sessions != 5 {
 		t.Fatal(projects)
 	}
 	var sessions []SessionSummary
-	for key, count := range map[string]int{"name:Named": 2, "path:/one/app": 1, "path:/two/app": 1, "": 1} {
+	for key, count := range map[string]int{"name:Named": 2, "name:app": 2, "path:/one/app": 2, "path:/two/app": 2, "": 1} {
 		getJSON(t, a, "/api/sessions?project="+url.QueryEscape(key), &sessions)
 		if len(sessions) != count {
 			t.Fatal(key, sessions)

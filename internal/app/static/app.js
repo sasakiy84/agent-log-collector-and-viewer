@@ -114,7 +114,7 @@ $("#exportsource").value = exportSource;
 let skillFilter = listURL.searchParams.get("skill") || "",
   skillPlugin = listURL.searchParams.get("plugin") || "";
 let project = listURL.searchParams.has("project")
-  ? listURL.searchParams.get("project")
+  ? canonicalProjectID(listURL.searchParams.get("project"))
   : null;
 let folder = listURL.searchParams.has("folder")
   ? listURL.searchParams.get("folder")

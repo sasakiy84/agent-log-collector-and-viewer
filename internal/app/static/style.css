@@ -1470,7 +1470,6 @@ html {
 .project-choice > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .project-choice small { font-size: 10px; font-variant-numeric: tabular-nums; }
 .project-choice.active { color: var(--accent); background: var(--accent-fill); }
-.project-path { grid-column: 1 / -1; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
 #allprojects { margin-bottom: 4px; }
 #projectstatus:not(:empty) { padding: 8px; }
 #moreprojects { margin-top: 8px; width: 100%; }
@@ -1508,8 +1507,6 @@ html {
   #allprojects { display: inline-flex; width: auto; margin-right: 4px; }
   #projectlist { display: inline; }
   #projectlist .project-choice { display: inline-flex; width: auto; max-width: 100%; margin: 0 4px 4px 0; }
-  #projectlist .project-choice:has(.project-path) { display: inline-grid; max-width: 170px; }
-  .project-path { display: block; max-width: 150px; }
   .session-results .tablehead { position: static; }
   .session-results .tablehead, .session-results .session { grid-template-columns: minmax(0, 1fr) 75px; }
   .session-results .session time, .session-results .tablehead span:nth-child(3) { display: none; }

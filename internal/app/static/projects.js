@@ -4,10 +4,16 @@ let projects = [],
   projectsQuery = "",
   projectsTotal = 0,
   projectsRequest = null;
+function canonicalProjectID(id) {
+  if (!id.startsWith("path:")) return id;
+  const directory = id.slice(5);
+  return directory ? "name:" + folderName(directory) : "";
+}
 function projectName(id) {
+  id = canonicalProjectID(id);
   if (id === "") return "Unassigned";
   if (id.startsWith("name:")) return id.slice(5);
-  return folderName(id.startsWith("path:") ? id.slice(5) : id);
+  return id;
 }
 function renderProjects() {
   $("#projectexport").hidden = exportMode || project === null;
@@ -24,12 +30,11 @@ function renderProjects() {
     rows.unshift({
       id: project,
       name: projectName(project),
-      path: project.startsWith("path:") ? project.slice(5) : "",
     });
   $("#projectlist").innerHTML = rows
     .map(
       (p) =>
-        `<button class="project-choice ${p.id === project ? "active" : ""}" data-project="${esc(p.id)}" aria-current="${p.id === project ? "true" : "false"}" title="${esc(p.path || p.name)}"><span>${esc(p.name)}</span>${p.count !== undefined ? `<small>${p.count.toLocaleString()}</small>` : ""}${p.path ? `<span class="project-path">${esc(p.path)}</span>` : ""}</button>`,
+        `<button class="project-choice ${p.id === project ? "active" : ""}" data-project="${esc(p.id)}" aria-current="${p.id === project ? "true" : "false"}" title="${esc(p.name)}"><span>${esc(p.name)}</span>${p.count !== undefined ? `<small>${p.count.toLocaleString()}</small>` : ""}</button>`,
     )
     .join("");
   $("#projectlist")

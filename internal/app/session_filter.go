@@ -19,7 +19,7 @@ type sessionFilter struct {
 func parseSessionFilter(q url.Values) sessionFilter {
 	f := sessionFilter{Source: q.Get("source"), Search: strings.TrimSpace(q.Get("q")), Skill: q.Get("skill"), Plugin: q.Get("plugin"), Diagnostics: q.Get("diagnostics") == "1", IDKey: q.Get("id_key"), IDValue: q.Get("id_value")}
 	if q.Has("project") {
-		v := q.Get("project")
+		v := canonicalProjectID(q.Get("project"))
 		f.Project = &v
 	}
 	if q.Has("folder") {
