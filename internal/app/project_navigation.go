@@ -61,7 +61,7 @@ func (a *App) projects(w http.ResponseWriter, r *http.Request) {
 	}
 	offset := pageOffset(offset(r), total, 200)
 	params := append(append([]any{}, args...), offset)
-	rows, err := tx.QueryContext(r.Context(), "SELECT project,SUM(count),MAX(end)"+filter+" GROUP BY project ORDER BY (project=''),lower(project),project LIMIT 200 OFFSET ?", params...)
+	rows, err := tx.QueryContext(r.Context(), "SELECT project,SUM(count),MAX(end)"+filter+" GROUP BY project ORDER BY MAX(end) DESC,lower(project),project LIMIT 200 OFFSET ?", params...)
 	if err != nil {
 		databaseError(w, r, err)
 		return
