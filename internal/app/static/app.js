@@ -30,7 +30,7 @@ function blockLabel(block,detail){
   default:return block.label;
  }
 }
-let requestSerial=0,activeRequest=null,sessionOffset=0,eventOffset=null,eventLimit=200,source='',query='',kind='',view='activity',origin='',pageOrigin='',events=[],meta=null;
+let requestSerial=0,activeRequest=null,sessionOffset=0,eventOffset=null,eventLimit=200,query='',kind='',view='activity',origin='',pageOrigin='',events=[],meta=null;
 let sessionData=null;
 let inspectorTrigger=null;
 let inspectedID='', inspectedRecord=null, inspectorTab='details',inspectorEvent=null,inspectorRequest=null,jsonEvent=null;
@@ -43,7 +43,7 @@ let skillFilter=listURL.searchParams.get('skill')||'',skillPlugin=listURL.search
 let project=listURL.searchParams.has('project')?listURL.searchParams.get('project'):null;
 let folder=listURL.searchParams.has('folder')?listURL.searchParams.get('folder'):null;
 $('#showdiagnostics').checked=listURL.searchParams.get('diagnostics')==='1';
-source=listURL.searchParams.get('source')||'';query=listURL.searchParams.get('q')||'';sessionOffset=Number(listURL.searchParams.get('offset'))||0;
+query=listURL.searchParams.get('q')||'';sessionOffset=Number(listURL.searchParams.get('offset'))||0;
 if(selected){view=listURL.searchParams.get('view')==='diagnostics'?'diagnostics':'activity';kind=['conversation','tool','error','model','metric','skill','agent','event'].includes(listURL.searchParams.get('kind'))?listURL.searchParams.get('kind'):'';const page=Number(listURL.searchParams.get('page'));if(Number.isSafeInteger(page)&&page>0&&page<=Number.MAX_SAFE_INTEGER/200)eventOffset=(page-1)*200;origin=['otel','import'].includes(listURL.searchParams.get('origin'))?listURL.searchParams.get('origin'):'';$('#origin').value=origin}
 $('#search').value=query;
 if(!selected&&!archiveMode) sessionStorage.setItem('sessionsURL',location.pathname+location.search);
@@ -51,7 +51,7 @@ $('#detailpage > .back').href=sessionStorage.getItem('sessionsURL')||'/';
 async function apiResponse(path,signal){const r=await fetch(path,{signal});if(r.status===401){closeInspector(false);$('#login').hidden=false;$('#workspace').hidden=true;throw Error('Sign in required.')}if(!r.ok)throw Error(r.status===404?'Session not found.':`Unable to load (HTTP ${r.status}).`);return r}
 async function api(path,signal){return (await apiResponse(path,signal)).json()}
 function titleFor(id,p){if(p){const prompt=p.blocks.find(b=>/request|user/i.test(b.label));if(prompt&&prompt.text!=='Content not exported')return prompt.text.split('\n')[0].slice(0,150)}return id.includes('/agent:')?'Subagent · '+id.split('/agent:').pop():id.replace(/^(codex|claude|copilot|other):/,'')}
-function listParameters(){const p=new URLSearchParams();if(project!==null)p.set('project',project);if(skillFilter){p.set('skill',skillFilter);p.set('plugin',skillPlugin)}if($('#showdiagnostics').checked)p.set('diagnostics','1');if(source)p.set('source',source);if(query)p.set('q',query);return p}
+function listParameters(){const p=new URLSearchParams();if(project!==null)p.set('project',project);if(skillFilter){p.set('skill',skillFilter);p.set('plugin',skillPlugin)}if($('#showdiagnostics').checked)p.set('diagnostics','1');if(query)p.set('q',query);return p}
 function listState(){const p=listParameters();if(folder!==null)p.set('folder',folder);if(sessionOffset)p.set('offset',sessionOffset);history.replaceState(null,'','/'+(p.size?'?'+p:''));sessionStorage.setItem('sessionsURL',location.pathname+location.search)}
 function folderLink(path){const p=listParameters();p.set('folder',path);return '/?'+p}
 function folderName(path){return path?path.replace(/[\\/]+$/,'').split(/[\\/]/).pop()||path:'Folder unavailable'}
@@ -190,21 +190,20 @@ function placeTimeline(mode,anchor,serial){requestAnimationFrame(()=>{
 async function refresh(scrollMode){
  let anchor=null;
  activeRequest?.abort();const controller=new AbortController();activeRequest=controller;const serial=++requestSerial;
- $('#refresh').disabled=true;$('#workspace').setAttribute('aria-busy','true');for(const pager of [sessionPager,eventPager,archivePager,skillsPager])pager.setLoading(true);$('#origin').disabled=true;
+ $('#workspace').setAttribute('aria-busy','true');for(const pager of [sessionPager,eventPager,archivePager,skillsPager])pager.setLoading(true);$('#origin').disabled=true;
  try{
   if(skillsMode){await Promise.all([refreshSkills(controller.signal),loadProjects(controller.signal)]);if(!controller.signal.aborted&&scrollMode==='top')window.scrollTo({top:0,behavior:'instant'})}
   else if(archiveMode){await refreshArchive(controller.signal);if(!controller.signal.aborted&&scrollMode==='top')window.scrollTo({top:0,behavior:'instant'})}
   else if(selected){const latest=eventOffset===null;const paging=latest?'&position=latest':`&offset=${eventOffset}&limit=${eventLimit}`;const page=await api(`/api/session?id=${encodeURIComponent(selected)}&origin=${encodeURIComponent(origin)}&view=${view}&kind=${kind}${paging}`,controller.signal);if(controller.signal.aborted)return;anchor=captureTimelinePosition();scrollMode??=latest?'bottom':meta?'preserve':'top';closeInspector(false);inspectorCache.clear();meta=page;pageOrigin=origin;events=page.events;eventOffset=page.offset;eventLimit=page.limit;detailState(latest);renderEvents()}
-  else{const params=listParameters();params.set('offset',sessionOffset);if(folder!==null)params.set('folder',folder);const [response]=await Promise.all([apiResponse('/api/sessions?'+params,controller.signal),loadProjects(controller.signal)]),data=await response.json();if(controller.signal.aborted)return;sessionOffset=Number(response.headers.get('X-Page-Offset'));sessionData={offset:sessionOffset,source,query,folder,project,diagnostics:$('#showdiagnostics').checked,skillFilter,skillPlugin};listState();renderSessions(data,Number(response.headers.get('X-Total-Count')));if(scrollMode==='top')window.scrollTo({top:0,behavior:'instant'})}
+  else{const params=listParameters();params.set('offset',sessionOffset);if(folder!==null)params.set('folder',folder);const [response]=await Promise.all([apiResponse('/api/sessions?'+params,controller.signal),loadProjects(controller.signal)]),data=await response.json();if(controller.signal.aborted)return;sessionOffset=Number(response.headers.get('X-Page-Offset'));sessionData={offset:sessionOffset,query,folder,project,diagnostics:$('#showdiagnostics').checked,skillFilter,skillPlugin};listState();renderSessions(data,Number(response.headers.get('X-Total-Count')));if(scrollMode==='top')window.scrollTo({top:0,behavior:'instant'})}
   if(controller.signal.aborted)return;
   $('#login').hidden=true;$('#workspace').hidden=false;$('#listpage').hidden=!!selected||archiveMode||skillsMode;$('#skillpage').hidden=!skillsMode;$('#detailpage').hidden=!selected||archiveMode||skillsMode;$('#archivepage').hidden=!archiveMode;$('#error').textContent='';if(selected)placeTimeline(scrollMode,anchor,serial);
- }catch(e){if(e.name==='AbortError')return;if(selected&&meta){eventOffset=meta.offset;eventLimit=meta.limit;origin=pageOrigin;view=meta.view||'activity';kind=meta.kind||'';syncEventFilters();$('#origin').value=origin}else if(skillsMode&&skillsData){skillsQuery=skillsData.query;skillsOffset=skillsData.offset;skillsSort=skillsData.sort;project=skillsData.project;$('#skillsort').value=skillsSort;renderProjects();$('#skillsearch').value=skillsQuery}else if(archiveMode&&archiveData){archiveOffset=archiveData.offset}else if(sessionData){({offset:sessionOffset,source,query,folder,project,skillFilter,skillPlugin}=sessionData);$('#showdiagnostics').checked=sessionData.diagnostics;$('#search').value=query;document.querySelectorAll('[data-source]').forEach(b=>b.classList.toggle('active',b.dataset.source===source));listState();renderProjects()}$('#error').textContent=e.message;if($('#login').hidden){$('#workspace').hidden=false;$('#listpage').hidden=!!selected||archiveMode||skillsMode;$('#skillpage').hidden=!skillsMode;$('#detailpage').hidden=!selected||archiveMode||skillsMode;$('#archivepage').hidden=!archiveMode}}
- finally{if(serial===requestSerial){$('#refresh').disabled=false;$('#workspace').removeAttribute('aria-busy');for(const pager of [sessionPager,eventPager,archivePager,skillsPager])pager.setLoading(false);$('#origin').disabled=false}}
+ }catch(e){if(e.name==='AbortError')return;if(selected&&meta){eventOffset=meta.offset;eventLimit=meta.limit;origin=pageOrigin;view=meta.view||'activity';kind=meta.kind||'';syncEventFilters();$('#origin').value=origin}else if(skillsMode&&skillsData){skillsQuery=skillsData.query;skillsOffset=skillsData.offset;skillsSort=skillsData.sort;project=skillsData.project;$('#skillsort').value=skillsSort;renderProjects();$('#skillsearch').value=skillsQuery}else if(archiveMode&&archiveData){archiveOffset=archiveData.offset}else if(sessionData){({offset:sessionOffset,query,folder,project,skillFilter,skillPlugin}=sessionData);$('#showdiagnostics').checked=sessionData.diagnostics;$('#search').value=query;listState();renderProjects()}$('#error').textContent=e.message;if($('#login').hidden){$('#workspace').hidden=false;$('#listpage').hidden=!!selected||archiveMode||skillsMode;$('#skillpage').hidden=!skillsMode;$('#detailpage').hidden=!selected||archiveMode||skillsMode;$('#archivepage').hidden=!archiveMode}}
+ finally{if(serial===requestSerial){$('#workspace').removeAttribute('aria-busy');for(const pager of [sessionPager,eventPager,archivePager,skillsPager])pager.setLoading(false);$('#origin').disabled=false}}
 }
-$('#refresh').onclick=()=>{projectsKey='';if(selected&&(!meta||meta.offset+meta.limit>=meta.count)){eventOffset=null;eventLimit=200}refresh()};
+
 $('#loginform').onsubmit=async e=>{e.preventDefault();try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:$('#token').value})});if(!r.ok)throw Error('Invalid access token.');$('#token').value='';refresh()}catch(e){$('#loginerror').textContent=e.message}};
 $('#logout').onclick=async()=>{await fetch('/api/logout',{method:'POST'});location.reload()};
-document.querySelectorAll('[data-source]').forEach(b=>{b.classList.toggle('active',b.dataset.source===source);b.onclick=()=>{source=b.dataset.source;sessionOffset=0;listState();document.querySelectorAll('[data-source]').forEach(x=>x.classList.toggle('active',x===b));refresh()}});
 function syncEventFilters(){
  document.querySelectorAll('button[data-kind]').forEach(b=>b.classList.toggle('active',b.dataset.kind===kind));
  document.querySelectorAll('[data-view]').forEach(b=>{b.classList.toggle('active',b.dataset.view===view);b.setAttribute('aria-pressed',String(b.dataset.view===view))});
@@ -221,42 +220,8 @@ $('#search').oninput=e=>{if(!composingSearch&&!e.isComposing)scheduleSearch()};
 const sessionPager=new Pagination($('#sessionpagination'),{noun:'sessions',onChange:page=>{sessionOffset=(page-1)*200;refresh('top')}});
 const eventPager=new Pagination($('#eventpagination'),{noun:'events',summary:()=>meta?usageShortcut(meta.usage):'',onChange:page=>{eventLimit=200;eventOffset=page===eventPager.pages?null:(page-1)*200;refresh(page===eventPager.pages?'bottom':'top')},onLatest:()=>{eventOffset=null;eventLimit=200;refresh('bottom')}});
 $('#eventpagination').addEventListener('click',event=>{if(event.target.closest('.usage-shortcut')){event.preventDefault();$('#sessionusage').scrollIntoView({block:'start'});$('#sessionusage').focus({preventScroll:true})}});
-const archivePager=new Pagination($('#archivepagination'),{noun:'sessions',onChange:page=>{archiveOffset=(page-1)*200;refresh('top')}});
+const archivePager=new Pagination($('#archivepagination'),{noun:'folders',onChange:page=>{archiveOffset=(page-1)*200;refresh('top')}});
 $('#origin').onchange=()=>{origin=$('#origin').value;eventOffset=null;eventLimit=200;closeInspector(false);refresh('bottom')};
 setupSubagentPreview();setupSkills();
-const archiveSelection=new Set();let archiveAll=false,archiveOffset=0,archiveData=null;
-const bytes=n=>{const units=['B','KiB','MiB','GiB','TiB'];let i=0;while(n>=1024&&i<units.length-1){n/=1024;i++}return `${n.toFixed(i?1:0)} ${units[i]}`};
-async function archivePost(path,body){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(r.status===401){$('#login').hidden=false;$('#workspace').hidden=true;throw Error('Sign in required.')}if(!r.ok)throw Error((await r.text()).trim());return r.json()}
-function updateArchiveSelection(){const n=archiveAll?archiveData.total_sessions:archiveSelection.size;$('#archiveselected').textContent=`${n} selected`;$('#archivecreate').disabled=!n;document.querySelectorAll('[data-archive-session]').forEach(el=>{el.checked=archiveAll||archiveSelection.has(el.dataset.archiveSession);el.disabled=archiveAll})}
-async function refreshArchive(signal){
- const data=await api('/api/archive?offset='+archiveOffset,signal);if(signal?.aborted)return;archiveData=data;archiveOffset=data.offset;
- const job=data.job,active=job&&['preparing','ready','deleting','compacting'].includes(job.status);
- $('#archivetotal').textContent=`${data.total_sessions} sessions · ${bytes(data.total_bytes)} uncompressed`;
- $('#archivecutoff').textContent=`Last activity before ${new Date(data.cutoff).toLocaleDateString()} · DB data only; source files stay in place.`;
- $('#archiveselection').hidden=!!active;
- $('#archiveitems').innerHTML=data.sessions.length?data.sessions.slice(0,200).map(s=>`<label class="archive-row"><input type="checkbox" data-archive-session="${esc(s.id)}" ${active?'disabled checked':''}><span><a href="${esc(link(s.id))}">${esc(s.id)}</a><small>${esc(label(s.source))} · ${esc(new Date(s.last_activity).toLocaleString())}</small></span><span>${s.records.toLocaleString()} ${s.records===1?'record':'records'}</span><span>${bytes(s.raw_bytes)}</span></label>`).join(''):'<p class="empty">No inactive sessions</p>';
- document.querySelectorAll('[data-archive-session]').forEach(el=>el.onchange=()=>{if(el.checked)archiveSelection.add(el.dataset.archiveSession);else archiveSelection.delete(el.dataset.archiveSession);updateArchiveSelection()});if(!active)updateArchiveSelection();
- archivePager.update({total:data.total_sessions,offset:archiveOffset,size:200});
- const key=job?`${job.id}:${job.status}:${job.compaction_error}`:'';
- if($('#archivejob').dataset.key===key){const progress=$('#archiveprogress');if(progress)progress.textContent=archiveProgress(job);return}
- $('#archivejob').dataset.key=key;
- if(!job){$('#archivejob').innerHTML='';return}
- const cancel=['preparing','ready'].includes(job.status)?'<button id="archivecancel">Cancel archive</button>':'';
- let content='';
- if(job.status==='preparing')content=`<h2>Creating ZIP</h2><p id="archiveprogress">${esc(archiveProgress(job))}</p>${cancel}`;
- if(job.status==='ready')content=`<h2>Ready to download</h2><p>${job.session_count} sessions · ${job.record_count.toLocaleString()} records · ${bytes(job.archive_bytes)}</p><a id="archivedownload" class="button primary" href="/api/archives/${encodeURIComponent(job.id)}/download" download>Download ZIP</a> ${cancel}<details><summary>SHA-256</summary><code class="archivehash">${esc(job.sha256)}</code></details><form id="archivedeleteform"><label>After checking your downloaded ZIP, type <strong>DOWNLOADED</strong><input id="archiveconfirmation" autocomplete="off" spellcheck="false" required placeholder="DOWNLOADED"></label><button id="archivedelete" class="danger" disabled>Delete archived DB records</button></form><p id="archiveactionerror" role="alert"></p>`;
- if(job.status==='deleting')content=`<h2>Deleting archived records</h2><p id="archiveprogress">${esc(archiveProgress(job))}</p>`;
- if(job.status==='compacting')content='<h2>Reclaiming database space</h2><p>Reclaiming free pages. A full rebuild pauses ingestion until it finishes.</p>';
- if(job.status==='deleted')content=`<h2>Archive complete</h2><p>${job.deleted_records.toLocaleString()} records deleted · ${bytes(job.reclaimed_bytes)} reclaimed</p>${job.compaction_error?`<p class="failure-detail">${esc(job.compaction_error)}</p><button id="archivecompact">${job.rebuild_required?'Rebuild database · pauses ingestion':'Retry compaction'}</button>`:''}`;
- if(job.status==='failed')content=`<h2 class="failure-detail">Archive failed</h2><p>${esc(job.error)}</p>${job.deleted_records?`<p>${job.deleted_records} records already deleted.</p>`:''}`;
- if(job.status==='canceled')content='<p>Archive canceled. DB records retained.</p>';
- $('#archivejob').innerHTML=content;
- if($('#archivecancel'))$('#archivecancel').onclick=()=>archiveAction('/api/archives/'+job.id+'/cancel',{});
- if($('#archivecompact'))$('#archivecompact').onclick=()=>archiveAction('/api/archives/'+job.id+'/compact',{rebuild:job.rebuild_required});
- if($('#archiveconfirmation')){$('#archiveconfirmation').oninput=()=>$('#archivedelete').disabled=$('#archiveconfirmation').value!=='DOWNLOADED';$('#archivedeleteform').onsubmit=async e=>{e.preventDefault();$('#archivedelete').disabled=true;await archiveAction('/api/archives/'+job.id+'/delete',{confirmation:$('#archiveconfirmation').value})}};
-}
-function archiveProgress(job){return job.status==='deleting'?`${job.deleted_records.toLocaleString()} / ${job.record_count.toLocaleString()} records`:`${job.processed_records.toLocaleString()} / ${job.record_count.toLocaleString()} records · ${bytes(job.archive_bytes)}`}
-async function archiveAction(path,body){try{await archivePost(path,body);archiveSelection.clear();archiveAll=false;await refresh()}catch(e){const target=$('#archiveactionerror')||$('#error');target.textContent=e.message;if($('#archiveconfirmation'))$('#archiveconfirmation').oninput()}}
-$('#archiveall').onclick=()=>{archiveAll=true;archiveSelection.clear();updateArchiveSelection()};$('#archiveclear').onclick=()=>{archiveAll=false;archiveSelection.clear();updateArchiveSelection()};
-$('#archivecreate').onclick=async()=>{$('#archivecreate').disabled=true;await archiveAction('/api/archives',{cutoff:archiveData.cutoff,all:archiveAll,sessions:archiveAll?[]:[...archiveSelection]})};
+setupArchive();
 refresh();

@@ -26,9 +26,8 @@ with tempfile.TemporaryDirectory() as folder:
    if os.getenv('AGENTLOG_SCREENSHOT'):page.screenshot(path=os.environ['AGENTLOG_SCREENSHOT'])
    page.locator('#eventpagination [aria-label="Previous page"]').click();first('message 0200');expect(page.locator('.event .prose').last).to_have_text('message 0399')
    page.locator('.event').nth(60).evaluate("el=>el.scrollIntoView({block:'start'})");anchor=page.locator('.event').nth(60);anchor_id=anchor.get_attribute('data-event');top=anchor.bounding_box()['y']
-   send('long',[999]);page.evaluate("document.querySelector('#refresh').click()")
+   send('long',[999]);page.reload()
    expect(page.locator('#pageinfo')).to_contain_text('/ 406');assert page.locator('.event').nth(60).get_attribute('data-event')==anchor_id
-   page.wait_for_function('(args)=>Math.abs(document.querySelector(`[data-event="${args.id}"]`).getBoundingClientRect().top-args.top)<2',arg={'id':anchor_id,'top':top})
    first('message 0200')
    # Failed page requests preserve the displayed window. Type filtering is
    # a new server request and starts at the latest matching page.

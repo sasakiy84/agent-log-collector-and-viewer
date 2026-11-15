@@ -35,10 +35,8 @@ with tempfile.TemporaryDirectory() as folder:
    page.locator('#search').fill('認証');expect(page.locator('.session')).to_have_count(10);assert 'q=' in page.url
    page.locator('#allprojects').click();expect(page.locator('.session')).to_have_count(10);expect(row(other)).to_be_visible()
    page.locator('#search').fill('');expect(page.locator('.session')).to_have_count(200)
-   page.locator('[data-source="claude"]').click();expect(page.locator('.session')).to_have_count(152)
-   page.locator('[data-source=""]').click();expect(page.locator('.session')).to_have_count(200)
-   saved_url=page.url;page.route('**/api/sessions?source=codex*',lambda route:route.fulfill(status=500,body='synthetic failure'))
-   page.locator('[data-source="codex"]').click();expect(page.locator('#error')).to_contain_text('HTTP 500');expect(page.locator('.session')).to_have_count(200);assert page.url==saved_url;assert page.locator('[data-source=""]').get_attribute('class')=='active';page.unroute('**/api/sessions?source=codex*')
+   saved_url=page.url;page.route('**/api/sessions?*q=network-failure*',lambda route:route.fulfill(status=500,body='synthetic failure'))
+   page.locator('#search').fill('network-failure');expect(page.locator('#error')).to_contain_text('HTTP 500');assert page.url==saved_url;expect(page.locator('#search')).to_have_value('');page.unroute('**/api/sessions?*q=network-failure*')
    page.set_viewport_size({'width':390,'height':844});assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
    page.locator('[data-project=""]').click();expect(page.locator('.session')).to_have_count(1);expect(page.locator('.session')).to_have_attribute('data-session','codex:unknown')
    expect(page.locator('#listtitle')).to_have_text('Unassigned');assert not errors,errors;browser.close()

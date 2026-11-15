@@ -54,7 +54,7 @@ func (a *App) archiveList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
-	job, e := scanArchive(tx.QueryRowContext(r.Context(), "SELECT "+archiveColumns+" FROM archives ORDER BY created_at DESC LIMIT 1"))
+	job, e := scanArchive(tx.QueryRowContext(r.Context(), "SELECT "+archiveColumns+" FROM archives ORDER BY created_at DESC,id DESC LIMIT 1"))
 	if e != nil && !errors.Is(e, sql.ErrNoRows) {
 		databaseError(w, r, e)
 		return
@@ -66,9 +66,13 @@ func (a *App) archiveList(w http.ResponseWriter, r *http.Request) {
 	query := inactiveSessions
 	args := []any{cutoff}
 	if current != nil && activeArchive(job.Status) {
-		query = "SELECT session,source,last_activity,records,raw_bytes FROM archive_sessions WHERE archive_id=?"
+		query = "SELECT session,source,last_activity,records,raw_bytes,folder FROM archive_sessions WHERE archive_id=?"
 		args = []any{job.ID}
 		cutoff = job.Cutoff
+	}
+	if r.URL.Query().Get("group") == "folders" {
+		a.archiveFolderList(w, r, tx, query, args, cutoff, current, offset)
+		return
 	}
 	var total, records, rawBytes int64
 	if err = tx.QueryRowContext(r.Context(), "SELECT COUNT(*),COALESCE(SUM(records),0),COALESCE(SUM(raw_bytes),0) FROM ("+query+")", args...).Scan(&total, &records, &rawBytes); err != nil {
@@ -85,7 +89,7 @@ func (a *App) archiveList(w http.ResponseWriter, r *http.Request) {
 	sessions := []ArchiveSession{}
 	for rows.Next() {
 		var s ArchiveSession
-		if err = rows.Scan(&s.ID, &s.Source, &s.LastActivity, &s.Records, &s.RawBytes); err != nil {
+		if err = rows.Scan(&s.ID, &s.Source, &s.LastActivity, &s.Records, &s.RawBytes, &s.Folder); err != nil {
 			break
 		}
 		sessions = append(sessions, s)
@@ -99,16 +103,18 @@ func (a *App) archiveList(w http.ResponseWriter, r *http.Request) {
 	write(w, map[string]any{"cutoff": cutoff, "offset": offset, "total_sessions": total, "total_records": records, "total_bytes": rawBytes, "sessions": sessions, "job": current})
 }
 func (a *App) archiveCreate(w http.ResponseWriter, r *http.Request) {
+	defer a.notifyArchive()
 	var input struct {
 		All      bool     `json:"all"`
 		Sessions []string `json:"sessions"`
 		Cutoff   string   `json:"cutoff"`
+		Folders  []string `json:"folders"`
 	}
 	if !archiveJSON(w, r, &input) {
 		return
 	}
 	cutoff, err := time.Parse(time.RFC3339Nano, input.Cutoff)
-	if err != nil || cutoff.After(archiveCutoff(time.Now())) || len(input.Sessions) > 2000 || (!input.All && len(input.Sessions) == 0) || (input.All && len(input.Sessions) != 0) {
+	if err != nil || cutoff.After(archiveCutoff(time.Now())) || len(input.Sessions) > 2000 || len(input.Folders) > 2000 || (!input.All && len(input.Sessions) == 0 && len(input.Folders) == 0) || (input.All && (len(input.Sessions) != 0 || len(input.Folders) != 0)) || (len(input.Folders) > 0 && len(input.Sessions) > 0) {
 		http.Error(w, "Invalid archive selection", 400)
 		return
 	}
@@ -120,7 +126,15 @@ func (a *App) archiveCreate(w http.ResponseWriter, r *http.Request) {
 		}
 		seen[id] = true
 	}
-	job, err := a.createArchive(r.Context(), timestamp(cutoff), input.All, input.Sessions)
+	seenFolders := map[string]bool{}
+	for _, folder := range input.Folders {
+		if seenFolders[folder] || len(folder) > 32768 {
+			http.Error(w, "Invalid archive selection", 400)
+			return
+		}
+		seenFolders[folder] = true
+	}
+	job, err := a.createFolderArchive(r.Context(), timestamp(cutoff), input.All, input.Sessions, input.Folders)
 	if err != nil {
 		archiveError(w, r, err)
 		return
@@ -193,6 +207,7 @@ func (a *App) archiveDownload(w http.ResponseWriter, r *http.Request) {
 	}
 }
 func (a *App) archiveDelete(w http.ResponseWriter, r *http.Request) {
+	defer a.notifyArchive()
 	var input struct {
 		Confirmation string `json:"confirmation"`
 	}
@@ -251,6 +266,7 @@ func (a *App) archiveDelete(w http.ResponseWriter, r *http.Request) {
 	write(w, map[string]bool{"accepted": true})
 }
 func (a *App) archiveCancel(w http.ResponseWriter, r *http.Request) {
+	defer a.notifyArchive()
 	if !archiveJSON(w, r, &struct{}{}) {
 		return
 	}
@@ -278,6 +294,7 @@ func (a *App) archiveCancel(w http.ResponseWriter, r *http.Request) {
 	write(w, map[string]bool{"ok": true})
 }
 func (a *App) archiveCompact(w http.ResponseWriter, r *http.Request) {
+	defer a.notifyArchive()
 	var input struct {
 		Rebuild bool `json:"rebuild"`
 	}

@@ -31,6 +31,8 @@ type App struct {
 	cancel             context.CancelFunc
 	workers            sync.WaitGroup
 	archiveWake        chan struct{}
+	archiveMu          sync.Mutex
+	archiveChange      chan struct{}
 	taskMu             sync.Mutex
 	taskID             string
 	taskCancel         context.CancelFunc
@@ -96,6 +98,7 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("GET /api/archive", a.archiveList)
 	mux.HandleFunc("POST /api/archives", a.archiveCreate)
 	mux.HandleFunc("GET /api/archives/{id}", a.archiveStatus)
+	mux.HandleFunc("GET /api/archives/{id}/events", a.archiveEvents)
 	mux.HandleFunc("GET /api/archives/{id}/download", a.archiveDownload)
 	mux.HandleFunc("POST /api/archives/{id}/delete", a.archiveDelete)
 	mux.HandleFunc("POST /api/archives/{id}/cancel", a.archiveCancel)

@@ -25,6 +25,8 @@ SELECT name,complete,processed,updated_at,error FROM maintenance_jobs ORDER BY n
 
 `refreshProjections` defines write dependency order: trace ownership, cards, full-text search, timelines, activity metadata, per-call statistics, and overview summaries. The startup path commits resumable card/session batches and flushes usage totals before exposing the API. Changed trace identities use `trace_dirty`; identities containing archive-locked sessions stay queued until the locks are released.
 
+Archive listings join indexed session timestamps with `archive_stats` record/byte counters maintained by event triggers. `archive_stats_pending` is the resumable upgrade queue; no ordinary archive-list request reads original payloads. Eligibility uses the original per-origin timestamps, including unknown times hidden by imported/OTEL card pairing. Folder membership is frozen in the archive snapshot. Running-job updates use an authenticated SSE stream notified after committed state changes, without browser polling.
+
 Database URI construction applies foreign keys, busy timeout and writer transaction settings to every connection, including replacements. WAL readers and archive snapshots use read-only connections.
 
 ## Validation
