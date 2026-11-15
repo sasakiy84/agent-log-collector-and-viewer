@@ -33,10 +33,12 @@ func canonicalProjectID(id string) string {
 	return "name:" + name
 }
 
-func updateProjectTotals(ctx context.Context, tx *sql.Tx, changes map[folderKey]int) error {
+type projectDelta struct{ Count, Roots int }
+
+func updateProjectTotals(ctx context.Context, tx *sql.Tx, changes map[folderKey]projectDelta) error {
 	for key, delta := range changes {
-		if delta != 0 {
-			_, err := tx.ExecContext(ctx, `INSERT INTO project_totals VALUES(?,?,?,?, '') ON CONFLICT(project,source,diagnostic) DO UPDATE SET count=count+excluded.count`, key.Path, key.Source, key.Diagnostic, delta)
+		if delta.Count != 0 || delta.Roots != 0 {
+			_, err := tx.ExecContext(ctx, `INSERT INTO project_totals(project,source,diagnostic,count,end,root_count,root_end) VALUES(?,?,?,?, '',?,'') ON CONFLICT(project,source,diagnostic) DO UPDATE SET count=count+excluded.count,root_count=root_count+excluded.root_count`, key.Path, key.Source, key.Diagnostic, delta.Count, delta.Roots)
 			if err != nil {
 				return err
 			}
@@ -44,7 +46,9 @@ func updateProjectTotals(ctx context.Context, tx *sql.Tx, changes map[folderKey]
 		if _, err := tx.ExecContext(ctx, "DELETE FROM project_totals WHERE project=? AND source=? AND diagnostic=? AND count=0", key.Path, key.Source, key.Diagnostic); err != nil {
 			return err
 		}
-		_, err := tx.ExecContext(ctx, `UPDATE project_totals SET end=(SELECT end FROM folder_members WHERE project=? AND source=? AND diagnostic=? ORDER BY end DESC,session LIMIT 1) WHERE project=? AND source=? AND diagnostic=?`, key.Path, key.Source, key.Diagnostic, key.Path, key.Source, key.Diagnostic)
+		_, err := tx.ExecContext(ctx, `UPDATE project_totals SET end=(SELECT end FROM folder_members WHERE project=? AND source=? AND diagnostic=? ORDER BY end DESC,session LIMIT 1),
+ root_end=COALESCE((SELECT end FROM folder_members WHERE project=? AND source=? AND diagnostic=? AND child=0 ORDER BY end DESC,session LIMIT 1),'')
+ WHERE project=? AND source=? AND diagnostic=?`, key.Path, key.Source, key.Diagnostic, key.Path, key.Source, key.Diagnostic, key.Path, key.Source, key.Diagnostic)
 		if err != nil {
 			return err
 		}
@@ -59,7 +63,11 @@ func (a *App) projects(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
-	filter, args := " FROM project_totals WHERE 1=1", []any{}
+	countColumn, endColumn := "root_count", "root_end"
+	if r.URL.Query().Get("include_children") == "1" {
+		countColumn, endColumn = "count", "end"
+	}
+	filter, args := " FROM project_totals WHERE "+countColumn+">0", []any{}
 	if source := r.URL.Query().Get("source"); source != "" {
 		filter += " AND source=?"
 		args = append(args, source)
@@ -72,13 +80,13 @@ func (a *App) projects(w http.ResponseWriter, r *http.Request) {
 		args = append(args, query)
 	}
 	var total, sessions int
-	if err = tx.QueryRowContext(r.Context(), "SELECT COUNT(DISTINCT project),COALESCE(SUM(count),0)"+filter, args...).Scan(&total, &sessions); err != nil {
+	if err = tx.QueryRowContext(r.Context(), "SELECT COUNT(DISTINCT project),COALESCE(SUM("+countColumn+"),0)"+filter, args...).Scan(&total, &sessions); err != nil {
 		databaseError(w, r, err)
 		return
 	}
 	offset := pageOffset(offset(r), total, 200)
 	params := append(append([]any{}, args...), offset)
-	rows, err := tx.QueryContext(r.Context(), "SELECT project,SUM(count),MAX(end)"+filter+" GROUP BY project ORDER BY MAX(end) DESC,lower(project),project LIMIT 200 OFFSET ?", params...)
+	rows, err := tx.QueryContext(r.Context(), "SELECT project,SUM("+countColumn+"),MAX("+endColumn+")"+filter+" GROUP BY project ORDER BY MAX("+endColumn+") DESC,lower(project),project LIMIT 200 OFFSET ?", params...)
 	if err != nil {
 		databaseError(w, r, err)
 		return

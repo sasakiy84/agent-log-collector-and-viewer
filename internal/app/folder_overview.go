@@ -20,6 +20,7 @@ type folderMember struct {
 	folderKey
 	End, Usage string
 	Project    sql.NullString
+	Child      bool
 }
 
 // Reports and overlap counts make subtraction exact when a session disappears,
@@ -95,10 +96,16 @@ func refreshFolderBatch(ctx context.Context, tx *sql.Tx) (int, error) {
 		return 0, err
 	}
 	groups := map[folderKey]*folderAggregate{}
-	projects := map[folderKey]int{}
+	projects := map[folderKey]projectDelta{}
 	projectChange := func(m folderMember, sign int) {
 		if m.Project.Valid {
-			projects[folderKey{Path: m.Project.String, Source: m.Source, Diagnostic: m.Diagnostic}] += sign
+			key := folderKey{Path: m.Project.String, Source: m.Source, Diagnostic: m.Diagnostic}
+			delta := projects[key]
+			delta.Count += sign
+			if !m.Child {
+				delta.Roots += sign
+			}
+			projects[key] = delta
 		}
 	}
 	change := func(member folderMember, sign int) error {
@@ -121,11 +128,11 @@ func refreshFolderBatch(ctx context.Context, tx *sql.Tx) (int, error) {
 	}
 	for _, session := range sessions {
 		var old, next folderMember
-		oldErr := tx.QueryRowContext(ctx, "SELECT path,source,diagnostic,end,usage,project FROM folder_members WHERE session=?", session).Scan(&old.Path, &old.Source, &old.Diagnostic, &old.End, &old.Usage, &old.Project)
+		oldErr := tx.QueryRowContext(ctx, "SELECT path,source,diagnostic,end,usage,project,child FROM folder_members WHERE session=?", session).Scan(&old.Path, &old.Source, &old.Diagnostic, &old.End, &old.Usage, &old.Project, &old.Child)
 		if oldErr != nil && !errors.Is(oldErr, sql.ErrNoRows) {
 			return 0, oldErr
 		}
-		nextErr := tx.QueryRowContext(ctx, "SELECT "+directoryColumn+",source,end,"+usageColumn+",project_key,internal FROM session_catalog s WHERE s.session=? AND NOT EXISTS(SELECT 1 FROM archive_locks WHERE session=s.session)", session).Scan(&next.Path, &next.Source, &next.End, &next.Usage, &next.Project, &next.Diagnostic)
+		nextErr := tx.QueryRowContext(ctx, "SELECT "+directoryColumn+",source,end,"+usageColumn+",project_key,internal,length(parent)>0 FROM session_catalog s WHERE s.session=? AND NOT EXISTS(SELECT 1 FROM archive_locks WHERE session=s.session)", session).Scan(&next.Path, &next.Source, &next.End, &next.Usage, &next.Project, &next.Diagnostic, &next.Child)
 		if nextErr != nil && !errors.Is(nextErr, sql.ErrNoRows) {
 			return 0, nextErr
 		}
@@ -159,7 +166,7 @@ func refreshFolderBatch(ctx context.Context, tx *sql.Tx) (int, error) {
 			if err = change(next, 1); err != nil {
 				return 0, err
 			}
-			if _, err = tx.ExecContext(ctx, "INSERT INTO folder_members VALUES(?,?,?,?,?,?,?)", session, next.Path, next.Source, next.Diagnostic, next.End, next.Usage, next.Project); err != nil {
+			if _, err = tx.ExecContext(ctx, "INSERT INTO folder_members(session,path,source,diagnostic,end,usage,project,child) VALUES(?,?,?,?,?,?,?,?)", session, next.Path, next.Source, next.Diagnostic, next.End, next.Usage, next.Project, next.Child); err != nil {
 				return 0, err
 			}
 		}
