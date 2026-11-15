@@ -20,7 +20,7 @@ with sync_playwright() as p:
  assert page.locator('.eventheading time').count()==6
  assert page.locator('.status.failed').count()==1
  assert page.locator('.status.succeeded').count()==2
- assert page.locator('.failure-detail').evaluate('(el) => getComputedStyle(el).color')=='rgb(180, 35, 24)'
+ assert page.locator('.failure-detail').evaluate('(el) => getComputedStyle(el).color')=='rgb(209, 52, 21)'
  assert page.locator('.event').first.bounding_box()['x'] < 40
  assert page.locator('.eventheading time').first.bounding_box()['y'] < page.locator('.event').first.bounding_box()['y'] + 35
  assert page.get_by_text('go test ./internal/app -run TestPagination',exact=True).is_visible()

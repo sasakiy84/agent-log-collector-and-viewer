@@ -17,6 +17,7 @@ function resetSubagentPreview(){
 }
 function showSubagentPreview(){
  const state=subagentState;
+ $('#inspector').dataset.kind='agent';$('#inspector').dataset.error='false';
  $('#inspector').hidden=false;$('#detailpage').classList.add('inspector-open');
  $('.inspectortabs').hidden=true;$('#inspectdetails').hidden=true;$('#inspectjson').hidden=true;$('#inspectagent').hidden=false;$('#subagentactions').hidden=false;
  $('#inspectortitle').textContent='Subagent: '+state.label;$('#inspectortime').textContent=state.page?`${label(state.page.source)} · ${state.page.count.toLocaleString()} ${state.page.count===1?'event':'events'}`:'';
@@ -53,7 +54,7 @@ function renderSubagentPreview(){
  const state=subagentState,page=state.page;showSubagentPreview();$('#subagentrefresh').disabled=false;subagentPager.setLoading(false);
  $('#subagentevents').innerHTML=page.events.length?page.events.slice(0,page.limit).map(event=>{
   const p=event.detail;
-  return `<section class="preview-entry"><div class="preview-heading"><h3>${esc(p.title)}</h3>${p.error?'<span class="status failed">Failed</span>':''}<time datetime="${esc(event.time)}">${esc(date(event.time))}</time></div>${p.blocks.map(b=>`<div class="block">${['Request','Response','Message',p.kind].includes(b.label)?'':`<div class="blocklabel">${esc(b.label)}</div>`}<${b.code?'pre':'div'} class="${b.code?'code':'prose'}">${esc(b.text)}</${b.code?'pre':'div'}></div>`).join('')}${subagentLinks(event.subagents)}${p.fields.length?`<dl class="fields">${p.fields.map(([k,v])=>`<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>`:''}</section>`;
+  return `<section class="preview-entry ${esc(p.kind)} ${p.error?'error':''}"><div class="preview-heading"><h3>${esc(p.title)}</h3>${p.error?'<span class="status failed">Failed</span>':''}<time datetime="${esc(event.time)}">${esc(date(event.time))}</time></div>${p.blocks.map(b=>`<div class="block">${['Request','Response','Message',p.kind].includes(b.label)?'':`<div class="blocklabel">${esc(b.label)}</div>`}<${b.code?'pre':'div'} class="${b.code?'code':'prose'}">${esc(b.text)}</${b.code?'pre':'div'}></div>`).join('')}${subagentLinks(event.subagents)}${p.fields.length?`<dl class="fields">${p.fields.map(([k,v])=>`<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>`:''}</section>`;
  }).join(''):'<p class="preview-empty">Logs have not been collected.</p>';
  bindSubagentLinks($('#subagentevents'));$('#subagentpagination').hidden=!page.count;subagentPager.update({total:page.count,offset:page.offset,size:page.limit});
  requestAnimationFrame(()=>{if(subagentState===state)$('.inspectorbody').scrollTop=state.scroll??$('.inspectorbody').scrollHeight});
