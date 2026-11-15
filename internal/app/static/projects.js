@@ -64,7 +64,7 @@ function chooseProject(id) {
   refresh();
 }
 async function loadProjects(signal, more = false) {
-  const key = JSON.stringify([$("#showdiagnostics").checked, projectsQuery]);
+  const key = JSON.stringify([$("#showdiagnostics").checked, projectsQuery, exportMode]);
   if (!more && projectsKey === key) {
     renderProjects();
     return;
@@ -74,10 +74,11 @@ async function loadProjects(signal, more = false) {
     offset: String(more ? projects.length : 0),
   });
   if ($("#showdiagnostics").checked) params.set("diagnostics", "1");
+  if (exportMode) params.set("include_children", "1");
   const data = await api("/api/projects?" + params, signal);
   if (
     signal?.aborted ||
-    key !== JSON.stringify([$("#showdiagnostics").checked, projectsQuery])
+    key !== JSON.stringify([$("#showdiagnostics").checked, projectsQuery, exportMode])
   )
     return;
   projects = more ? [...projects, ...data.projects] : data.projects;
