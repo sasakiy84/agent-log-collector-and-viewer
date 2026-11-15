@@ -1,16 +1,16 @@
 # Search filters
 
-Sessions, Skills and Export share a time range, project selection, agent and origin filters. Use a project name to select one project, or its checkbox to combine several. Within one field, selections are ORed; different fields are ANDed. An empty selection includes all values.
+Sessions and Skills share a time range, project selection, agent and origin filters. Use a project name to select one project, or its checkbox to combine several. Within one field, selections are ORed; different fields are ANDed. An empty selection includes all values.
 
-The layout follows the [Datadog Log Explorer](https://docs.datadoghq.com/logs/explorer/): search and event time across the top, projects and checkbox facets on the left, results on the right. Text options and exact-ID search open below the query; time bounds open beside the range selector. On narrow screens the facets collapse and pagination stays after the results.
+The layout follows the [Datadog Log Explorer](https://docs.datadoghq.com/logs/explorer/): search and event time across the top, projects and checkbox facets on the left, results on the right. Text matching, exclusions and exact-ID search share one **Search options** panel below the query; time bounds open beside the range selector. On narrow screens the facets collapse and pagination stays after the results.
 
 ![Time and project filters with matching-record analysis](ui-search-facets.png)
 
 - **Event time**: all time, last 15 minutes/hour/24 hours/7 days/30 days, or an open/closed custom range, to the second. Inputs use the browser's named local timezone. From is inclusive and To is exclusive. Presets resolve once when chosen; they do not move in the background. UI-generated URLs contain whole-second UTC bounds so a reload/shared URL reproduces the same range. Opening an older fractional-bound URL in the UI rounds its bounds down to seconds; stored event timestamps and direct API precision are unchanged.
 - **Agent / Origin**: combine agents or OTEL/imported records with checkboxes.
-- **Event type** (Sessions/Export): conversation, tools, errors, model, metrics, skills, agents and other events. Overlapping categories are a union, so an error tool event counts once.
+- **Event type** (Sessions): conversation, tools, errors, model, metrics, skills, agents and other events. Overlapping categories are a union, so an error tool event counts once.
 - **Text match**: AND (default) or OR over analyzed Japanese/English words. **Exclude words** removes records containing any analyzed exclusion term. These fields stay outside the ordinary text box. Skills instead searches the skill name/plugin/scope/path strings; exclusions remove matching skills.
-- **Search IDs** (Sessions/Export): an exact ID field/value, combined with the text and event filters. When combined, the ID and text/time/type/origin must belong to the same stored record. The panel closes after applying; its Active label remains visible.
+- **Exact ID** in **Search options** (Sessions): an exact ID field/value, combined with the text and event filters. When combined, the ID and text/time/type/origin must belong to the same stored record. The panel closes after applying; its Active label remains visible.
 
 The session list shows sessions containing a matching record. Time is **event time**, not the session's start or last activity; nested skill filters use their invocation time, and day grouping uses the first matching invocation in each stored record; a continuing session can therefore match an earlier range. Session titles, last activity, event counts and **Session usage** describe the full session. Internal and child sessions remain hidden by default.
 
@@ -18,7 +18,7 @@ The session list shows sessions containing a matching record. Time is **event ti
 
 **Analyze results** runs only when opened. Group matching stored-record counts, distinct sessions and error counts by UTC day, project, agent or event type. Import/OTEL copies are distinct records here; this is not the merged timeline's logical event count. Up to 100 groups are displayed, with an explicit notice when more exist. An open analysis updates when its conditions change; there is no polling. Analysis errors do not hide the session list.
 
-**Export matching sessions** carries the full filter and root/internal visibility to Export, where they can be changed. Its ZIP contains the complete histories of matching sessions, including records outside the range. **Export project** remains the separate way to export complete projects. Export preview and download use the same predicate. Each download uses one snapshot for its manifest, counts and histories. The manifest records repeated selections as arrays.
+**Export ZIP** downloads the complete histories of all matching list sessions, including pages not currently shown and records outside the selected time range. The adjacent menu offers **Export entire project** (all selected projects, including internal and child sessions, independent of the current text/time filters) and **Archive inactive sessions…**. Neither action opens another page or changes the current search. Each download uses one snapshot for its manifest, counts and histories. The manifest records repeated selections as arrays.
 
 ![Skill usage within the selected range and projects](ui-search-skills.png)
 

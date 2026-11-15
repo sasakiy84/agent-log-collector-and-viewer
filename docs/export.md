@@ -1,39 +1,29 @@
-# Export
+# Export and archive
 
-Choose a project and click **Export project**, or open **Export** in the top bar.
-The project button opens `/export?project=…&diagnostics=1` with the whole project
-selected. Previous text/ID filters are cleared for this full-project action.
+All file operations start in **Sessions**. No export or archive page is required.
 
-The export page supports project selection, Japanese/English text search, exact
-IDs and agent filtering. Its URL preserves the search conditions. Counts and the
-preview show the complete export scope; **Download ZIP** exports all matching
-sessions, including pages beyond the one currently displayed. A text/ID match
-selects a session's entire history, including replies and tool results.
+![Session list with export actions](ui-data-actions.png)
 
-By default, matching subagent and internal Codex sessions are included. Uncheck
-**Internal Codex sessions** to exclude internal conversations. Project selection
-uses the stored project label/path, as in the viewer; absent project metadata is
-not invented. Exports contain current committed DB records, including data held
-by an archive operation until deletion. Original session files are not modified.
+- **Export ZIP** downloads all sessions matching the list’s current search, including pages not currently shown. Internal and subagent-only sessions follow the list’s visibility. A matching session exports its complete history, including replies, tool results and events outside the selected time range.
+- The adjacent menu’s **Export entire project** downloads every session in the selected projects, including internal, child and archive-locked sessions. Text, time and ID filters do not limit this action; the current search stays unchanged.
+- **Archive inactive sessions…** opens a panel over the list. Select folders containing sessions inactive for over one calendar month, create/download a ZIP, check the file, type **DOWNLOADED**, then delete the archived DB data. The panel covers all projects and shows its own cutoff and selection. Downloading or closing the panel never deletes data. See [archive storage and recovery](archive.md).
 
-ZIP contents:
+![Archive download confirmation in the session list](ui-data-download-confirmation.png)
+
+Direct exports stream to the browser without retaining an export file on the server or assembling the dataset in browser memory. Counts, membership and event rows share one read snapshot. Interrupted exports are not finalized as successful ZIPs.
+
+Direct-export ZIP contents:
 
 - `manifest.json`: format/version, creation time, filters and session/record counts.
-- `events.jsonl`: one original collector event per line, including ID, session,
-  parent, source, origin, timestamps and the full OTLP `raw` document. Imported
-  and OTEL counterparts are both included, even if the viewer merges their cards.
+- `events.jsonl`: each original collector event with its ID, session, parent, source, origin, timestamps and complete OTLP `raw` document. Imported and OTEL counterparts remain separate originals.
 
-The ZIP streams directly to the browser without retaining an export file on the
-server or assembling the full dataset in browser memory. A single read snapshot
-keeps membership and counts consistent while ingestion continues. Interrupted
-exports are not finalized as successful ZIPs.
+The inactive-session archive retains its resumable job, per-session ZIP layout, checksum, download confirmation and deletion protection. Closing and reopening the panel resumes viewing the current job; no periodic refresh is used. Source files stay in place.
 
-Authenticated API:
+## API
 
 - Preview: `GET /api/export/sessions?project=…&q=…`
 - Download: `GET /api/export/download?project=…&q=…`
 
-Both accept the session search filters (`project`, `folder`, `q`, `id_key`,
-`id_value`, `source`, `skill`, `plugin`, `diagnostics`). Internal sessions default
-to included; use `diagnostics=0` to exclude them. Preview pagination uses `offset`;
-downloads ignore it. The existing single-session JSON endpoint remains available.
+Both accept session search filters. API defaults include internal, child and archive-locked sessions. To match the visible list, pass `diagnostics=0` (or `1` when enabled), `include_children=0` and `include_locked=0`. Downloads ignore pagination and export the complete histories of matching sessions. The existing single-session JSON endpoint remains available.
+
+Old `/export` links return to the shared list with their filters. Old `/archive` links open its inactive-session panel.

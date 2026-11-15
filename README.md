@@ -11,12 +11,11 @@ A personal OpenTelemetry collector and session viewer for Codex CLI, Claude Code
 - Collect logs, traces and metrics over OTLP/HTTP (JSON or Protobuf), or import and watch saved CLI sessions.
 - Search Japanese and English with built-in SQLite FTS5 and an embedded Japanese dictionary ([search settings](docs/search.md)).
 - Keep projects visible beside session search; timelines open at the latest activity. Inspect [tool inputs/outputs](docs/tool-events.md) and [subagent logs](docs/subagents.md) in the side panel.
-- Rank Codex [skills](docs/skills.md) by usage across sessions or per project; search names, plugins and references, then open matching sessions.
+- Rank [skills](docs/skills.md) by usage across sessions or per project; search names, plugins and references, then open matching sessions.
 - Compare reported tokens, cache usage, USD cost, request time and errors per session ([accounting rules](docs/usage.md)).
 - Read conversations and tool [activity](docs/activity.md) first; inspect internal telemetry in Diagnostics.
 - Combine imported and OTEL events with shared IDs into one card while keeping both originals.
-- [Export a project or matching sessions](docs/export.md) as a streaming ZIP of complete logs.
-- Archive inactive sessions by folder; download a ZIP, confirm it, then delete archived data and reclaim space.
+- [Export and archive](docs/export.md) from the session list: download complete logs or archive inactive folders, confirm the download, then reclaim DB space.
 - One Go binary with an embedded UI, SQLite storage and optional token authentication. No automatic log expiry.
 
 ## Setup
