@@ -92,6 +92,9 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("GET /api/skills", a.skills)
 	mux.HandleFunc("GET /skills", serveShell)
 	mux.HandleFunc("GET /api/export", a.export)
+	mux.HandleFunc("GET /api/export/sessions", a.exportSessions)
+	mux.HandleFunc("GET /api/export/download", a.filteredExport)
+	mux.HandleFunc("GET /export", serveShell)
 	mux.HandleFunc("GET /api/status", a.status)
 	mux.HandleFunc("GET /api/stats", func(w http.ResponseWriter, r *http.Request) {
 		var n, s int

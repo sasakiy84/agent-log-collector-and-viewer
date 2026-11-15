@@ -10,6 +10,8 @@ function projectName(id) {
   return folderName(id.startsWith("path:") ? id.slice(5) : id);
 }
 function renderProjects() {
+  $("#projectexport").hidden = exportMode || project === null;
+  $("#projectexport").href = "/export?" + new URLSearchParams({ project: project ?? "", diagnostics: "1" });
   $("#skillsnav").href =
     "/skills" +
     (project !== null ? "?" + new URLSearchParams({ project }) : "");

@@ -31,7 +31,19 @@ type SessionPage struct {
 }
 
 func (a *App) sessions(w http.ResponseWriter, r *http.Request) {
-	query, args, err := parseSessionFilter(r.URL.Query()).sql(r.Context())
+	a.sessionList(w, r, false)
+}
+
+func (a *App) exportSessions(w http.ResponseWriter, r *http.Request) {
+	a.sessionList(w, r, true)
+}
+
+func (a *App) sessionList(w http.ResponseWriter, r *http.Request, forExport bool) {
+	filter := parseSessionFilter(r.URL.Query())
+	if forExport {
+		filter = exportSessionFilter(r.URL.Query())
+	}
+	query, args, err := filter.sql(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), 400)
 		return
@@ -40,7 +52,9 @@ func (a *App) sessions(w http.ResponseWriter, r *http.Request) {
 	// accessible through the parent's links and the session detail endpoints.
 	// Length avoids an equality lookup on catalog_children that sorts every
 	// root session instead of paging through the existing recent-order indexes.
-	query += " AND length(s.parent)=0"
+	if !forExport {
+		query += " AND length(s.parent)=0"
+	}
 	tx, err := a.readers.BeginTx(r.Context(), &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		databaseError(w, r, err)
@@ -48,13 +62,23 @@ func (a *App) sessions(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 	var total int
-	if err = tx.QueryRowContext(r.Context(), "SELECT COUNT(*)"+query, args...).Scan(&total); err != nil {
+	var records int64
+	if forExport {
+		err = tx.QueryRowContext(r.Context(), "SELECT COUNT(*),COALESCE(SUM(s.import_count+s.otel_count),0)"+query, args...).Scan(&total, &records)
+	} else {
+		err = tx.QueryRowContext(r.Context(), "SELECT COUNT(*)"+query, args...).Scan(&total)
+	}
+	if err != nil {
 		databaseError(w, r, err)
 		return
 	}
 	off := pageOffset(offset(r), total, 200)
 	args = append(args, off)
-	rows, err := tx.QueryContext(r.Context(), "SELECT s.session,s.source,s.parent,s.count,s.start,s.end,s.preview,"+usageColumn+query+" ORDER BY s.end DESC,s.session LIMIT 201 OFFSET ?", args...)
+	countColumn := "s.count"
+	if forExport {
+		countColumn = "s.import_count+s.otel_count"
+	}
+	rows, err := tx.QueryContext(r.Context(), "SELECT s.session,s.source,s.parent,"+countColumn+",s.start,s.end,s.preview,"+usageColumn+query+" ORDER BY s.end DESC,s.session LIMIT 201 OFFSET ?", args...)
 	if err != nil {
 		databaseError(w, r, err)
 		return
@@ -89,6 +113,9 @@ func (a *App) sessions(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("X-Total-Count", strconv.Itoa(total))
 	w.Header().Set("X-Page-Offset", strconv.Itoa(off))
+	if forExport {
+		w.Header().Set("X-Record-Count", strconv.FormatInt(records, 10))
+	}
 	write(w, out)
 }
 

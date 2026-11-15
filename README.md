@@ -15,6 +15,7 @@ A personal OpenTelemetry collector and session viewer for Codex CLI, Claude Code
 - Compare reported tokens, cache usage, USD cost, request time and errors per session ([accounting rules](docs/usage.md)).
 - Read conversations and tool [activity](docs/activity.md) first; inspect internal telemetry in Diagnostics.
 - Combine imported and OTEL events with shared IDs into one card while keeping both originals.
+- [Export a project or matching sessions](docs/export.md) as a streaming ZIP of complete logs.
 - Archive inactive sessions by folder; download a ZIP, confirm it, then delete archived data and reclaim space.
 - One Go binary with an embedded UI, SQLite storage and token authentication. No automatic log expiry.
 
