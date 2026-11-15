@@ -80,6 +80,9 @@ func writeFilteredExport(ctx context.Context, tx *sql.Tx, sessions *sql.Rows, ar
 			filters[key] = q.Get(key)
 		}
 	}
+	if filter.Project != nil {
+		filters["project"] = *filter.Project
+	}
 	info := struct {
 		Format    string            `json:"format"`
 		Version   int               `json:"version"`

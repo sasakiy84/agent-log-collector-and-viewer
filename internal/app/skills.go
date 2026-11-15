@@ -80,7 +80,7 @@ func (a *App) skills(w http.ResponseWriter, r *http.Request) {
 	args := []any{}
 	if r.URL.Query().Has("project") {
 		from += " AND s.project_key=?"
-		args = append(args, r.URL.Query().Get("project"))
+		args = append(args, canonicalProjectID(r.URL.Query().Get("project")))
 	}
 	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" {
 		if len(q) > 512 {
@@ -91,7 +91,7 @@ func (a *App) skills(w http.ResponseWriter, r *http.Request) {
 		args = append(args, skillSearch(q))
 		if r.URL.Query().Has("project") {
 			from += " AND matched_session.project_key=?"
-			args = append(args, r.URL.Query().Get("project"))
+			args = append(args, canonicalProjectID(r.URL.Query().Get("project")))
 		}
 		from += ")"
 	}

@@ -11,9 +11,26 @@ import (
 type ProjectSummary struct {
 	ID    string `json:"id"`
 	Name  string `json:"name"`
-	Path  string `json:"path,omitempty"`
 	Count int    `json:"count"`
 	End   string `json:"end"`
+}
+
+// Normalize a directory-based selection to the name now used by every project.
+// This also prevents old open/bookmarked URLs from recreating duplicate rows.
+func canonicalProjectID(id string) string {
+	directory, ok := strings.CutPrefix(id, "path:")
+	if !ok {
+		return id
+	}
+	if directory == "" {
+		return ""
+	}
+	parts := strings.FieldsFunc(strings.TrimRight(directory, "/\\"), func(r rune) bool { return r == '/' || r == '\\' })
+	name := directory
+	if len(parts) > 0 {
+		name = parts[len(parts)-1]
+	}
+	return "name:" + name
 }
 
 func updateProjectTotals(ctx context.Context, tx *sql.Tx, changes map[folderKey]int) error {
@@ -72,18 +89,10 @@ func (a *App) projects(w http.ResponseWriter, r *http.Request) {
 		if err = rows.Scan(&project.ID, &project.Count, &project.End); err != nil {
 			break
 		}
-		switch {
-		case strings.HasPrefix(project.ID, "name:"):
-			project.Name = strings.TrimPrefix(project.ID, "name:")
-		case strings.HasPrefix(project.ID, "path:"):
-			project.Path = strings.TrimPrefix(project.ID, "path:")
-			parts := strings.FieldsFunc(strings.TrimRight(project.Path, "/\\"), func(r rune) bool { return r == '/' || r == '\\' })
-			project.Name = project.Path
-			if len(parts) > 0 {
-				project.Name = parts[len(parts)-1]
-			}
-		default:
+		if project.ID == "" {
 			project.Name = "Unassigned"
+		} else {
+			project.Name = strings.TrimPrefix(project.ID, "name:")
 		}
 		projects = append(projects, project)
 	}
