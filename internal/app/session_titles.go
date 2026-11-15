@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -11,6 +12,14 @@ import (
 // Codex can store automatically injected context as user-role messages. Strip
 // only recognized, complete leading envelopes; ordinary markup stays intact.
 func userPromptText(text, source string) string {
+	text, _ = userPromptContent(text, source)
+	return text
+}
+
+// Also report removed page context so context-only sessions can be classified
+// without treating their user-role envelopes as human requests.
+func userPromptContent(text, source string) (string, bool) {
+	pageContext := false
 	text = strings.TrimSpace(text)
 	if source == "copilot" && strings.HasPrefix(text, "<current_datetime>") {
 		if end := strings.Index(text, "</current_datetime>"); end >= 0 {
@@ -20,17 +29,21 @@ func userPromptText(text, source string) string {
 		}
 	}
 	if source != "codex" {
-		return text
+		return text, false
 	}
 	for {
 		previous := text
-		for _, tag := range []string{"recommended_plugins", "environment_context", "user_instructions", "skills_instructions", "skill", "external_codex_apps_open_page"} {
+		for _, tag := range []string{"recommended_plugins", "environment_context", "user_instructions", "skills_instructions", "skill"} {
 			open, close := "<"+tag+">", "</"+tag+">"
 			if strings.HasPrefix(text, open) {
 				if end := strings.Index(text[len(open):], close); end >= 0 {
 					text = strings.TrimSpace(text[len(open)+end+len(close):])
 				}
 			}
+		}
+		if rest, ok := codexPageContext(text); ok {
+			text = rest
+			pageContext = true
 		}
 		if strings.HasPrefix(text, "# AGENTS.md instructions for ") {
 			if start := strings.Index(text, "\n"); start >= 0 {
@@ -43,9 +56,37 @@ func userPromptText(text, source string) string {
 			}
 		}
 		if text == previous {
-			return text
+			return text, pageContext
 		}
 	}
+}
+
+// App page snapshots have numbered envelopes. Match a complete leading pair,
+// not arbitrary external_* markup or a user's discussion of the protocol.
+func codexPageContext(text string) (string, bool) {
+	if !strings.HasPrefix(text, "<external_codex_apps_") {
+		return text, false
+	}
+	open, _, ok := strings.Cut(text, ">")
+	if !ok {
+		return text, false
+	}
+	tag := strings.TrimPrefix(open, "<")
+	if tag != "external_codex_apps_open_page" {
+		parts, ok := strings.CutPrefix(tag, "external_codex_apps_selected_page_part_")
+		part, total, split := strings.Cut(parts, "_of_")
+		n, nErr := strconv.ParseUint(part, 10, 64)
+		m, mErr := strconv.ParseUint(total, 10, 64)
+		if !ok || !split || nErr != nil || mErr != nil || n == 0 || n > m {
+			return text, false
+		}
+	}
+	close := "</" + tag + ">"
+	end := strings.Index(text[len(open)+1:], close)
+	if end < 0 {
+		return text, false
+	}
+	return strings.TrimSpace(text[len(open)+1+end+len(close):]), true
 }
 
 func promptTitle(source string, d Detail) string {
@@ -155,14 +196,28 @@ func backfillTitles(ctx context.Context, tx *sql.Tx, cursor string) (string, int
 }
 
 const appMessageTitlesJob = "codex_app_titles.v1"
+const appPageMessagesJob = "codex_page_messages.v1"
 
 func backfillAppMessageTitles(ctx context.Context, tx *sql.Tx, cursor string) (string, int, error) {
 	// Page through the existing user-card index in bounded transactions. Read
-	// original payloads only for titles affected by the newly recognized tag.
-	columns := strings.Replace(qualifiedColumns("e"), "e.raw", `CASE WHEN c.source='codex' AND c.prompt_title GLOB '<external_codex_apps_open_page>*' THEN e.raw ELSE X'' END`, 1)
+	// original payloads only for candidate Codex titles. Empty titles include
+	// previously stripped page messages whose visibility facts need repair too.
+	columns := strings.Replace(qualifiedColumns("e"), "e.raw", `CASE WHEN c.source='codex' AND (c.prompt_title='' OR c.prompt_title GLOB '<external_codex_apps_open_page>*' OR c.prompt_title GLOB '<external_codex_apps_selected_page_part_*') THEN e.raw ELSE X'' END`, 1)
 	batch, err := loadEventBatch(ctx, tx, "SELECT "+columns+" FROM event_cards c CROSS JOIN events e ON e.id=c.id WHERE c.id>? AND c.is_user=1 ORDER BY c.id LIMIT 200", cursor)
 	if err != nil {
 		return cursor, 0, err
+	}
+	for _, event := range batch {
+		if len(event.Raw) == 0 {
+			continue
+		}
+		doc, err := decodeDocument(event.Raw)
+		if err != nil {
+			return cursor, 0, err
+		}
+		if err = storeSessionFacts(ctx, tx, event, doc, describe(event, doc)); err != nil {
+			return cursor, 0, err
+		}
 	}
 	return updatePromptTitles(ctx, tx, batch, cursor)
 }

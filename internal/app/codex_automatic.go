@@ -28,8 +28,11 @@ func codexPromptFacts(d Detail) (automatic, human bool) {
 		if block.Label != "Request" && block.Label != "user" {
 			continue
 		}
-		text := userPromptText(block.Text, "codex")
+		text, page := userPromptContent(block.Text, "codex")
 		if text == "" || text == "Content not exported" {
+			if page && text == "" {
+				automatic = true
+			}
 			continue
 		}
 		if codexAutomaticPrompt(text, d.Model) {
