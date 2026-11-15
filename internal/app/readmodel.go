@@ -94,7 +94,7 @@ func summaryDetail(d Detail) Detail {
 	return d
 }
 func storeCard(ctx context.Context, tx *sql.Tx, e Event, d Detail, doc document) error {
-	if err := storeSessionFacts(ctx, tx, e, doc); err != nil {
+	if err := storeSessionFacts(ctx, tx, e, doc, d); err != nil {
 		return err
 	}
 	if err := storeSkillFacts(ctx, tx, e, d); err != nil {

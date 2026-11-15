@@ -93,6 +93,7 @@ func (a *App) prepareDatabase(ctx context.Context) error {
 		{"Codex application message titles", func() error { return a.runMaintenance(ctx, appMessageTitlesJob, backfillAppMessageTitles, 0) }},
 		{"usage summaries", func() error { return a.runMaintenance(ctx, usageJob, backfillUsage, 0) }},
 		{"internal Codex sessions", func() error { return a.runMaintenance(ctx, codexVisibilityJob, backfillSessionVisibility, 0) }},
+		{"automatic Codex sessions", func() error { return a.runMaintenance(ctx, codexAutomaticJob, backfillCodexAutomaticSessions, 0) }},
 		{"session visibility", func() error { return a.drainBatches(ctx, "session visibility", refreshSessionVisibilityBatch) }},
 		{"folder overview", func() error { return a.drainBatches(ctx, "folder overview", refreshFolderBatch) }},
 		{"subagent links", func() error { return a.runMaintenance(ctx, agentsJob, backfillAgents, 0) }},

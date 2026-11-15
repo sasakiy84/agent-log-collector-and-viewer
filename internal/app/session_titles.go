@@ -44,6 +44,21 @@ func promptTitle(source string, d Detail) string {
 	if d.Kind != "user" {
 		return ""
 	}
+	for _, block := range userRequestBlocks(d) {
+		if block.Label != "Request" && block.Label != "user" {
+			continue
+		}
+		text := userPromptText(block.Text, source)
+		if text == "" || text == "Content not exported" || source == "codex" && codexAutomaticPrompt(text, d.Model) {
+			continue
+		}
+		line, _, _ := strings.Cut(text, "\n")
+		return clip(strings.TrimSpace(line), 256)
+	}
+	return ""
+}
+
+func userRequestBlocks(d Detail) []Block {
 	blocks := d.Blocks
 	direct := firstValue(d.Attributes, "prompt_text", "prompt", "user_prompt")
 	if present(direct) {
@@ -63,18 +78,7 @@ func promptTitle(source string, d Detail) string {
 			blocks = request.Blocks
 		}
 	}
-	for _, block := range blocks {
-		if block.Label != "Request" && block.Label != "user" {
-			continue
-		}
-		text := userPromptText(block.Text, source)
-		if text == "" || text == "Content not exported" {
-			continue
-		}
-		line, _, _ := strings.Cut(text, "\n")
-		return clip(strings.TrimSpace(line), 256)
-	}
-	return ""
+	return blocks
 }
 
 // Titles read one indexed, bounded card. They never decode original histories
