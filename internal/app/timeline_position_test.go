@@ -44,17 +44,17 @@ func TestLatestTimelineWindowIsChronologicalAndOriginIsolated(t *testing.T) {
 	for _, origin := range []string{"", "import", "otel"} {
 		var p SessionPage
 		getJSON(t, a, "/api/session?id=codex:latest&position=latest&origin="+origin, &p)
-		if p.Count != 405 || p.Offset != 205 || p.Limit != 200 || len(p.Events) != 200 {
+		if p.Count != 405 || p.Offset != 400 || p.Limit != 200 || len(p.Events) != 5 {
 			t.Fatalf("%s: count=%d offset=%d limit=%d rows=%d", origin, p.Count, p.Offset, p.Limit, len(p.Events))
 		}
 		for i, event := range p.Events {
-			want := fmt.Sprintf("import:import-%d", 205+i)
+			want := fmt.Sprintf("import:import-%d", 400+i)
 			wantRecords := 2
 			if origin == "import" {
 				wantRecords = 1
 			}
 			if origin == "otel" {
-				want = fmt.Sprintf("otel-%d", 205+i)
+				want = fmt.Sprintf("otel-%d", 400+i)
 				wantRecords = 1
 			}
 			if event.ID != want || len(event.Records) != wantRecords {

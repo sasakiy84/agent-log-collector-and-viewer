@@ -6,23 +6,27 @@ const link=id=>'/sessions/'+encodeURIComponent(id);
 const date=s=>new Date(s).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
 const clock=s=>new Date(s).toLocaleTimeString(undefined,{hour12:false});
 let requestSerial=0,activeRequest=null,sessionOffset=0,eventOffset=null,eventLimit=200,source='',query='',kind='',origin='',pageOrigin='',events=[],meta=null;
+let sessionData=null;
 let inspectedID='', inspectedRecord=null, inspectorTab='details',inspectorEvent=null,inspectorRequest=null,jsonEvent=null;
 const inspectorCache=new Map();
 let selected=location.pathname.startsWith('/sessions/')?decodeURIComponent(location.pathname.slice(10)):'';
 const archiveMode=location.pathname==='/archive';
 const listURL=new URL(location.href);
 source=listURL.searchParams.get('source')||'';query=listURL.searchParams.get('q')||'';sessionOffset=Number(listURL.searchParams.get('offset'))||0;
+if(selected){const page=Number(listURL.searchParams.get('page'));if(Number.isSafeInteger(page)&&page>0&&page<=Number.MAX_SAFE_INTEGER/200)eventOffset=(page-1)*200;origin=['otel','import'].includes(listURL.searchParams.get('origin'))?listURL.searchParams.get('origin'):'';$('#origin').value=origin}
 $('#search').value=query;
 if(!selected&&!archiveMode) sessionStorage.setItem('sessionsURL',location.pathname+location.search);
 $('.back').href=sessionStorage.getItem('sessionsURL')||'/';
-async function api(path,signal){const r=await fetch(path,{signal});if(r.status===401){closeInspector(false);$('#login').hidden=false;$('#workspace').hidden=true;throw Error('Sign in required.')}if(!r.ok)throw Error(r.status===404?'Session not found.':`Unable to load (HTTP ${r.status}).`);return r.json()}
+async function apiResponse(path,signal){const r=await fetch(path,{signal});if(r.status===401){closeInspector(false);$('#login').hidden=false;$('#workspace').hidden=true;throw Error('Sign in required.')}if(!r.ok)throw Error(r.status===404?'Session not found.':`Unable to load (HTTP ${r.status}).`);return r}
+async function api(path,signal){return (await apiResponse(path,signal)).json()}
 function titleFor(id,p){if(p){const prompt=p.blocks.find(b=>/request|user/i.test(b.label));if(prompt&&prompt.text!=='Content not exported')return prompt.text.split('\n')[0].slice(0,150)}return id.includes('/agent:')?'Subagent · '+id.split('/agent:').pop():id.replace(/^(codex|claude|copilot|other):/,'')}
 function listState(){const p=new URLSearchParams();if(source)p.set('source',source);if(query)p.set('q',query);if(sessionOffset)p.set('offset',sessionOffset);history.replaceState(null,'','/'+(p.size?'?'+p:''));sessionStorage.setItem('sessionsURL',location.pathname+location.search)}
+function detailState(latest){const p=new URLSearchParams();if(!latest)p.set('page',Math.floor(meta.offset/meta.limit)+1);if(pageOrigin)p.set('origin',pageOrigin);history.replaceState(null,'',link(selected)+(p.size?'?'+p:''))}
 function projectLabel(p){return [p?.project,...(Array.isArray(p?.tags)?p.tags:p?.tags?[p.tags]:[])].filter(Boolean).join(' · ')}
-function renderSessions(rows){
- $('#listcount').textContent=rows.length?`${sessionOffset+1}–${sessionOffset+Math.min(rows.length,200)}`:'0';
+function renderSessions(rows,total){
+ $('#listcount').textContent=`${total.toLocaleString()} sessions`;
  $('#sessions').innerHTML=rows.length?rows.slice(0,200).map(s=>`<a class="session" href="${esc(link(s.id))}" data-session="${esc(s.id)}"><div><h2>${esc(titleFor(s.id,s.preview))}</h2><small>${projectLabel(s.preview)?esc(projectLabel(s.preview))+' · ':''}${esc(s.id)}${s.parent?' · Subagent':''}</small></div><span class="source">${esc(label(s.source))}</span><time>${esc(date(s.end))}</time><span class="count">${s.count}</span></a>`).join(''):'<p class="empty">No sessions</p>';
- $('#prevsessions').disabled=sessionOffset===0;$('#nextsessions').disabled=rows.length<=200;
+ sessionPager.update({total,offset:sessionOffset,size:200});
 }
 function renderEvents(){
  const focusedID=document.activeElement?.dataset.event;
@@ -115,9 +119,8 @@ addEventListener('keydown',e=>{
  }
 });
 function updateTimelineNavigation(loading=$('#workspace').hasAttribute('aria-busy')){
- $('#prevevents').disabled=loading||!meta||meta.offset===0;
- $('#nextevents').disabled=loading||!meta||meta.offset+meta.limit>=meta.count;
- $('#latestevents').disabled=loading;$('#origin').disabled=loading;
+ if(meta)eventPager.update({total:meta.count,offset:meta.offset,size:meta.limit});
+ eventPager.setLoading(loading);$('#origin').disabled=loading;
 }
 function captureTimelinePosition(){
  const card=[...document.querySelectorAll('[data-event]')].find(el=>{const r=el.getBoundingClientRect();return r.bottom>0&&r.top<innerHeight});
@@ -132,15 +135,15 @@ function placeTimeline(mode,anchor,serial){requestAnimationFrame(()=>{
 async function refresh(scrollMode){
  let anchor=null;
  activeRequest?.abort();const controller=new AbortController();activeRequest=controller;const serial=++requestSerial;
- $('#refresh').disabled=true;$('#workspace').setAttribute('aria-busy','true');if(selected)updateTimelineNavigation(true);
+ $('#refresh').disabled=true;$('#workspace').setAttribute('aria-busy','true');for(const pager of [sessionPager,eventPager,archivePager])pager.setLoading(true);$('#origin').disabled=true;
  try{
-  if(archiveMode){await refreshArchive(controller.signal)}
-  else if(selected){const latest=eventOffset===null;const paging=latest?'&position=latest':`&offset=${eventOffset}&limit=${eventLimit}`;const page=await api(`/api/session?id=${encodeURIComponent(selected)}&origin=${encodeURIComponent(origin)}${paging}`,controller.signal);if(controller.signal.aborted)return;anchor=captureTimelinePosition();scrollMode??=latest?'bottom':'preserve';closeInspector(false);inspectorCache.clear();meta=page;pageOrigin=origin;events=page.events;eventOffset=page.offset;eventLimit=page.limit;renderEvents()}
-  else{const rows=await api(`/api/sessions?source=${encodeURIComponent(source)}&q=${encodeURIComponent(query)}&offset=${sessionOffset}`,controller.signal);if(controller.signal.aborted)return;renderSessions(rows)}
+  if(archiveMode){await refreshArchive(controller.signal);if(!controller.signal.aborted&&scrollMode==='top')window.scrollTo({top:0,behavior:'instant'})}
+  else if(selected){const latest=eventOffset===null;const paging=latest?'&position=latest':`&offset=${eventOffset}&limit=${eventLimit}`;const page=await api(`/api/session?id=${encodeURIComponent(selected)}&origin=${encodeURIComponent(origin)}${paging}`,controller.signal);if(controller.signal.aborted)return;anchor=captureTimelinePosition();scrollMode??=latest?'bottom':meta?'preserve':'top';closeInspector(false);inspectorCache.clear();meta=page;pageOrigin=origin;events=page.events;eventOffset=page.offset;eventLimit=page.limit;detailState(latest);renderEvents()}
+  else{const response=await apiResponse(`/api/sessions?source=${encodeURIComponent(source)}&q=${encodeURIComponent(query)}&offset=${sessionOffset}`,controller.signal),rows=await response.json();if(controller.signal.aborted)return;sessionOffset=Number(response.headers.get('X-Page-Offset'));sessionData={offset:sessionOffset,source,query};listState();renderSessions(rows,Number(response.headers.get('X-Total-Count')));if(scrollMode==='top')window.scrollTo({top:0,behavior:'instant'})}
   if(controller.signal.aborted)return;
   $('#login').hidden=true;$('#workspace').hidden=false;$('#listpage').hidden=!!selected||archiveMode;$('#detailpage').hidden=!selected||archiveMode;$('#archivepage').hidden=!archiveMode;$('#error').textContent='';if(selected)placeTimeline(scrollMode,anchor,serial);
- }catch(e){if(e.name==='AbortError')return;if(selected&&meta){eventOffset=meta.offset;eventLimit=meta.limit;origin=pageOrigin;$('#origin').value=origin}$('#error').textContent=e.message;if($('#login').hidden){$('#workspace').hidden=false;$('#listpage').hidden=!!selected||archiveMode;$('#detailpage').hidden=!selected||archiveMode;$('#archivepage').hidden=!archiveMode}}
- finally{if(serial===requestSerial){$('#refresh').disabled=false;$('#workspace').removeAttribute('aria-busy');if(selected)updateTimelineNavigation(false)}}
+ }catch(e){if(e.name==='AbortError')return;if(selected&&meta){eventOffset=meta.offset;eventLimit=meta.limit;origin=pageOrigin;$('#origin').value=origin}else if(archiveMode&&archiveData){archiveOffset=archiveData.offset}else if(sessionData){({offset:sessionOffset,source,query}=sessionData);$('#search').value=query;document.querySelectorAll('[data-source]').forEach(b=>b.classList.toggle('active',b.dataset.source===source));listState()}$('#error').textContent=e.message;if($('#login').hidden){$('#workspace').hidden=false;$('#listpage').hidden=!!selected||archiveMode;$('#detailpage').hidden=!selected||archiveMode;$('#archivepage').hidden=!archiveMode}}
+ finally{if(serial===requestSerial){$('#refresh').disabled=false;$('#workspace').removeAttribute('aria-busy');for(const pager of [sessionPager,eventPager,archivePager])pager.setLoading(false);$('#origin').disabled=false}}
 }
 $('#refresh').onclick=()=>{if(selected&&(!meta||meta.offset+meta.limit>=meta.count)){eventOffset=null;eventLimit=200}refresh()};
 $('#loginform').onsubmit=async e=>{e.preventDefault();try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:$('#token').value})});if(!r.ok)throw Error('Invalid access token.');$('#token').value='';refresh()}catch(e){$('#loginerror').textContent=e.message}};
@@ -152,24 +155,23 @@ function scheduleSearch(){clearTimeout(timer);timer=setTimeout(()=>{query=$('#se
 $('#search').addEventListener('compositionstart',()=>{composingSearch=true;clearTimeout(timer)});
 $('#search').addEventListener('compositionend',()=>{composingSearch=false;scheduleSearch()});
 $('#search').oninput=e=>{if(!composingSearch&&!e.isComposing)scheduleSearch()};
-for(const [id,delta]of[['prevsessions',-200],['nextsessions',200]])$('#'+id).onclick=()=>{sessionOffset=Math.max(0,sessionOffset+delta);listState();refresh();window.scrollTo(0,0)};
-$('#prevevents').onclick=()=>{if(!meta||meta.offset===0)return;eventLimit=Math.min(200,meta.offset);eventOffset=Math.max(0,meta.offset-200);refresh('bottom')};
-$('#nextevents').onclick=()=>{if(!meta||meta.offset+meta.limit>=meta.count)return;eventOffset=meta.offset+meta.limit;eventLimit=200;refresh('top')};
-$('#latestevents').onclick=()=>{eventOffset=null;eventLimit=200;refresh('bottom')};
+const sessionPager=new Pagination($('#sessionpagination'),{noun:'sessions',onChange:page=>{sessionOffset=(page-1)*200;refresh('top')}});
+const eventPager=new Pagination($('#eventpagination'),{noun:'events',onChange:page=>{eventLimit=200;eventOffset=page===eventPager.pages?null:(page-1)*200;refresh(page===eventPager.pages?'bottom':'top')},onLatest:()=>{eventOffset=null;eventLimit=200;refresh('bottom')}});
+const archivePager=new Pagination($('#archivepagination'),{noun:'sessions',onChange:page=>{archiveOffset=(page-1)*200;refresh('top')}});
 $('#origin').onchange=()=>{origin=$('#origin').value;eventOffset=null;eventLimit=200;closeInspector(false);refresh('bottom')};
 const archiveSelection=new Set();let archiveAll=false,archiveOffset=0,archiveData=null;
 const bytes=n=>{const units=['B','KiB','MiB','GiB','TiB'];let i=0;while(n>=1024&&i<units.length-1){n/=1024;i++}return `${n.toFixed(i?1:0)} ${units[i]}`};
 async function archivePost(path,body){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(r.status===401){$('#login').hidden=false;$('#workspace').hidden=true;throw Error('Sign in required.')}if(!r.ok)throw Error((await r.text()).trim());return r.json()}
 function updateArchiveSelection(){const n=archiveAll?archiveData.total_sessions:archiveSelection.size;$('#archiveselected').textContent=`${n} selected`;$('#archivecreate').disabled=!n;document.querySelectorAll('[data-archive-session]').forEach(el=>{el.checked=archiveAll||archiveSelection.has(el.dataset.archiveSession);el.disabled=archiveAll})}
 async function refreshArchive(signal){
- const data=await api('/api/archive?offset='+archiveOffset,signal);if(signal?.aborted)return;archiveData=data;
+ const data=await api('/api/archive?offset='+archiveOffset,signal);if(signal?.aborted)return;archiveData=data;archiveOffset=data.offset;
  const job=data.job,active=job&&['preparing','ready','deleting','compacting'].includes(job.status);
  $('#archivetotal').textContent=`${data.total_sessions} sessions · ${bytes(data.total_bytes)} uncompressed`;
  $('#archivecutoff').textContent=`Last activity before ${new Date(data.cutoff).toLocaleDateString()} · DB data only; source files stay in place.`;
  $('#archiveselection').hidden=!!active;
  $('#archiveitems').innerHTML=data.sessions.length?data.sessions.slice(0,200).map(s=>`<label class="archive-row"><input type="checkbox" data-archive-session="${esc(s.id)}" ${active?'disabled checked':''}><span><a href="${esc(link(s.id))}">${esc(s.id)}</a><small>${esc(label(s.source))} · ${esc(new Date(s.last_activity).toLocaleString())}</small></span><span>${s.records.toLocaleString()} ${s.records===1?'record':'records'}</span><span>${bytes(s.raw_bytes)}</span></label>`).join(''):'<p class="empty">No inactive sessions</p>';
  document.querySelectorAll('[data-archive-session]').forEach(el=>el.onchange=()=>{if(el.checked)archiveSelection.add(el.dataset.archiveSession);else archiveSelection.delete(el.dataset.archiveSession);updateArchiveSelection()});if(!active)updateArchiveSelection();
- $('#archiveprev').disabled=archiveOffset===0;$('#archivenext').disabled=data.sessions.length<=200;
+ archivePager.update({total:data.total_sessions,offset:archiveOffset,size:200});
  const key=job?`${job.id}:${job.status}:${job.compaction_error}`:'';
  if($('#archivejob').dataset.key===key){const progress=$('#archiveprogress');if(progress)progress.textContent=archiveProgress(job);return}
  $('#archivejob').dataset.key=key;
@@ -192,5 +194,4 @@ function archiveProgress(job){return job.status==='deleting'?`${job.deleted_reco
 async function archiveAction(path,body){try{await archivePost(path,body);archiveSelection.clear();archiveAll=false;await refresh()}catch(e){const target=$('#archiveactionerror')||$('#error');target.textContent=e.message;if($('#archiveconfirmation'))$('#archiveconfirmation').oninput()}}
 $('#archiveall').onclick=()=>{archiveAll=true;archiveSelection.clear();updateArchiveSelection()};$('#archiveclear').onclick=()=>{archiveAll=false;archiveSelection.clear();updateArchiveSelection()};
 $('#archivecreate').onclick=async()=>{$('#archivecreate').disabled=true;await archiveAction('/api/archives',{cutoff:archiveData.cutoff,all:archiveAll,sessions:archiveAll?[]:[...archiveSelection]})};
-$('#archiveprev').onclick=()=>{archiveOffset=Math.max(0,archiveOffset-200);refresh()};$('#archivenext').onclick=()=>{archiveOffset+=200;refresh()};
 refresh();

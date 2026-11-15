@@ -26,19 +26,19 @@ with tempfile.TemporaryDirectory() as temp:
    page.on('pageerror',lambda e:errors.append(str(e)))
    page.goto(base);page.locator('#token').fill(token);page.locator('#loginform button').click()
    page.wait_for_function("() => document.querySelectorAll('.session').length===200")
-   page.locator('#nextsessions').click()
+   page.locator('#sessionpagination [aria-label="Next page"]').click()
    page.wait_for_function("() => document.querySelectorAll('.session').length===6")
-   page.locator('#prevsessions').click()
+   page.locator('#sessionpagination [aria-label="Previous page"]').click()
    page.wait_for_function("() => document.querySelectorAll('.session').length===200")
    page.locator('#search').fill('long-session')
    page.wait_for_function("() => document.querySelectorAll('.session').length===1")
    page.locator('.session').click()
-   page.wait_for_function("() => document.querySelectorAll('.event').length===200")
-   assert page.locator('.event .prose').first.inner_text()=='event 5'
+   page.wait_for_function("() => document.querySelectorAll('.event').length===5")
+   assert page.locator('.event .prose').first.inner_text()=='event 200'
    assert page.locator('.event .prose').last.inner_text()=='event 204'
    page.wait_for_function("() => Math.abs(scrollY + innerHeight-document.documentElement.scrollHeight)<2")
-   page.locator('#prevevents').click()
-   page.wait_for_function("() => document.querySelectorAll('.event').length===5")
+   page.locator('#eventpagination [aria-label="Previous page"]').click()
+   page.wait_for_function("() => document.querySelectorAll('.event').length===200")
    assert page.locator('.event .prose').first.inner_text().startswith(attack[:100])
    assert len(page.locator('.event .prose').first.inner_text())<2100
    page.locator('.event').first.click();page.wait_for_function("() => document.querySelector('#inspectstatus').textContent===''")
@@ -46,22 +46,22 @@ with tempfile.TemporaryDirectory() as temp:
    page.keyboard.press('Escape')
    assert page.evaluate('() => !window.xss')
    assert page.evaluate('() => document.documentElement.scrollWidth <= innerWidth'),'long content overflow'
-   page.locator('#nextevents').click()
-   page.wait_for_function("() => document.querySelectorAll('.event').length===200")
+   page.locator('#eventpagination [aria-label="Next page"]').click()
+   page.wait_for_function("() => document.querySelectorAll('.event').length===5")
    send([record('long-session','live update arrived',999)])
    requests=[];page.on('request',lambda r:requests.append(r.url) if '/api/' in r.url else None)
    page.wait_for_timeout(5500)
    assert not requests,requests
-   assert page.locator('.event').count()==200
+   assert page.locator('.event').count()==5
    page.locator('#refresh').click()
    page.wait_for_function("() => document.querySelector('#timeline').textContent.includes('live update arrived')")
-   assert page.locator('.event').count()==200
-   assert page.locator('.event .prose').first.inner_text()=='event 6'
+   assert page.locator('.event').count()==6
+   assert page.locator('.event .prose').first.inner_text()=='event 200'
    assert page.get_by_text('live update arrived',exact=True).count()==1
-   page.locator('#prevevents').click()
-   page.wait_for_function("() => document.querySelectorAll('.event').length===6")
-   page.locator('#latestevents').click()
+   page.locator('#eventpagination [aria-label="Previous page"]').click()
    page.wait_for_function("() => document.querySelectorAll('.event').length===200")
+   page.locator('#eventpagination [data-page="latest"]').click()
+   page.wait_for_function("() => document.querySelectorAll('.event').length===6")
    assert not errors,errors
    browser.close()
   print('PASS: 206 sessions, latest-first entry, chronological tail and older/newer navigation, bounded cards and full hostile text escaped, 390px layout, no background requests; manual refresh on a paginated timeline.')

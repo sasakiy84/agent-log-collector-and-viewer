@@ -27,7 +27,7 @@ type SessionPage struct {
 }
 
 func (a *App) sessions(w http.ResponseWriter, r *http.Request) {
-	query := `SELECT session,source,parent,count,start,end,preview FROM session_catalog s WHERE NOT EXISTS(SELECT 1 FROM archive_locks l WHERE l.session=s.session)`
+	query := ` FROM session_catalog s WHERE NOT EXISTS(SELECT 1 FROM archive_locks l WHERE l.session=s.session)`
 	args := []any{}
 	if source := r.URL.Query().Get("source"); source != "" {
 		query += " AND source=?"
@@ -46,9 +46,20 @@ func (a *App) sessions(w http.ResponseWriter, r *http.Request) {
 			args = append(args, match)
 		}
 	}
-	query += " ORDER BY end DESC,session LIMIT 201 OFFSET ?"
-	args = append(args, offset(r))
-	rows, err := a.readers.QueryContext(r.Context(), query, args...)
+	tx, err := a.readers.BeginTx(r.Context(), &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		databaseError(w, r, err)
+		return
+	}
+	defer tx.Rollback()
+	var total int
+	if err = tx.QueryRowContext(r.Context(), "SELECT COUNT(*)"+query, args...).Scan(&total); err != nil {
+		databaseError(w, r, err)
+		return
+	}
+	off := pageOffset(offset(r), total, 200)
+	args = append(args, off)
+	rows, err := tx.QueryContext(r.Context(), "SELECT session,source,parent,count,start,end,preview"+query+" ORDER BY end DESC,session LIMIT 201 OFFSET ?", args...)
 	if err != nil {
 		databaseError(w, r, err)
 		return
@@ -73,7 +84,18 @@ func (a *App) sessions(w http.ResponseWriter, r *http.Request) {
 		databaseError(w, r, errors.Join(err, rowErr))
 		return
 	}
+	if err = tx.Commit(); err != nil {
+		databaseError(w, r, err)
+		return
+	}
+	w.Header().Set("X-Total-Count", strconv.Itoa(total))
+	w.Header().Set("X-Page-Offset", strconv.Itoa(off))
 	write(w, out)
+}
+
+// Clamp stale or arbitrary offsets to a real page boundary.
+func pageOffset(off, count, limit int) int {
+	return min(off/limit, max(0, count-1)/limit) * limit
 }
 func offset(r *http.Request) int {
 	n, _ := strconv.Atoi(r.URL.Query().Get("offset"))
@@ -133,6 +155,7 @@ func (a *App) session(w http.ResponseWriter, r *http.Request) {
 		}
 		page.Limit = n
 	}
+	page.Offset = pageOffset(page.Offset, page.Count, page.Limit)
 	order, size := timelineChronological, page.Limit+1
 	position := r.URL.Query().Get("position")
 	if position != "" && position != "latest" {
@@ -140,9 +163,9 @@ func (a *App) session(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if position == "latest" {
-		page.Offset = max(0, page.Count-page.Limit)
+		page.Offset = max(0, page.Count-1) / page.Limit * page.Limit
 		order = timelineLatest
-		size = page.Limit
+		size = page.Count - page.Offset
 	}
 	page.Events, err = readTimeline(r.Context(), tx, id, origin, size, page.Offset, order)
 	if err != nil {

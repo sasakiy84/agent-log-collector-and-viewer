@@ -1,8 +1,10 @@
-# Timeline entry position (current)
+# Numbered pagination (current)
 
-- Session lists retain newest-activity-first ordering with agent and search filters. Detail pages read the latest 200 logical events through a reverse index scan, then display them oldest to newest and land at the bottom.
-- Older/Newer navigation, Latest, origin changes, direct reload and mobile landing are covered. Browser regressions retain the reading anchor on historical refresh and keep the confirmed page intact during delayed/failed navigation and local filtering.
-- `scripts/timeline_browser_test.py`, the updated browser edge suite, full UI/import suites, race tests and vet pass. No database migration or automatic refresh was introduced.
+- [Desktop example](ui-pagination.png) · [Mobile example](ui-pagination-mobile.png). Screenshots use synthetic telemetry.
+- A shared component handles session lists, chronological timelines and archive selection: range/total, first/last/current page, ellipses, direct page input, native keyboard controls and a compact sticky layout.
+- Detail pages use fixed 200-event boundaries, open at the bottom of the last page through a bounded reverse index read, and preserve historical page/origin links on reload. Historical refresh preserves the reading anchor.
+- `scripts/pagination_browser_test.py` covers 1,002 sessions and 1,805 timeline events: endpoints, direct jumps, invalid/empty/fractional page input, filtered/empty totals, delayed/failed requests, disabled navigation, keyboard focus, URL reload, archive selection across pages and 320/390px layouts. The real component also renders large (up to 100 million entries) totals to check multi-digit page labels without allocating that fixture.
+- Timeline/edge, full UI/inspector, Japanese search, import/OTEL and archive browser suites pass. The archive suite uses an isolated synthetic database. Race tests, vet and both JavaScript syntax checks pass. No database migration or automatic refresh was introduced.
 
 # Japanese full-text search (current)
 

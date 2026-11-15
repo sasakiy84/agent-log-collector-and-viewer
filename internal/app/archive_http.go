@@ -75,6 +75,7 @@ func (a *App) archiveList(w http.ResponseWriter, r *http.Request) {
 		databaseError(w, r, err)
 		return
 	}
+	offset = pageOffset(offset, int(total), 200)
 	args = append(args, offset)
 	rows, err := tx.QueryContext(r.Context(), "SELECT * FROM ("+query+") ORDER BY last_activity,session LIMIT 201 OFFSET ?", args...)
 	if err != nil {
@@ -95,7 +96,7 @@ func (a *App) archiveList(w http.ResponseWriter, r *http.Request) {
 		databaseError(w, r, errors.Join(err, rowErr))
 		return
 	}
-	write(w, map[string]any{"cutoff": cutoff, "total_sessions": total, "total_records": records, "total_bytes": rawBytes, "sessions": sessions, "job": current})
+	write(w, map[string]any{"cutoff": cutoff, "offset": offset, "total_sessions": total, "total_records": records, "total_bytes": rawBytes, "sessions": sessions, "job": current})
 }
 func (a *App) archiveCreate(w http.ResponseWriter, r *http.Request) {
 	var input struct {
