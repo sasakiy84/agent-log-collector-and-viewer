@@ -4,6 +4,11 @@
 CREATE TABLE model_trace_dirty(source TEXT NOT NULL,trace TEXT NOT NULL,
  PRIMARY KEY(source,trace)) WITHOUT ROWID;
 
+-- Pending-only lookups are gone. This prefix supports both usage requeueing
+-- and exact request-span lookups while walking ancestry.
+DROP INDEX model_fact_pending;
+CREATE INDEX model_fact_trace ON model_facts(source,trace,role,span);
+
 DROP TRIGGER model_parent_insert;
 CREATE TRIGGER model_trace_insert AFTER INSERT ON events
  WHEN NEW.signal='traces' AND NEW.trace<>'' BEGIN
