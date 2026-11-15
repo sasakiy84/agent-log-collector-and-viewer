@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Compare a published pre-usage importer with current archive suppression."""
+from test_support import settled_urlopen
 import hashlib,json,os,pathlib,socket,sqlite3,subprocess,tempfile,time,urllib.request
 binary=os.getenv('AGENTLOG_BIN','./agentlog');baseline=os.environ['AGENTLOG_BASELINE_BIN'];token='synthetic-archive-upgrade-token'
 with tempfile.TemporaryDirectory() as folder:
@@ -13,7 +14,7 @@ with tempfile.TemporaryDirectory() as folder:
    with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
    base=f'http://127.0.0.1:{port}';proc=subprocess.Popen([executable,'--listen',f'127.0.0.1:{port}','--db',database],env={**os.environ,'AGENTLOG_TOKEN':token},stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
    for _ in range(200):
-    try:urllib.request.urlopen(base,timeout=1);return proc,base
+    try:settled_urlopen(base,timeout=1);return proc,base
     except OSError:time.sleep(.1)
    raise AssertionError('server did not start')
   def upload(executable,base):subprocess.run([executable,'import','--source',source,'--file',str(path),'--endpoint',base],env={**os.environ,'AGENTLOG_TOKEN':token},check=True,capture_output=True)
@@ -29,15 +30,15 @@ with tempfile.TemporaryDirectory() as folder:
   try:
    upload(binary,base)
    request=urllib.request.Request(base+'/api/stats',headers={'Authorization':'Bearer '+token})
-   with urllib.request.urlopen(request) as response:assert json.load(response)['events']==0,source
+   with settled_urlopen(request) as response:assert json.load(response)['events']==0,source
    if source=='codex':
     rows[1]['payload']['info']['last_token_usage']['output_tokens']=3;rows[1]['payload']['info']['total_token_usage']['output_tokens']=3;rows[1]['payload']['info']['total_token_usage']['total_tokens']=13
    else:rows[0]['message']['usage']['output_tokens']=3
    save();upload(binary,base)
-   with urllib.request.urlopen(request) as response:assert json.load(response)['events']==1,source
+   with settled_urlopen(request) as response:assert json.load(response)['events']==1,source
    def api(path,data=None):
     req=urllib.request.Request(base+path,None if data is None else json.dumps(data).encode(),headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'})
-    with urllib.request.urlopen(req) as response:return json.load(response)
+    with settled_urlopen(req) as response:return json.load(response)
    def status(job,want):
     deadline=time.monotonic()+20
     while time.monotonic()<deadline:
@@ -48,7 +49,7 @@ with tempfile.TemporaryDirectory() as folder:
     raise AssertionError((want,state))
    job=api('/api/archives',{'all':True,'cutoff':'2025-02-01T00:00:00Z'});status(job,'ready')
    download=urllib.request.Request(base+'/api/archives/'+job['id']+'/download',headers={'Authorization':'Bearer '+token})
-   with urllib.request.urlopen(download) as response:assert response.read().startswith(b'PK')
+   with settled_urlopen(download) as response:assert response.read().startswith(b'PK')
    api('/api/archives/'+job['id']+'/delete',{'confirmation':'DOWNLOADED'});status(job,'deleted');time.sleep(.1)
    # Both current and older clients replaying unchanged source remain suppressed.
    for client in [baseline,binary]:upload(client,base);assert api('/api/stats')['events']==0,source

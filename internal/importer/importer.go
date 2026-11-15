@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/sasakiy84/agent-log-collector-and-viewer/internal/checkpoint"
 	"io"
 	"net/http"
 	"net/url"
@@ -17,6 +18,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -27,7 +29,8 @@ type Options struct {
 	Source, Endpoint, Token, Project, WorkingDir string
 	Client                                       *http.Client
 	// Sink stores converted OTLP batches locally instead of sending HTTP.
-	Sink func(context.Context, []any) error
+	Sink       func(context.Context, []any) error
+	Checkpoint *checkpoint.Store
 }
 type Stats struct{ Files, Records, Skipped, Failed int }
 
@@ -147,15 +150,34 @@ func Run(ctx context.Context, o Options, progress io.Writer) (Stats, error) {
 			return o.Sink(ctx, records)
 		}
 		body, _ := json.Marshal(map[string]any{"resourceLogs": records})
-		req, e := http.NewRequestWithContext(ctx, "POST", dest, bytes.NewReader(body))
-		if e != nil {
-			return e
-		}
-		req.Header.Set("Authorization", "Bearer "+o.Token)
-		req.Header.Set("Content-Type", "application/json")
-		res, e := client.Do(req)
-		if e != nil {
-			return e
+		var res *http.Response
+		for {
+			req, e := http.NewRequestWithContext(ctx, "POST", dest, bytes.NewReader(body))
+			if e != nil {
+				return e
+			}
+			req.Header.Set("Authorization", "Bearer "+o.Token)
+			req.Header.Set("Content-Type", "application/json")
+			res, e = client.Do(req)
+			if e != nil {
+				return e
+			}
+			retry := res.Header.Get("Retry-After")
+			if (res.StatusCode != http.StatusServiceUnavailable && res.StatusCode != http.StatusTooManyRequests) || retry == "" {
+				break
+			}
+			io.Copy(io.Discard, io.LimitReader(res.Body, 65536))
+			res.Body.Close()
+			seconds, err := strconv.Atoi(retry)
+			if err != nil {
+				seconds = 1
+			}
+			seconds = max(1, min(30, seconds))
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Duration(seconds) * time.Second):
+			}
 		}
 		defer res.Body.Close()
 		if res.StatusCode < 200 || res.StatusCode >= 300 {

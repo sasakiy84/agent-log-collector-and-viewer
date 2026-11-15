@@ -60,6 +60,9 @@ func (a *App) drainBatches(ctx context.Context, name string, batch func(context.
 			return nil
 		}
 		processed += count
+		if err := a.pauseMaintenance(ctx); err != nil {
+			return err
+		}
 		if time.Since(lastReport) >= 5*time.Second {
 			log.Printf("Preparing %s: %d records", name, processed)
 			lastReport = time.Now()
@@ -122,6 +125,7 @@ func (a *App) runMaintenance(ctx context.Context, name string, batch maintenance
 			log.Printf("Maintenance %s: %d records", name, processed)
 			lastReport = time.Now()
 		}
+		pause = max(pause, a.maintenancePause)
 		if pause > 0 {
 			select {
 			case <-ctx.Done():
@@ -129,5 +133,17 @@ func (a *App) runMaintenance(ctx context.Context, name string, batch maintenance
 			case <-time.After(pause):
 			}
 		}
+	}
+}
+
+func (a *App) pauseMaintenance(ctx context.Context) error {
+	if a.maintenancePause == 0 {
+		return ctx.Err()
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(a.maintenancePause):
+		return nil
 	}
 }

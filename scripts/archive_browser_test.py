@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Folder archive selection, pushed progress, ZIP and explicit deletion. Synthetic data."""
+from test_support import settled_urlopen
 import datetime,hashlib,json,os,pathlib,socket,sqlite3,subprocess,tempfile,time,urllib.request,zipfile
 from playwright.sync_api import sync_playwright,expect
 binary=os.environ.get('AGENTLOG_BIN',str(pathlib.Path(__file__).resolve().parents[1]/'agentlog'))
@@ -13,7 +14,7 @@ with tempfile.TemporaryDirectory() as folder:
  try:
   def api(path,body=None):
    request=urllib.request.Request(base+path,data=None if body is None else json.dumps(body).encode(),headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'})
-   with urllib.request.urlopen(request) as response:return json.load(response)
+   with settled_urlopen(request) as response:return json.load(response)
   for _ in range(200):
    try:api('/api/stats');break
    except OSError:time.sleep(.05)

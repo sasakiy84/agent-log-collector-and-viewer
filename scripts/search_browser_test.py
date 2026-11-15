@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Japanese FTS and IME composition against a fresh isolated collector."""
+from test_support import settled_urlopen
 import json,os,pathlib,socket,subprocess,tempfile,time,urllib.request
 from playwright.sync_api import sync_playwright,expect
 binary=os.environ.get('AGENTLOG_BIN',str(pathlib.Path(__file__).resolve().parents[1]/'agentlog'))
@@ -9,14 +10,14 @@ with tempfile.TemporaryDirectory() as folder:
  server=subprocess.Popen([binary,'--listen',f'127.0.0.1:{port}','--db',folder+'/test.db'],env={**os.environ,'AGENTLOG_TOKEN':token},stdout=subprocess.DEVNULL)
  try:
   for _ in range(100):
-   try:urllib.request.urlopen(base,timeout=1);break
+   try:settled_urlopen(base,timeout=1);break
    except OSError:time.sleep(.1)
   def attrs(values):return [{'key':key,'value':{'stringValue':value}} for key,value in values.items()]
   logs=[]
   for source,session,prompts in [('codex','japanese-auth',['日本語の認証エラーを調査しました。','猫が走った。']),('claude','japanese-password',['パスワードの変更をお願いします。']),('copilot','japanese-json',[json.dumps({'設定項目':'接続障害の診断'},ensure_ascii=True)])]:
    logs.append({'resource':{'attributes':attrs({'service.name':source,'service.namespace':'決済基盤'})},'scopeLogs':[{'logRecords':[{'eventName':'gen_ai.user.message','attributes':attrs({'session.id':session,'prompt':prompt})} for prompt in prompts]}]})
   request=urllib.request.Request(base+'/v1/logs',json.dumps({'resourceLogs':logs}).encode(),headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'})
-  with urllib.request.urlopen(request) as response:assert response.status==200
+  with settled_urlopen(request) as response:assert response.status==200
   with sync_playwright() as p:
    browser=p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox'])
    page=browser.new_page(viewport={'width':1280,'height':800});errors=[];page.on('pageerror',lambda error:errors.append(str(error)))

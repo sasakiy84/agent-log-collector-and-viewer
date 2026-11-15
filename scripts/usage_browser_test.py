@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Reported usage: scoped totals, missing/zero values, latest access and imports."""
+from test_support import settled_urlopen
 import json,os,pathlib,socket,subprocess,tempfile,time,urllib.request
 from playwright.sync_api import sync_playwright,expect
 binary=os.getenv('AGENTLOG_BIN','./agentlog');token='synthetic-usage-browser-token'
@@ -9,11 +10,11 @@ with tempfile.TemporaryDirectory() as folder:
  proc=subprocess.Popen([binary,'--listen',f'127.0.0.1:{port}','--db',folder+'/test.db'],env={**os.environ,'AGENTLOG_TOKEN':token},stdout=subprocess.DEVNULL)
  try:
   for _ in range(100):
-   try:urllib.request.urlopen(base,timeout=1);break
+   try:settled_urlopen(base,timeout=1);break
    except OSError:time.sleep(.1)
   def api(path,data=None):
    request=urllib.request.Request(base+path,None if data is None else json.dumps(data).encode(),headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'})
-   with urllib.request.urlopen(request) as response:return json.load(response)
+   with settled_urlopen(request) as response:return json.load(response)
   def record(session,index,attrs,name='gen_ai.user.message'):
    return {'timeUnixNano':str(1780000000000000000+index*1000000000),'eventName':name,'attributes':[{'key':k,'value':{'stringValue':str(v)}} for k,v in {'session.id':session,**attrs}.items()]}
   records=[record('main',i,{'prompt':f'Continue analysis {i}'}) for i in range(205)]

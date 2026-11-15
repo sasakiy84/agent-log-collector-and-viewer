@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from test_support import settled_urlopen
 import json, os, socket, sqlite3, statistics, subprocess, tempfile, time, urllib.request
 import argparse
 parser = argparse.ArgumentParser(description='Compare ready-database startup and unrelated ingestion with retained internal traces. Synthetic data only.')
@@ -33,7 +34,7 @@ def start(binary, db):
 
 def call(base, path, body=None):
     req = urllib.request.Request(base + path, None if body is None else json.dumps(body).encode(), headers={'Authorization': 'Bearer ' + TOKEN, 'Content-Type': 'application/json'})
-    with urllib.request.urlopen(req, timeout=60) as response:
+    with settled_urlopen(req, timeout=60) as response:
         return json.load(response)
 
 def logbody(i):

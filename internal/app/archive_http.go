@@ -238,7 +238,12 @@ func (a *App) archiveDelete(w http.ResponseWriter, r *http.Request) {
 		databaseError(w, r, err)
 		return
 	}
-	if !valid {
+	pending, e := a.archiveHasPending(r.Context(), tx, job.ID)
+	if e != nil {
+		databaseError(w, r, e)
+		return
+	}
+	if !valid || pending {
 		archiveError(w, r, errArchiveStale)
 		return
 	}

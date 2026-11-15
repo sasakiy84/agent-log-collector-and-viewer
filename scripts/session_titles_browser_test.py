@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """First human request titles, including an existing database with context titles."""
+from test_support import settled_urlopen
 import hashlib
 import json
 import os
@@ -28,7 +29,7 @@ def start(binary, database):
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for _ in range(300):
         try:
-            urllib.request.urlopen(base, timeout=1).close()
+            settled_urlopen(base, timeout=1).close()
             return proc, base
         except OSError:
             if proc.poll() is not None:
@@ -61,7 +62,7 @@ with tempfile.TemporaryDirectory() as folder:
                 message("second", 3, "こちらも後からの依頼")]
         payload = {"resourceLogs": [{"resource": {"attributes": [{"key": "service.name", "value": {"stringValue": "codex"}}]}, "scopeLogs": [{"logRecords": rows}]}]}
         req = urllib.request.Request(base + "/v1/logs", json.dumps(payload).encode(), headers={"Content-Type": "application/json", "Authorization": "Bearer " + TOKEN})
-        urllib.request.urlopen(req).close()
+        settled_urlopen(req).close()
         original = fingerprint(database)
     finally:
         proc.terminate()

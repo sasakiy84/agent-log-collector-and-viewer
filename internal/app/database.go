@@ -38,51 +38,45 @@ func databaseURI(path string, readOnly bool) (string, error) {
 	return address + "?" + query.Encode(), nil
 }
 
-func Open(ctx context.Context, path, token string) (*App, error) {
+func (a *App) openDatabase(ctx context.Context, path string) error {
 	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	if len(token) < 16 {
-		return nil, fmt.Errorf("AGENTLOG_TOKEN must contain at least 16 characters")
+		return err
 	}
 	if path != ":memory:" {
 		f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if err = f.Close(); err != nil {
-			return nil, err
+			return err
 		}
 	}
 	uri, err := databaseURI(path, false)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	db, err := sql.Open("sqlite", uri)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	db.SetMaxOpenConns(1)
-	ctx, cancel := context.WithCancel(ctx)
-	a := &App{DB: db, token: token, ctx: ctx, cancel: cancel}
-	ready := false
-	defer func() {
-		if !ready {
-			a.Close()
-		}
-	}()
+	a.DB = db
 	if _, err = db.ExecContext(ctx, "PRAGMA auto_vacuum=INCREMENTAL; PRAGMA journal_mode=WAL"); err != nil {
-		return nil, err
+		return err
 	}
 	plan, err := migrations()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if err = migrate(ctx, db, plan); err != nil {
-		return nil, err
+		return err
 	}
-	// Only pending work runs here. Schema changes and legacy discovery are
-	// migrations; normal ingestion maintains these queues transactionally.
+	return nil
+}
+
+func (a *App) prepareDatabase(ctx context.Context) error {
+	// Work and checkpoints commit in bounded transactions; the service runs
+	// this after opening readers rather than holding HTTP startup behind it.
 	steps := []struct {
 		name string
 		run  func() error
@@ -92,7 +86,7 @@ func Open(ctx context.Context, path, token string) (*App, error) {
 		{"archive metadata", func() error { return a.drainBatches(ctx, "archive metadata", backfillArchiveStats) }},
 		{"event presentation", func() error { return a.runMaintenance(ctx, "presentation.v1", backfillPresentation, 0) }},
 		{"model call ancestry", func() error {
-			return inTransaction(ctx, db, func(tx *sql.Tx) error { return refreshModelCalls(ctx, tx) })
+			return inTransaction(ctx, a.DB, func(tx *sql.Tx) error { return refreshModelCalls(ctx, tx) })
 		}},
 		{"folder summaries", func() error { return a.runMaintenance(ctx, directoriesJob, backfillDirectories, 0) }},
 		{"session titles", func() error { return a.runMaintenance(ctx, titlesJob, backfillTitles, 0) }},
@@ -103,9 +97,31 @@ func Open(ctx context.Context, path, token string) (*App, error) {
 	}
 	for _, step := range steps {
 		log.Printf("Database preparation: %s", step.name)
-		if err = step.run(); err != nil {
-			return nil, fmt.Errorf("%s: %w", step.name, err)
+		if err := step.run(); err != nil {
+			return fmt.Errorf("%s: %w", step.name, err)
 		}
+	}
+	return nil
+}
+
+// Open prepares a database synchronously for embedded callers and maintenance tools.
+// The HTTP service uses Start, which accepts durable ingestion during preparation.
+func Open(ctx context.Context, path, token string) (*App, error) {
+	a, err := newApp(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	ready := false
+	defer func() {
+		if !ready {
+			a.Close()
+		}
+	}()
+	if err = a.openDatabase(ctx, path); err != nil {
+		return nil, err
+	}
+	if err = a.prepareDatabase(ctx); err != nil {
+		return nil, err
 	}
 	if err = a.initReaders(path); err != nil {
 		return nil, err

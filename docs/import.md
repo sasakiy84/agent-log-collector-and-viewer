@@ -71,6 +71,7 @@ AGENTLOG_TOKEN=YOUR_TOKEN ./agentlog import \
 | `--tag` | `project.tags`; repeatable |
 | `--watch` | Import existing files, then continuously import changed and new files |
 | `--interval` | Polling interval for `--watch`; default `1s` |
+| `--watch-state` | Persistent checkpoint DB for CLI watching; default: the user config directory, `agentlog/watch.db` |
 | `--dry-run` | Parse and report without sending; token not required |
 
 To select one project from a shared history directory:
@@ -92,7 +93,8 @@ AGENTLOG_TOKEN=YOUR_TOKEN ./agentlog import --all \
 ## Import behavior
 
 - Watching starts with existing files, then reparses only changed files. Missing folders are watched once created. Failed imports retry; unfinished final JSON lines are reconsidered on the next change. `Ctrl+C` stops watching. `--watch` and `--dry-run` cannot be combined.
-- Watching does not delete stored events when files are removed or truncated. Restarting safely replays existing files; no offset/state file is needed.
+- Watching retains successful file fingerprints across restarts and skips unchanged transcripts. Collector-configured watchers store them in the durable inbox database; CLI `--watch` uses `--watch-state`. Fingerprints include file identity, size, modification/change metadata, import options and Copilot predecessor journals. Changed/replaced/truncated files are reparsed to preserve Codex message reconciliation and Copilot journal semantics. Failed deliveries never advance the checkpoint. Removing/truncating files does not delete stored events.
+- An OTLP success response confirms durable acceptance. Indexing may finish later; see [startup and ingestion](startup.md).
 - Converts messages, tool arguments/results and recorded usage into GenAI-style OTLP log attributes. JSON inspection shows the converted OTLP record. Unsupported record kinds are counted as skipped.
 - Retains recorded session IDs and timestamps; explicit parent-session links are reused. Missing timestamps are marked, and unrecorded spans/durations are not fabricated. Attachments and encrypted reasoning are not imported.
 - Re-running updates matching imported records without duplicating them. Appended records are added; changing project/tags updates their imported metadata. Import and live OTEL records share a session when their agent and session IDs match. Overlapping events with shared IDs can be combined as described below.

@@ -2,6 +2,7 @@
 """Isolated browser tests for pagination, long/XSS content and live ingestion.
 Run after go build -o agentlog ./cmd/agentlog; needs Playwright and Chromium.
 """
+from test_support import settled_urlopen
 import json, os, socket, subprocess, tempfile, time, urllib.request
 from playwright.sync_api import sync_playwright
 with tempfile.TemporaryDirectory() as temp:
@@ -10,13 +11,13 @@ with tempfile.TemporaryDirectory() as temp:
  proc=subprocess.Popen([os.getenv('AGENTLOG_BIN','./agentlog'),'--listen',f'127.0.0.1:{port}','--db',temp+'/test.db'],env={**os.environ,'AGENTLOG_TOKEN':token},stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
  try:
   for _ in range(100):
-   try:urllib.request.urlopen(base,timeout=1);break
+   try:settled_urlopen(base,timeout=1);break
    except OSError:time.sleep(.1)
   def record(sid,text,i):return {'timeUnixNano':str(1780000000000000000+i*100000000),'attributes':[{'key':'session.id','value':{'stringValue':sid}}],'body':{'stringValue':text}}
   def send(records):
    b={'resourceLogs':[{'resource':{'attributes':[{'key':'service.name','value':{'stringValue':'codex'}}]},'scopeLogs':[{'logRecords':records}]}]}
    req=urllib.request.Request(base+'/v1/logs',json.dumps(b).encode(),headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'})
-   with urllib.request.urlopen(req) as r:assert r.status==200
+   with settled_urlopen(req) as r:assert r.status==200
   attack='<img src=x onerror="window.xss=true"><script>window.xss=true</script>'+'x'*5000
   send([record('long-session',attack if i==0 else 'event '+str(i),i) for i in range(205)])
   send([record('extra-'+str(i),'other session',i) for i in range(205)])

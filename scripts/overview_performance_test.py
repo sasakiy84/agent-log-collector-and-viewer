@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Measure ready overview summaries with many sessions and rich usage reports. Synthetic data only."""
+from test_support import settled_urlopen
 import atexit,json,os,pathlib,shutil,socket,sqlite3,statistics,subprocess,tempfile,time,urllib.request
 root=pathlib.Path(tempfile.mkdtemp(prefix='agentlog-overview-perf-'));atexit.register(shutil.rmtree,root)
 token='synthetic-overview-benchmark-token'
@@ -7,14 +8,14 @@ def start(binary,db):
  with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
  base=f'http://127.0.0.1:{port}';proc=subprocess.Popen([binary,'--db',str(db),'--listen',f'127.0.0.1:{port}'],env={**os.environ,'AGENTLOG_TOKEN':token},stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
  for _ in range(6000):
-  try:urllib.request.urlopen(base,timeout=1);return proc,base
+  try:settled_urlopen(base,timeout=1);return proc,base
   except OSError:
    if proc.poll() is not None:raise RuntimeError('Server exited')
    time.sleep(.01)
  raise RuntimeError('Startup timed out')
 def api(base,path):
  req=urllib.request.Request(base+path,headers={'Authorization':'Bearer '+token})
- with urllib.request.urlopen(req,timeout=120) as r:return r.read()
+ with settled_urlopen(req,timeout=120) as r:return r.read()
 if __name__=='__main__':
  import argparse
  p=argparse.ArgumentParser();p.add_argument('--binary',default=os.getenv('AGENTLOG_BIN','./agentlog'));p.add_argument('--baseline');p.add_argument('--browser',action='store_true');p.add_argument('--sessions',type=int,default=20000);args=p.parse_args();assert args.sessions>0;fixture=root/f'fixture-{args.sessions}.db'

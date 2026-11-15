@@ -4,12 +4,14 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	logs "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	metrics "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	traces "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"io"
+	"log"
 	"mime"
 	"net/http"
 	"strings"
@@ -95,7 +97,12 @@ func (a *App) receive(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Maximum 10000 records per request", 413)
 		return
 	}
-	if e = a.Save(r.Context(), events); e != nil {
+	if e = a.accept(r.Context(), events, false); e != nil {
+		if errors.Is(e, errInboxFull) {
+			w.Header().Set("Retry-After", "1")
+		} else if r.Context().Err() == nil {
+			log.Printf("telemetry storage: %v", e)
+		}
 		http.Error(w, "Storage unavailable", 503)
 		return
 	}
@@ -115,5 +122,5 @@ func (a *App) IngestLogs(ctx context.Context, resources []any) error {
 	if err != nil {
 		return err
 	}
-	return a.Save(ctx, events)
+	return a.accept(ctx, events, true)
 }

@@ -14,7 +14,7 @@ Missing cards/search documents are discovered once during adoption. Subsequent i
 
 `maintenance_jobs` is independent of schema history. A job name includes its algorithm version (`usage.v1`, `agents.v1`, `skills.v1`, `directories.v1`, `titles.v1`). When the extraction logic changes, schedule a new name in a new migration. Do not reset a shipped checkpoint implicitly.
 
-`runMaintenance` commits a bounded batch and its cursor together. Empty batches mark completion, non-advancing cursors fail, and errors retain the last committed checkpoint. Required jobs finish before HTTP serves requests; historical skill recovery remains a background job. Logs report progress. Restart resumes failed/incomplete work; the last error is retained until a successful batch.
+`runMaintenance` commits a bounded batch and its cursor together. Empty batches mark completion, non-advancing cursors fail, and errors retain the last committed checkpoint. The HTTP service opens its independent durable inbox first. Schema migrations then initialize the view database and read pool; historical jobs run in the background with pauses between committed batches. Historical skill recovery also remains a background job. Logs report progress. Restart resumes failed/incomplete work; the last error is retained until a successful batch.
 
 For operational diagnosis, open the database read-only and inspect:
 
@@ -23,7 +23,7 @@ SELECT version,name,applied_at FROM schema_migrations ORDER BY version;
 SELECT name,complete,processed,updated_at,error FROM maintenance_jobs ORDER BY name;
 ```
 
-`refreshProjections` defines write dependency order: trace ownership, cards, full-text search, timelines, activity metadata, per-call statistics, and overview summaries. The startup path commits resumable card/session batches and flushes usage totals before exposing the API. Changed trace identities use `trace_dirty`; identities containing archive-locked sessions stay queued until the locks are released.
+`refreshProjections` defines write dependency order: trace ownership, cards, full-text search, timelines, activity metadata, per-call statistics, and overview summaries. The background startup path commits resumable card/session batches and flushes usage totals before consuming the durable inbox. Readers can access committed views after schema initialization; archive operations wait for preparation, and archive creation/deletion also checks pending ingestion for the selected sessions, without blocking unrelated archives or recovery actions. Changed trace identities use `trace_dirty`; identities containing archive-locked sessions stay queued until the locks are released.
 
 Archive listings join indexed session timestamps with `archive_stats` record/byte counters maintained by event triggers. `archive_stats_pending` is the resumable upgrade queue; no ordinary archive-list request reads original payloads. Eligibility uses the original per-origin timestamps, including unknown times hidden by imported/OTEL card pairing. Folder membership is frozen in the archive snapshot. Running-job updates use an authenticated SSE stream notified after committed state changes, without browser polling.
 
@@ -50,6 +50,10 @@ The optional lifecycle benchmark compares identical ready databases containing u
 ```sh
 python3 scripts/lifecycle_performance.py --binary ./agentlog --baseline /path/to/v0.9.0/agentlog
 ```
+
+Use `AGENTLOG_BIN=./agentlog python3 scripts/startup_ingestion_test.py` for the real-process blocked-migration, ACK/SIGKILL/restart, checkpoint and concurrent-read contract. Integration scripts use `test_support.settled_urlopen` when they need derived results after uploads; queue latency/crash tests deliberately use raw urllib requests.
+
+When transcript normalization changes, bump `watchParserVersion` so persistent unchanged-file checkpoints are reconsidered with the new parser.
 
 Use the browser flows for affected features. `AGENTLOG_BIN=./agentlog python3 scripts/activity_projects_browser_test.py` checks project navigation and Activity/Diagnostics pagination on desktop and mobile.
 

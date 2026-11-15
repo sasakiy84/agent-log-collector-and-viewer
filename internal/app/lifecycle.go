@@ -4,11 +4,23 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"github.com/sasakiy84/agent-log-collector-and-viewer/internal/checkpoint"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 type App struct {
+	inbox              *sql.DB
+	checkpoints        *checkpoint.Store
+	queueWake          chan struct{}
+	queueSpace         chan struct{}
+	maintenancePause   time.Duration
+	initialized        chan struct{}
+	maintained         chan struct{}
+	startupErr         error
+	maintenanceErr     error
 	DB                 *sql.DB
 	readers            *sql.DB
 	token              string
@@ -32,5 +44,23 @@ func (a *App) Close() error {
 	if a.readers != nil && a.readers != a.DB {
 		err = a.readers.Close()
 	}
-	return errors.Join(err, a.DB.Close())
+	if a.DB != nil {
+		err = errors.Join(err, a.DB.Close())
+	}
+	if a.inbox != nil {
+		err = errors.Join(err, a.inbox.Close())
+	}
+	return err
 }
+
+func newApp(ctx context.Context, token string) (*App, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if len(token) < 16 {
+		return nil, fmt.Errorf("AGENTLOG_TOKEN must contain at least 16 characters")
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	return &App{ctx: ctx, cancel: cancel, token: token}, nil
+}
+func (a *App) WatchState() *checkpoint.Store { return a.checkpoints }

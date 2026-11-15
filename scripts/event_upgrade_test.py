@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Published v0.8.0 data keeps originals, tool links and recoverable skill evidence."""
+from test_support import settled_urlopen
 import hashlib,json,os,pathlib,socket,sqlite3,subprocess,tempfile,time,urllib.request
 binary=os.getenv('AGENTLOG_BIN','./agentlog');baseline=os.environ['AGENTLOG_BASELINE_BIN'];token='synthetic-event-upgrade-token'
 with tempfile.TemporaryDirectory() as folder:
@@ -8,12 +9,12 @@ with tempfile.TemporaryDirectory() as folder:
   with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
   base=f'http://127.0.0.1:{port}';proc=subprocess.Popen([executable,'--listen',f'127.0.0.1:{port}','--db',database],env={**os.environ,'AGENTLOG_TOKEN':token},stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
   for _ in range(200):
-   try:urllib.request.urlopen(base,timeout=1);return proc,base
+   try:settled_urlopen(base,timeout=1);return proc,base
    except OSError:time.sleep(.05)
   raise AssertionError('server did not start')
  def api(path,data=None):
   req=urllib.request.Request(base+path,None if data is None else json.dumps(data).encode(),headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'})
-  with urllib.request.urlopen(req) as response:return json.load(response)
+  with settled_urlopen(req) as response:return json.load(response)
  def fingerprint():
   digest=hashlib.sha256()
   with sqlite3.connect('file:'+database+'?mode=ro',uri=True) as db:

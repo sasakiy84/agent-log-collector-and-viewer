@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Isolated subagent launch links and bounded sidebar logs across all three agents."""
+from test_support import settled_urlopen
 import json,os,pathlib,socket,subprocess,tempfile,time,urllib.parse,urllib.request
 from playwright.sync_api import sync_playwright,expect
 binary=os.getenv('AGENTLOG_BIN','./agentlog');token='synthetic-subagent-browser-token'
@@ -8,13 +9,13 @@ with tempfile.TemporaryDirectory() as folder:
  base=f'http://127.0.0.1:{port}';proc=subprocess.Popen([binary,'--listen',f'127.0.0.1:{port}','--db',folder+'/test.db'],env={**os.environ,'AGENTLOG_TOKEN':token},stdout=subprocess.DEVNULL)
  try:
   for _ in range(100):
-   try:urllib.request.urlopen(base,timeout=1);break
+   try:settled_urlopen(base,timeout=1);break
    except OSError:time.sleep(.1)
   def attrs(values):return [{'key':k,'value':{'stringValue':json.dumps(v) if isinstance(v,(dict,list)) else str(v)}} for k,v in values.items()]
   def record(sid,i,name,values):return {'eventName':name,'timeUnixNano':str(1780000000000000000+i*1000000000),'attributes':attrs({'session.id':sid,**values})}
   def send(source,records):
    req=urllib.request.Request(base+'/v1/logs',json.dumps({'resourceLogs':[{'resource':{'attributes':attrs({'service.name':source,'cwd':'/work/subagent-demo'})},'scopeLogs':[{'logRecords':records}]}]}).encode(),headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'})
-   with urllib.request.urlopen(req) as response:assert response.status==200
+   with settled_urlopen(req) as response:assert response.status==200
   parent=[record('parent',0,'gen_ai.tool.start',{'gen_ai.tool.name':'spawn_agent','gen_ai.tool.call.id':'launch-reviewer','gen_ai.tool.call.arguments':{'message':'Review session ordering and pagination.'}}),record('parent',1,'gen_ai.agent.started',{'gen_ai.operation.name':'invoke_agent','gen_ai.agent.id':'missing','gen_ai.agent.name':'Pending agent'})]
   parent += [record('parent',i+2,'gen_ai.assistant.message',{'response':f'Parent line {i}'}) for i in range(205)]
   parent += [record('parent',210,'gen_ai.tool.result',{'gen_ai.tool.call.id':'launch-reviewer','gen_ai.tool.call.result':{'agent_id':'child','nickname':'Reviewer'}})]

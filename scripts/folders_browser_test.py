@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Project sidebar with many sessions, scoped pages and navigation. Synthetic data."""
+from test_support import settled_urlopen
 import json,os,pathlib,socket,subprocess,tempfile,time,urllib.parse,urllib.request
 from playwright.sync_api import sync_playwright,expect
 binary=os.getenv('AGENTLOG_BIN','./agentlog');token='synthetic-folder-browser-token'
@@ -9,7 +10,7 @@ with tempfile.TemporaryDirectory() as folder:
  server=subprocess.Popen([binary,'--listen',f'127.0.0.1:{port}','--db',folder+'/test.db'],env={**os.environ,'AGENTLOG_TOKEN':token},stdout=subprocess.DEVNULL)
  try:
   for _ in range(100):
-   try:urllib.request.urlopen(base,timeout=1);break
+   try:settled_urlopen(base,timeout=1);break
    except OSError:time.sleep(.1)
   cwd='/workspace/検索プロジェクト';other='/srv/research/検索プロジェクト';attack='/work/<img src=x onerror=window.xss=true>'
   def send(source,session,index,path,prompt):
@@ -20,7 +21,7 @@ with tempfile.TemporaryDirectory() as folder:
   logs += [send('copilot','other-'+str(i),400+i,other,'Other folder') for i in range(2)]
   logs += [send('codex','unknown',1,'','Unknown folder metadata'),send('codex','hostile',2,attack,'Plain text directory')]
   req=urllib.request.Request(base+'/v1/logs',json.dumps({'resourceLogs':logs}).encode(),headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'})
-  with urllib.request.urlopen(req) as response:assert response.status==200
+  with settled_urlopen(req) as response:assert response.status==200
   with sync_playwright() as p:
    browser=p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox']);page=browser.new_page(viewport={'width':1280,'height':800});errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
    page.goto(base);page.locator('#token').fill(token);page.locator('#loginform button').click();expect(page.locator('.session')).to_have_count(200)

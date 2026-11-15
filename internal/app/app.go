@@ -92,6 +92,7 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("GET /api/skills", a.skills)
 	mux.HandleFunc("GET /skills", serveShell)
 	mux.HandleFunc("GET /api/export", a.export)
+	mux.HandleFunc("GET /api/status", a.status)
 	mux.HandleFunc("GET /api/stats", func(w http.ResponseWriter, r *http.Request) {
 		var n, s int
 		if err := a.readers.QueryRowContext(r.Context(), "SELECT COUNT(*),COUNT(DISTINCT session) FROM events").Scan(&n, &s); err != nil {
@@ -110,6 +111,9 @@ func (a *App) Handler() http.Handler {
 		w.Header().Set("Cache-Control", "no-store")
 		if strings.HasPrefix(r.URL.Path, "/api/") && r.URL.Path != "/api/login" && !a.authenticated(r) {
 			http.Error(w, "Unauthorized", 401)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/api/") && r.URL.Path != "/api/login" && r.URL.Path != "/api/logout" && r.URL.Path != "/api/status" && !a.serviceAvailable(w, r) {
 			return
 		}
 		mux.ServeHTTP(w, r)

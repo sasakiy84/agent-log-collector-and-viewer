@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Reported Codex skill use versus historical references, search and session navigation."""
+from test_support import settled_urlopen
 import json,os,pathlib,socket,subprocess,tempfile,time,urllib.request
 from playwright.sync_api import sync_playwright,expect
 binary=os.getenv('AGENTLOG_BIN','./agentlog');token='synthetic-skills-browser-token'
@@ -8,14 +9,14 @@ with tempfile.TemporaryDirectory() as folder:
  base=f'http://127.0.0.1:{port}';proc=subprocess.Popen([binary,'--listen',f'127.0.0.1:{port}','--db',folder+'/test.db'],env={**os.environ,'AGENTLOG_TOKEN':token},stdout=subprocess.DEVNULL)
  try:
   for _ in range(100):
-   try:urllib.request.urlopen(base,timeout=1);break
+   try:settled_urlopen(base,timeout=1);break
    except OSError:time.sleep(.1)
   def record(session,i,name,attrs):return {'eventName':name,'timeUnixNano':str(1780000000000000000+i*1000000000),'attributes':[{'key':k,'value':{'stringValue':str(v)}} for k,v in {'session.id':session,**attrs}.items()]}
   rows=[record('main',0,'gen_ai.user.message',{'cwd':'/work/shop','prompt':'Fix pagination'})]
   for i,turn in enumerate(['turn-1','turn-1','turn-2']):rows.append(record('main',i+1,'codex.skill_invocation',{'skill.name':'review-core','turn.id':turn,'skill.invocation_type':'explicit' if i<2 else 'implicit','skill.scope':'repo'}))
   rows += [record('legacy',5,'gen_ai.tool.start',{'cwd':'/work/legacy','tool_name':'exec_command','arguments':"{\"cmd\":\"cat /work/.codex/skills/review-core/SKILL.md\"}",'agentlog.origin':'import'}),record('legacy',6,'gen_ai.tool.start',{'cwd':'/work/legacy','tool_name':'Read','arguments':'{"file_path":"/work/skills/legacy-only/SKILL.md"}','agentlog.origin':'import'}),record('legacy',7,'gen_ai.tool.start',{'cwd':'/work/legacy','tool_name':'exec_command','arguments':'{"cmd":"cat /home/demo/.codex/skills/.system/skill-creator/SKILL.md"}','agentlog.origin':'import'}),record('mentioned',8,'gen_ai.user.message',{'cwd':'/work/mentions','prompt':'Available: review-core. Also /work/skills/not-used/SKILL.md'}),record('main',9,'gen_ai.tool.start',{'tool_name':'apply_patch','arguments':'{"input":"*** Add File: /work/skills/written-only/SKILL.md"}'}),record('jp',10,'codex.skill_invocation',{'cwd':'/work/docs','skill.name':'日本語ドキュメント','skill.plugin_id':'writing-tools','skill.scope':'user','turn.id':'jp-turn','skill.invocation_type':'implicit'})]
   req=urllib.request.Request(base+'/v1/logs',json.dumps({'resourceLogs':[{'resource':{'attributes':[{'key':'service.name','value':{'stringValue':'codex'}}]},'scopeLogs':[{'logRecords':rows}]}]}).encode(),headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'})
-  with urllib.request.urlopen(req) as response:assert response.status==200
+  with settled_urlopen(req) as response:assert response.status==200
   with sync_playwright() as p:
    browser=p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox']);page=browser.new_page(viewport={'width':1440,'height':1000});errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
    page.goto(base+'/skills');page.locator('#token').fill(token);page.locator('#loginform button').click();expect(page.locator('.skill-row')).to_have_count(4);expect(page.locator('#skillcount')).to_have_text('4 skills · 3 uses');expect(page.locator('.skill-row h2').first).to_have_text('review-core');expect(page.locator('#projectsidebar')).to_be_visible()
