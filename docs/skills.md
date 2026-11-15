@@ -1,6 +1,8 @@
 # Codex skills
 
-Open **Skills** to search names, plugins, scopes and referenced paths. Click a row to browse matching sessions by folder. Session headers show skill chips; clicking one opens the latest matching event in the inspector. The timeline's **Skills** filter includes skill reports and indexed references on the current page.
+Open **Skills** for usage totals across sessions, ordered by **Most used**. The project sidebar switches between all projects and one project; search names, plugins, scopes or referenced paths within that selection. **Most sessions** and **Recent activity** offer alternate orders. The header shows the matching skill count and total reported uses across all pages.
+
+Click a row to open matching sessions in the selected project. Session headers retain their skill chips and event inspector. The timeline's **Skills** filter includes reported uses and indexed references, with filtering before pagination.
 
 ![Skill usage and references](ui-skills.png)
 

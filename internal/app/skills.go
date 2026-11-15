@@ -30,15 +30,23 @@ type SkillSummary struct {
 }
 
 const skillReported = `CASE WHEN k.evidence='reported' AND (k.origin='otel' OR NOT EXISTS(SELECT 1 FROM skill_events native WHERE native.name=k.name AND native.plugin=k.plugin AND native.session=k.session AND native.evidence='reported' AND native.origin='otel')) THEN k.group_key END`
-const skillRollup = `SELECT k.name,k.plugin,COUNT(DISTINCT k.session),COUNT(DISTINCT ` + skillReported + `),COUNT(DISTINCT CASE WHEN k.evidence='reference' THEN k.session END),MAX(k.time),json_group_array(DISTINCT k.scope)`
+const skillRollup = `SELECT k.name,k.plugin,COUNT(DISTINCT k.session) AS sessions,COUNT(DISTINCT ` + skillReported + `) AS uses,COUNT(DISTINCT CASE WHEN k.evidence='reference' THEN k.session END) AS reference_sessions,MAX(k.time) AS last,json_group_array(DISTINCT k.scope) AS scopes`
 
 func scanSkills(rows *sql.Rows) ([]SkillSummary, error) {
+	return scanSkillRows(rows, nil)
+}
+
+func scanSkillRows(rows *sql.Rows, totalUses *int) ([]SkillSummary, error) {
 	defer rows.Close()
 	out := []SkillSummary{}
 	for rows.Next() {
 		var s SkillSummary
 		var scopes string
-		if err := rows.Scan(&s.Name, &s.Plugin, &s.Sessions, &s.Uses, &s.References, &s.Last, &scopes); err != nil {
+		args := []any{&s.Name, &s.Plugin, &s.Sessions, &s.Uses, &s.References, &s.Last, &scopes}
+		if totalUses != nil {
+			args = append(args, totalUses)
+		}
+		if err := rows.Scan(args...); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(scopes), &s.Scopes); err != nil {
@@ -49,6 +57,19 @@ func scanSkills(rows *sql.Rows) ([]SkillSummary, error) {
 	return out, rows.Err()
 }
 func (a *App) skills(w http.ResponseWriter, r *http.Request) {
+	order := "uses DESC,sessions DESC,last DESC,name,plugin"
+	sort := r.URL.Query().Get("sort")
+	switch sort {
+	case "", "uses":
+		sort = "uses"
+	case "sessions":
+		order = "sessions DESC,uses DESC,last DESC,name,plugin"
+	case "recent":
+		order = "last DESC,name,plugin"
+	default:
+		http.Error(w, "Invalid skill sort", 400)
+		return
+	}
 	tx, err := a.readers.BeginTx(r.Context(), &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		databaseError(w, r, err)
@@ -57,13 +78,22 @@ func (a *App) skills(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback()
 	from := ` FROM skill_events k JOIN session_catalog s ON s.session=k.session WHERE NOT EXISTS(SELECT 1 FROM archive_locks l WHERE l.session=k.session)`
 	args := []any{}
+	if r.URL.Query().Has("project") {
+		from += " AND s.project_key=?"
+		args = append(args, r.URL.Query().Get("project"))
+	}
 	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" {
 		if len(q) > 512 {
 			http.Error(w, "Search is too long", 400)
 			return
 		}
-		from += ` AND EXISTS(SELECT 1 FROM skill_events matched WHERE matched.name=k.name AND matched.plugin=k.plugin AND instr(matched.search,?)>0)`
+		from += ` AND (k.name,k.plugin) IN(SELECT matched.name,matched.plugin FROM skill_events matched JOIN session_catalog matched_session ON matched_session.session=matched.session WHERE NOT EXISTS(SELECT 1 FROM archive_locks l WHERE l.session=matched.session) AND instr(matched.search,?)>0`
 		args = append(args, skillSearch(q))
+		if r.URL.Query().Has("project") {
+			from += " AND matched_session.project_key=?"
+			args = append(args, r.URL.Query().Get("project"))
+		}
+		from += ")"
 	}
 	grouped := from + " GROUP BY k.name,k.plugin"
 	var total int
@@ -73,10 +103,13 @@ func (a *App) skills(w http.ResponseWriter, r *http.Request) {
 	}
 	off := pageOffset(offset(r), total, 200)
 	params := append(append([]any{}, args...), off)
-	rows, err := tx.QueryContext(r.Context(), skillRollup+grouped+" ORDER BY MAX(k.time) DESC,k.name,k.plugin LIMIT 200 OFFSET ?", params...)
+	// Window aggregation covers every matching skill before LIMIT, so the
+	// displayed total remains correct on later pages and under project/search filters.
+	rows, err := tx.QueryContext(r.Context(), "WITH totals AS ("+skillRollup+grouped+") SELECT name,plugin,sessions,uses,reference_sessions,last,scopes,SUM(uses) OVER() FROM totals ORDER BY "+order+" LIMIT 200 OFFSET ?", params...)
 	var out []SkillSummary
+	var uses int
 	if err == nil {
-		out, err = scanSkills(rows)
+		out, err = scanSkillRows(rows, &uses)
 	}
 	var ready bool
 	if err == nil {
@@ -89,7 +122,7 @@ func (a *App) skills(w http.ResponseWriter, r *http.Request) {
 		databaseError(w, r, err)
 		return
 	}
-	write(w, map[string]any{"skills": out, "total": total, "offset": off, "ready": ready})
+	write(w, map[string]any{"skills": out, "total": total, "uses": uses, "sort": sort, "offset": off, "ready": ready})
 }
 func sessionSkills(ctx context.Context, tx *sql.Tx, session, origin string) ([]SkillSummary, error) {
 	from := ` FROM skill_events k WHERE k.session=?`
