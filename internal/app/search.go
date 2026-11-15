@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -167,7 +168,7 @@ func searchMatch(ctx context.Context, query string) (string, error) {
 
 // Decode nested JSON strings too: a literal Japanese query must find text sent
 // as JSON \u escapes, including JSON embedded in OTLP string attributes.
-func searchableValues(ctx context.Context, value any, emit func(string) error) error {
+func searchableValues(ctx context.Context, value any, emit func(string) error, identifier func(string, any)) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -179,54 +180,83 @@ func searchableValues(ctx context.Context, value any, emit func(string) error) e
 			decoder.UseNumber()
 			var nested any
 			if decoder.Decode(&nested) == nil && decoder.Decode(new(any)) == io.EOF {
-				return searchableValues(ctx, nested, emit)
+				return searchableValues(ctx, nested, emit, identifier)
 			}
 		}
 		return emit(v)
 	case map[string]any:
+		// OTLP AnyValue preserves numeric/boolean types even though protobuf
+		// JSON encodes int64 as strings. Never feed wire wrappers to the FTS.
+		for _, key := range []string{"intValue", "doubleValue", "boolValue", "bytesValue"} {
+			if _, ok := v[key]; ok && len(v) == 1 {
+				return nil
+			}
+		}
+		if key, ok := v["key"].(string); ok {
+			if item, exists := v["value"]; exists && len(v) == 2 {
+				if identifierKey(key) {
+					identifier(key, item)
+					return nil
+				}
+				return searchableValues(ctx, item, emit, identifier)
+			}
+		}
 		keys := make([]string, 0, len(v))
 		for key := range v {
 			keys = append(keys, key)
 		}
 		slices.Sort(keys)
 		for _, key := range keys {
-			if err := emit(key); err != nil {
-				return err
+			if identifierKey(key) {
+				identifier(key, v[key])
+				continue
 			}
-			if err := searchableValues(ctx, v[key], emit); err != nil {
+			if err := searchableValues(ctx, v[key], emit, identifier); err != nil {
 				return err
 			}
 		}
 	case []any:
 		for _, item := range v {
-			if err := searchableValues(ctx, item, emit); err != nil {
+			if err := searchableValues(ctx, item, emit, identifier); err != nil {
 				return err
 			}
 		}
-	case json.Number:
-		return emit(string(v))
-	case bool:
-		if v {
-			return emit("true")
-		}
-		return emit("false")
 	}
 	return nil
 }
 func storeSearch(ctx context.Context, tx *sql.Tx, event Event, doc document) error {
 	var text strings.Builder
+	identifiers := map[searchIdentifier]bool{}
+	identifier := func(key string, value any) {
+		identifierStrings(value, func(s string) {
+			identifiers[searchIdentifier{key, s}] = true
+			identifiers[searchIdentifier{identifierAlias(key), s}] = true
+		})
+	}
+	for key, value := range map[string]string{"event.id": event.ID, "session.id": event.Session, "parent.session.id": event.Parent, "trace.id": event.Trace, "span.id": event.Span, "parent.span.id": event.ParentSpan} {
+		identifier(key, value)
+	}
 	emit := func(value string) error {
 		return searchTokens(ctx, value, func(term string) { text.WriteString(term); text.WriteByte(' ') })
 	}
-	for _, value := range []string{event.Session, event.Parent, event.Source, event.Name, event.Trace, event.Span} {
+	for _, value := range []string{event.Source, event.Name} {
 		if err := emit(value); err != nil {
 			return err
 		}
 	}
-	for _, scope := range []map[string]any{doc.Resource, doc.Scope, doc.Record} {
-		if err := searchableValues(ctx, scope, emit); err != nil {
+	// These are numeric OTLP wire fields, not arbitrary string-valued keys
+	// inside a tool's JSON output. Do not mutate the original document.
+	record := maps.Clone(doc.Record)
+	for _, key := range []string{"timeUnixNano", "observedTimeUnixNano", "startTimeUnixNano", "endTimeUnixNano", "asInt", "asDouble", "count", "sum", "min", "max", "zeroCount", "bucketCounts", "positive", "negative", "quantileValues"} {
+		delete(record, key)
+	}
+	for _, scope := range []map[string]any{doc.Resource, doc.Scope, record} {
+		if err := searchableValues(ctx, scope, emit, identifier); err != nil {
 			return err
 		}
+	}
+	if err := storeIdentifiers(ctx, tx, event, identifiers); err != nil {
+		return err
 	}
 	var rowid int64
 	err := tx.QueryRowContext(ctx, `INSERT INTO search_documents(event_id,session) VALUES(?,?) ON CONFLICT(event_id) DO UPDATE SET session=excluded.session RETURNING rowid`, event.ID, event.Session).Scan(&rowid)
@@ -243,7 +273,28 @@ func storeSearch(ctx context.Context, tx *sql.Tx, event Event, doc document) err
 	return err
 }
 func (a *App) prepareSearch(ctx context.Context) error {
-	return a.drainBatches(ctx, "full-text search", refreshSearchBatch)
+	if err := a.drainBatches(ctx, "full-text search", refreshSearchBatch); err != nil {
+		return err
+	}
+	return a.runMaintenance(ctx, "search_strings.v1", backfillSearchStrings, 0)
+}
+
+func backfillSearchStrings(ctx context.Context, tx *sql.Tx, cursor string) (string, int, error) {
+	batch, err := loadEventBatch(ctx, tx, "SELECT "+eventColumns+" FROM events WHERE id>? ORDER BY id LIMIT 200", cursor)
+	if err != nil {
+		return cursor, 0, err
+	}
+	for _, event := range batch {
+		doc, err := decodeDocument(event.Raw)
+		if err != nil {
+			return cursor, 0, err
+		}
+		if err = storeSearch(ctx, tx, event, doc); err != nil {
+			return cursor, 0, err
+		}
+		cursor = event.ID
+	}
+	return cursor, len(batch), nil
 }
 func refreshSearchBatch(ctx context.Context, tx *sql.Tx) (int, error) {
 	batch, err := loadEventBatch(ctx, tx, "SELECT "+qualifiedColumns("e")+" FROM search_dirty d CROSS JOIN events e ON e.id=d.event_id LIMIT 200")
