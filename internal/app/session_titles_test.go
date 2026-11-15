@@ -18,6 +18,15 @@ func TestPromptTitleEnvelopes(t *testing.T) {
 		{"codex", "<div>このHTMLを修正して</div>", "<div>このHTMLを修正して</div>"},
 		{"claude", "<recommended_plugins>literal</recommended_plugins>", "<recommended_plugins>literal</recommended_plugins>"},
 		{"codex", "Content not exported", ""},
+		{"codex", selectedPageSnapshot, ""},
+		{"codex", selectedPageSnapshot + "\n最初の依頼", "最初の依頼"},
+		{"codex", "<recommended_plugins>shared</recommended_plugins>" + selectedPageSnapshot, ""},
+		{"codex", "<external_codex_apps_selected_page_part_2_of_2>context</external_codex_apps_selected_page_part_2_of_2>", ""},
+		{"codex", "このログを説明して:\n" + selectedPageSnapshot, "このログを説明して:"},
+		{"codex", "<external_codex_apps_selected_page_part_1_of_1> の意味を教えて", "<external_codex_apps_selected_page_part_1_of_1> の意味を教えて"},
+		{"codex", "<external_codex_apps_selected_page_part_1_of_2>x</external_codex_apps_selected_page_part_2_of_2>", "<external_codex_apps_selected_page_part_1_of_2>x</external_codex_apps_selected_page_part_2_of_2>"},
+		{"codex", "<external_codex_apps_selected_page_part_2_of_1>x</external_codex_apps_selected_page_part_2_of_1>", "<external_codex_apps_selected_page_part_2_of_1>x</external_codex_apps_selected_page_part_2_of_1>"},
+		{"claude", selectedPageSnapshot, strings.Split(selectedPageSnapshot, "\n")[0]},
 		{"codex", `<external_codex_apps_open_page>{"page_id":null}</external_codex_apps_open_page>`, ""},
 		{"codex", "<external_codex_apps_open_page>{\"page_id\":\"page-123\"}</external_codex_apps_open_page>\n検索を修正して", "検索を修正して"},
 		{"codex", "<recommended_plugins>plugins</recommended_plugins>\n<external_codex_apps_open_page>{}</external_codex_apps_open_page>\n本来の依頼", "本来の依頼"},
@@ -143,13 +152,18 @@ func TestModelOnlyConversationKeepsExplicitUserInputTitle(t *testing.T) {
 
 func appOpenPageMessage(t *testing.T, pageID string) Event {
 	t.Helper()
+	return appContextMessage(t, "<external_codex_apps_open_page>{\"page_id\":"+pageID+"}</external_codex_apps_open_page>")
+}
+
+func appContextMessage(t *testing.T, text string) Event {
+	t.Helper()
 	e := recorded(t, "app-open-page", "import", "codex", "app-titles", "gen_ai.user.message", map[string]any{"cwd": "/work/project"})
 	doc, err := decodeDocument(e.Raw)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var attribute map[string]any
-	content, err := json.Marshal("<external_codex_apps_open_page>{\"page_id\":" + pageID + "}</external_codex_apps_open_page>")
+	content, err := json.Marshal(text)
 	if err != nil {
 		t.Fatal(err)
 	}

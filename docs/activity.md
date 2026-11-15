@@ -19,10 +19,13 @@ Without sufficient identifiers, session totals remain available without attribut
 them to a particular answer. Missing prompt or project data is never fabricated.
 
 Session titles use the first user request, skipping recognized Codex context and
-`<external_codex_apps_open_page>` application messages. Codex approval-review and
+`<external_codex_apps_open_page>` and numbered
+`<external_codex_apps_selected_page_part_N_of_M>` application messages. Only
+complete leading envelopes with matching tags are stripped; a quoted discussion
+or incomplete tag remains an ordinary request. Codex approval-review and
 next-message suggestion templates are also excluded from titles; conversations
 containing only these automatic requests are hidden by default. Enable **Internal
-Codex sessions** to inspect them. Original messages remain available in the
+sessions** to inspect them. Original messages remain available in the
 timeline, JSON export and search.
 
 Existing databases receive versioned migrations and a resumable presentation
