@@ -2,7 +2,7 @@
 
 A personal OpenTelemetry collector and session viewer for Codex CLI, Claude Code and GitHub Copilot CLI.
 
-![Sessions grouped by working folder](docs/ui-folders.png)
+![Project navigation and session search](docs/ui-projects.png)
 
 *Screenshot uses synthetic telemetry.*
 
@@ -10,9 +10,10 @@ A personal OpenTelemetry collector and session viewer for Codex CLI, Claude Code
 
 - Collect logs, traces and metrics over OTLP/HTTP (JSON or Protobuf), or import and watch saved CLI sessions.
 - Search Japanese and English with built-in SQLite FTS5 and an embedded Japanese dictionary ([search settings](docs/search.md)).
-- Browse recent sessions by working folder; timelines open at the latest entry. Inspect [tool inputs/outputs](docs/tool-events.md) and [subagent logs](docs/subagents.md) in the side panel.
+- Keep projects visible beside session search; timelines open at the latest activity. Inspect [tool inputs/outputs](docs/tool-events.md) and [subagent logs](docs/subagents.md) in the side panel.
 - Find Codex [skill use](docs/skills.md) by name, plugin or file reference, then browse matching sessions.
-- Compare reported tokens, cache usage, USD cost, request time and errors by folder/session ([accounting rules](docs/usage.md)).
+- Compare reported tokens, cache usage, USD cost, request time and errors per session ([accounting rules](docs/usage.md)).
+- Read conversations and tool [activity](docs/activity.md) first; inspect internal telemetry in Diagnostics.
 - Combine imported and OTEL events with shared IDs into one card while keeping both originals.
 - Archive sessions inactive for a month; download a ZIP, confirm it, then delete DB records and reclaim space.
 - One Go binary with an embedded UI, SQLite storage and token authentication. No automatic log expiry.

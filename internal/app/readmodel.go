@@ -104,12 +104,15 @@ func storeCard(ctx context.Context, tx *sql.Tx, e Event, d Detail, doc document)
 	if err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO event_cards(id,session,origin,source,parent,time,sequence,is_user,signal,trace,span,parent_span,detail,prompt_title) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
+	_, err = tx.ExecContext(ctx, `INSERT INTO event_cards(id,session,origin,source,parent,time,sequence,is_user,signal,trace,span,parent_span,detail,prompt_title,activity,kind,is_error,turn,presentation_ready,conversation,has_skill) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,EXISTS(SELECT 1 FROM skill_events WHERE event_id=?)) ON CONFLICT(id) DO UPDATE SET
  session=excluded.session,origin=excluded.origin,source=excluded.source,parent=excluded.parent,time=excluded.time,sequence=excluded.sequence,
- is_user=excluded.is_user,signal=excluded.signal,trace=excluded.trace,span=excluded.span,parent_span=excluded.parent_span,detail=excluded.detail,prompt_title=excluded.prompt_title`,
-		e.ID, e.Session, e.Origin, e.Source, e.Parent, e.Time, e.Sequence, d.Kind == "user", e.Signal, e.Trace, e.Span, e.ParentSpan, presentation, promptTitle(e.Source, d))
+ is_user=excluded.is_user,signal=excluded.signal,trace=excluded.trace,span=excluded.span,parent_span=excluded.parent_span,detail=excluded.detail,prompt_title=excluded.prompt_title,activity=excluded.activity,kind=excluded.kind,is_error=excluded.is_error,turn=excluded.turn,presentation_ready=1,conversation=excluded.conversation,has_skill=excluded.has_skill`,
+		e.ID, e.Session, e.Origin, e.Source, e.Parent, e.Time, e.Sequence, d.Kind == "user", e.Signal, e.Trace, e.Span, e.ParentSpan, presentation, promptTitle(e.Source, d), detailActivity(d), d.Kind, d.Error, d.Turn, detailConversation(d), e.ID)
 	if err == nil {
 		err = storeUsage(ctx, tx, e, doc, d)
+	}
+	if err == nil {
+		err = storeModelFact(ctx, tx, e, doc, d)
 	}
 	if err == nil {
 		_, err = tx.ExecContext(ctx, "DELETE FROM cards_dirty WHERE id=?", e.ID)
@@ -241,7 +244,7 @@ func refreshTimeline(ctx context.Context, tx *sql.Tx, session string) error {
 			return err
 		}
 		query := componentCTE +
-			`INSERT INTO timeline_entries SELECT t.id,t.session,t.source,t.parent,t.time,t.end,t.sequence,t.is_user,
+			`INSERT INTO timeline_entries(id,session,source,parent,time,end,sequence,is_user,import_id,otel_id) SELECT t.id,t.session,t.source,t.parent,t.time,t.end,t.sequence,t.is_user,
     COALESCE(MAX(CASE WHEN m.origin='import' THEN m.id END),''),COALESCE(MAX(CASE WHEN m.origin='otel' THEN m.id END),'')
     FROM timeline t JOIN members m ON m.view_id=t.id GROUP BY t.id`
 		args := []any{session, session}
@@ -255,7 +258,7 @@ func refreshTimeline(ctx context.Context, tx *sql.Tx, session string) error {
 		if _, err = tx.ExecContext(ctx, "DELETE FROM timeline_entries WHERE id IN (SELECT e.id FROM read_model_dirty d CROSS JOIN timeline_entries e ON e.id=d.id WHERE d.session=? AND e.session=?)", session, session); err != nil {
 			return err
 		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO timeline_entries SELECT c.id,c.session,c.source,c.parent,c.time,c.time,c.sequence,c.is_user,
+		_, err = tx.ExecContext(ctx, `INSERT INTO timeline_entries(id,session,source,parent,time,end,sequence,is_user,import_id,otel_id) SELECT c.id,c.session,c.source,c.parent,c.time,c.time,c.sequence,c.is_user,
    CASE WHEN c.origin='import' THEN c.id ELSE '' END,CASE WHEN c.origin='otel' THEN c.id ELSE '' END
    FROM read_model_dirty d CROSS JOIN event_cards c ON c.id=d.id WHERE d.session=? AND c.session=?`, session, session)
 		if err != nil {
@@ -307,6 +310,10 @@ const (
 )
 
 func readTimeline(ctx context.Context, tx *sql.Tx, session, origin string, limit, off int, mode timelineOrder) ([]TimelineEvent, error) {
+	return readFilteredTimeline(ctx, tx, session, origin, limit, off, mode, eventFilter{})
+}
+
+func readFilteredTimeline(ctx context.Context, tx *sql.Tx, session, origin string, limit, off int, mode timelineOrder, filter eventFilter) ([]TimelineEvent, error) {
 	order := "time,sequence,id"
 	if mode == timelinePreview {
 		order = "is_user DESC," + order
@@ -317,13 +324,13 @@ func readTimeline(ctx context.Context, tx *sql.Tx, session, origin string, limit
 	var rows *sql.Rows
 	var err error
 	if origin != "" {
-		query := "SELECT id," + cardColumns + " FROM event_cards WHERE session=? AND origin=? ORDER BY " + order + " LIMIT ? OFFSET ?"
+		query := "SELECT id," + cardColumns + " FROM event_cards WHERE session=? AND origin=?" + filter.predicate("") + " ORDER BY " + order + " LIMIT ? OFFSET ?"
 		if mode == timelineLatest {
 			query = "SELECT * FROM (" + query + ") ORDER BY time,sequence,id"
 		}
 		rows, err = tx.QueryContext(ctx, query, session, origin, limit, off)
 	} else {
-		rows, err = tx.QueryContext(ctx, `SELECT p.id,`+qualifiedCardColumns("c")+` FROM (SELECT id,time,sequence,import_id,otel_id FROM timeline_entries WHERE session=? ORDER BY `+order+` LIMIT ? OFFSET ?) p JOIN event_cards c ON c.id=p.import_id OR c.id=p.otel_id ORDER BY p.time,p.sequence,p.id,c.origin,c.id`, session, limit, off)
+		rows, err = tx.QueryContext(ctx, `SELECT p.id,`+qualifiedCardColumns("c")+` FROM (SELECT id,time,sequence,import_id,otel_id FROM timeline_entries WHERE session=?`+filter.predicate("")+` ORDER BY `+order+` LIMIT ? OFFSET ?) p JOIN event_cards c ON c.id=p.import_id OR c.id=p.otel_id ORDER BY p.time,p.sequence,p.id,c.origin,c.id`, session, limit, off)
 	}
 	if err != nil {
 		return nil, err

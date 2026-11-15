@@ -28,18 +28,18 @@ with tempfile.TemporaryDirectory() as folder:
   assert api('/api/session?id=codex:counter')['usage']['values']['input_tokens']=='250'
   with sync_playwright() as p:
    browser=p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox']);page=browser.new_page(viewport={'width':1440,'height':900});errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
-   page.goto(base);page.locator('#token').fill(token);page.locator('#loginform button').click();expect(page.locator('.folder')).to_have_count(2)
-   row=page.locator('[data-folder="/work/analysis"]');expect(row.locator('.usage-row')).to_contain_text('4.7K in');expect(row.locator('.usage-row')).to_contain_text('$0.1');expect(row.locator('.usage-partial')).to_be_visible();assert '1/2 sessions reporting' in row.locator('.usage-row').get_attribute('title')
+   page.goto(base);page.locator('#token').fill(token);page.locator('#loginform button').click();expect(page.locator('.session')).to_have_count(3)
+   row=page.locator('[data-session="claude:main"]');expect(row.locator('.usage-row')).to_contain_text('4.7K in');expect(row.locator('.usage-row')).to_contain_text('$0.1');assert '1/1 sessions reporting' in row.locator('.usage-row').get_attribute('title')
    if os.getenv('AGENTLOG_SCREENSHOT_DIR'):
     output=pathlib.Path(os.environ['AGENTLOG_SCREENSHOT_DIR']);output.mkdir(exist_ok=True,parents=True);page.screenshot(path=str(output/'ui-usage-folders.png'),full_page=True)
-   row.click();expect(page.locator('.session')).to_have_count(2);page.locator('[data-session="claude:main"]').click()
+   row.click()
    page.wait_for_function('() => Math.abs(scrollY+innerHeight-document.documentElement.scrollHeight)<2')
    expect(page.locator('.usage-shortcut')).to_have_text('5K tokens · $0.1')
    page.locator('.usage-shortcut').click();expect(page.locator('#sessionusage')).to_be_focused();expect(page.locator('.usage-heading')).to_be_in_viewport()
    def total(label):return page.locator('.usage-totals > div').filter(has=page.get_by_text(label,exact=True)).locator('dd')
    expect(total('Input')).to_have_text('4,700');expect(total('Output')).to_have_text('300');expect(total('Cache read')).to_have_text('700');expect(total('Cached input')).to_have_text('14.9%');expect(total('USD cost')).to_have_text('$0.1');expect(total('Error events')).to_have_text('1')
    page.locator('.usage-more summary').click();expect(page.locator('.usage-more')).to_contain_text('1.50 s')
-   page.locator('[data-kind="tool"]').click();expect(total('Input')).to_have_text('4,700')
+   page.locator('button[data-kind="tool"]').click();expect(total('Input')).to_have_text('4,700')
    if os.getenv('AGENTLOG_SCREENSHOT_DIR'):page.screenshot(path=str(output/'ui-usage-session.png'))
    page.locator('#origin').select_option('import');expect(page.locator('.usage-unreported')).to_have_text('Usage not reported')
    page.locator('#origin').select_option('otel');expect(total('Input')).to_have_text('4,700')

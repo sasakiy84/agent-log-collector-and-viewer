@@ -1,6 +1,6 @@
 # Reported usage
 
-Folder and session rows show reported input/output tokens, USD cost and error events. Session details add cache reads/writes, cached-input percentage, reasoning tokens and average request time. The shortcut beside timeline pagination stays visible at the latest entries.
+Session rows show reported input/output tokens, USD cost and error events. Session details add cache reads/writes, cached-input percentage, reasoning tokens and average request time. The shortcut beside timeline pagination stays visible at the latest entries. Explicitly linked model calls also show a short [statistics summary beneath the answer](activity.md).
 
 Totals cover the entire selected session/origin. Event-type filters and timeline pages do not change them. Folder/search/agent filters select whole sessions; folder totals combine each selected session once. Parent and child sessions retain their own usage.
 

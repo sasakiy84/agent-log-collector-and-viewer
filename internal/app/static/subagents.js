@@ -39,6 +39,7 @@ async function loadSubagent(offset){
  subagentRequest?.abort();const controller=new AbortController();subagentRequest=controller;
  $('#inspectstatus').textContent='Loading subagent logs…';$('#subagentrefresh').disabled=true;subagentPager.setLoading(true);
  const params=new URLSearchParams(state.agent?{session:state.session,agent:state.agent}:{id:state.session,limit:'40'});
+ if(!state.agent)params.set('view','activity');
  params.set(offset===null?'position':'offset',offset===null?'latest':String(offset));
  try{
   const page=await api((state.agent?'/api/subagent?':'/api/session?')+params,controller.signal);

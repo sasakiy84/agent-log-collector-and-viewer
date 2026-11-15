@@ -71,6 +71,17 @@ def snapshot(base):
     return result
 
 
+def presentation_normalized(value):
+    # New optional presentation metadata is derived from existing attributes;
+    # compare all established fields and original record payloads unchanged.
+    if isinstance(value, list):
+        return [presentation_normalized(item) for item in value]
+    if isinstance(value, dict):
+        return {key: presentation_normalized(item) for key, item in value.items()
+                if not (key in ('diagnostic', 'turn') and 'kind' in value and 'blocks' in value)}
+    return value
+
+
 def records(source):
     def record(i, name, values):
         attributes = {"session.id": "upgrade-" + source, "cwd": "/work/移行テスト", **values}
@@ -118,7 +129,7 @@ with tempfile.TemporaryDirectory() as folder:
         process, base = start(CANDIDATE, database)
         try:
             after = snapshot(base)
-            assert after == before, "API changed after " + stage + ": " + str([key for key in before if before[key] != after.get(key)])
+            assert presentation_normalized(after) == presentation_normalized(before), "API changed after " + stage + ": " + str([key for key in before if before[key] != after.get(key)])
             assert fingerprint(database) == original, "Original records changed"
             call(base, "/v1/logs", archived)
             assert call(base, "/api/stats") == before["/api/stats"], "Archived replay was reimported"

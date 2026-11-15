@@ -13,20 +13,22 @@ type Conflict struct {
 	Values []ConflictValue `json:"values"`
 }
 type TimelineEvent struct {
-	ID         string          `json:"id"`
-	Session    string          `json:"session"`
-	Source     string          `json:"source"`
-	Time       string          `json:"time"`
-	Signal     string          `json:"signal"`
-	Trace      string          `json:"trace,omitempty"`
-	Span       string          `json:"span,omitempty"`
-	ParentSpan string          `json:"parent_span,omitempty"`
-	Detail     Detail          `json:"detail"`
-	Origins    []string        `json:"origins"`
-	Records    []Event         `json:"records"`
-	Subagents  []SubagentLink  `json:"subagents,omitempty"`
-	ToolPair   *ToolPair       `json:"tool_pair,omitempty"`
-	Skills     []SkillEvidence `json:"skills,omitempty"`
+	ModelCallsMore bool            `json:"model_calls_more,omitempty"`
+	ModelCalls     []ModelCall     `json:"model_calls,omitempty"`
+	ID             string          `json:"id"`
+	Session        string          `json:"session"`
+	Source         string          `json:"source"`
+	Time           string          `json:"time"`
+	Signal         string          `json:"signal"`
+	Trace          string          `json:"trace,omitempty"`
+	Span           string          `json:"span,omitempty"`
+	ParentSpan     string          `json:"parent_span,omitempty"`
+	Detail         Detail          `json:"detail"`
+	Origins        []string        `json:"origins"`
+	Records        []Event         `json:"records"`
+	Subagents      []SubagentLink  `json:"subagents,omitempty"`
+	ToolPair       *ToolPair       `json:"tool_pair,omitempty"`
+	Skills         []SkillEvidence `json:"skills,omitempty"`
 }
 
 func projectEvent(id string, records []Event) (TimelineEvent, error) {
@@ -63,6 +65,10 @@ func projectEvent(id string, records []Event) (TimelineEvent, error) {
 }
 func validEventTime(s string) bool { return s != "" && s != "1970-01-01T00:00:00.000000000Z" }
 func combineDetails(base, other Detail, baseOrigin, otherOrigin string) Detail {
+	base.Diagnostic = base.Diagnostic && other.Diagnostic
+	if base.Turn == "" {
+		base.Turn = other.Turn
+	}
 	if base.ToolPhase == "" {
 		base.ToolPhase = other.ToolPhase
 	}

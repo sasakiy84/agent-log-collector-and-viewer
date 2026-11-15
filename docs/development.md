@@ -23,7 +23,7 @@ SELECT version,name,applied_at FROM schema_migrations ORDER BY version;
 SELECT name,complete,processed,updated_at,error FROM maintenance_jobs ORDER BY name;
 ```
 
-`refreshProjections` defines write dependency order: trace ownership, cards, full-text search, timelines and usage totals. The startup path commits resumable card/session batches and flushes usage totals before exposing the API. Changed trace identities use `trace_dirty`; identities containing archive-locked sessions stay queued until the locks are released.
+`refreshProjections` defines write dependency order: trace ownership, cards, full-text search, timelines, activity metadata, per-call statistics, and overview summaries. The startup path commits resumable card/session batches and flushes usage totals before exposing the API. Changed trace identities use `trace_dirty`; identities containing archive-locked sessions stay queued until the locks are released.
 
 Database URI construction applies foreign keys, busy timeout and writer transaction settings to every connection, including replacements. WAL readers and archive snapshots use read-only connections.
 
@@ -38,7 +38,7 @@ go build ./cmd/agentlog
 bash scripts/test-upgrade.sh
 ```
 
-The upgrade check downloads the Linux v0.9.0 release with a pinned SHA-256, builds a synthetic database with all three agents and archived data, and compares API responses before/after upgrade and restart. It verifies unchanged original identities/payloads, foreign keys, archive replay suppression and unchanged completed checkpoints. To use an existing baseline binary:
+The upgrade check downloads the Linux v0.9.0 release with a pinned SHA-256, builds a synthetic database with all three agents and archived data, and compares established API fields before/after upgrade and restart (allowing the new optional presentation metadata). It verifies unchanged original identities/payloads, foreign keys, archive replay suppression and unchanged completed checkpoints. To use an existing baseline binary:
 
 ```sh
 AGENTLOG_BASELINE_BIN=/path/to/v0.9.0/agentlog bash scripts/test-upgrade.sh
@@ -50,7 +50,7 @@ The optional lifecycle benchmark compares identical ready databases containing u
 python3 scripts/lifecycle_performance.py --binary ./agentlog --baseline /path/to/v0.9.0/agentlog
 ```
 
-Use the browser flows for affected features. UI files have not changed in this refactor; database/API equivalence and archive/navigation browser flows cover the integration boundary.
+Use the browser flows for affected features. `AGENTLOG_BIN=./agentlog python3 scripts/activity_projects_browser_test.py` checks project navigation and Activity/Diagnostics pagination on desktop and mobile.
 
 ## CI and releases
 

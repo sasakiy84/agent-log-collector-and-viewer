@@ -107,6 +107,7 @@ func (a *App) Handler() http.Handler {
 	})
 	mux.HandleFunc("GET /api/sessions", a.sessions)
 	mux.HandleFunc("GET /api/folders", a.folders)
+	mux.HandleFunc("GET /api/projects", a.projects)
 	mux.HandleFunc("GET /api/session", a.session)
 	mux.HandleFunc("GET /api/event", a.event)
 	mux.HandleFunc("GET /api/subagent", a.subagent)

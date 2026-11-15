@@ -19,6 +19,7 @@ type folderKey struct {
 type folderMember struct {
 	folderKey
 	End, Usage string
+	Project    sql.NullString
 }
 
 // Reports and overlap counts make subtraction exact when a session disappears,
@@ -94,6 +95,12 @@ func refreshFolderBatch(ctx context.Context, tx *sql.Tx) (int, error) {
 		return 0, err
 	}
 	groups := map[folderKey]*folderAggregate{}
+	projects := map[folderKey]int{}
+	projectChange := func(m folderMember, sign int) {
+		if m.Project.Valid {
+			projects[folderKey{Path: m.Project.String, Source: m.Source, Diagnostic: m.Diagnostic}] += sign
+		}
+	}
 	change := func(member folderMember, sign int) error {
 		aggregate := groups[member.folderKey]
 		if aggregate == nil {
@@ -114,11 +121,11 @@ func refreshFolderBatch(ctx context.Context, tx *sql.Tx) (int, error) {
 	}
 	for _, session := range sessions {
 		var old, next folderMember
-		oldErr := tx.QueryRowContext(ctx, "SELECT path,source,diagnostic,end,usage FROM folder_members WHERE session=?", session).Scan(&old.Path, &old.Source, &old.Diagnostic, &old.End, &old.Usage)
+		oldErr := tx.QueryRowContext(ctx, "SELECT path,source,diagnostic,end,usage,project FROM folder_members WHERE session=?", session).Scan(&old.Path, &old.Source, &old.Diagnostic, &old.End, &old.Usage, &old.Project)
 		if oldErr != nil && !errors.Is(oldErr, sql.ErrNoRows) {
 			return 0, oldErr
 		}
-		nextErr := tx.QueryRowContext(ctx, "SELECT "+directoryColumn+",source,end,"+usageColumn+" FROM session_catalog s WHERE s.session=? AND NOT EXISTS(SELECT 1 FROM archive_locks WHERE session=s.session)", session).Scan(&next.Path, &next.Source, &next.End, &next.Usage)
+		nextErr := tx.QueryRowContext(ctx, "SELECT "+directoryColumn+",source,end,"+usageColumn+",project_key FROM session_catalog s WHERE s.session=? AND NOT EXISTS(SELECT 1 FROM archive_locks WHERE session=s.session)", session).Scan(&next.Path, &next.Source, &next.End, &next.Usage, &next.Project)
 		if nextErr != nil && !errors.Is(nextErr, sql.ErrNoRows) {
 			return 0, nextErr
 		}
@@ -139,6 +146,7 @@ func refreshFolderBatch(ctx context.Context, tx *sql.Tx) (int, error) {
 			next.Usage = string(encoded)
 		}
 		if oldErr == nil && (nextErr != nil || old != next) {
+			projectChange(old, -1)
 			if err = change(old, -1); err != nil {
 				return 0, err
 			}
@@ -147,10 +155,11 @@ func refreshFolderBatch(ctx context.Context, tx *sql.Tx) (int, error) {
 			}
 		}
 		if nextErr == nil && (oldErr != nil || old != next) {
+			projectChange(next, 1)
 			if err = change(next, 1); err != nil {
 				return 0, err
 			}
-			if _, err = tx.ExecContext(ctx, "INSERT INTO folder_members VALUES(?,?,?,?,?,?)", session, next.Path, next.Source, next.Diagnostic, next.End, next.Usage); err != nil {
+			if _, err = tx.ExecContext(ctx, "INSERT INTO folder_members VALUES(?,?,?,?,?,?,?)", session, next.Path, next.Source, next.Diagnostic, next.End, next.Usage, next.Project); err != nil {
 				return 0, err
 			}
 		}
@@ -176,6 +185,9 @@ func refreshFolderBatch(ctx context.Context, tx *sql.Tx) (int, error) {
 		if err != nil {
 			return 0, err
 		}
+	}
+	if err = updateProjectTotals(ctx, tx, projects); err != nil {
+		return 0, err
 	}
 	return len(sessions), nil
 }

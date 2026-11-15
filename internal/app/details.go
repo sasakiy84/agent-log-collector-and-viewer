@@ -13,6 +13,8 @@ type Block struct {
 	Code  bool   `json:"code"`
 }
 type Detail struct {
+	Diagnostic bool           `json:"diagnostic,omitempty"`
+	Turn       string         `json:"turn,omitempty"`
 	ToolPhase  string         `json:"tool_phase,omitempty"`
 	Conflicts  []Conflict     `json:"conflicts,omitempty"`
 	Name       string         `json:"name"`
@@ -112,6 +114,7 @@ func describe(e Event, d document) Detail {
 	p.Cwd = get("cwd", "working_directory", "workspace.path")
 	p.Project = get("service.namespace", "project.name")
 	p.Tags = get("project.tags")
+	p.Turn = str(get("turn.id", "turn_id", "root.turn.id"))
 	op := str(get("gen_ai.operation.name"))
 	switch {
 	case e.Source == "codex" && name == "codex.skill_invocation":
@@ -124,11 +127,11 @@ func describe(e Event, d document) Detail {
 		p.Kind = "user"
 		p.Title = "User"
 		p.block("Request", get("prompt_text", "prompt", "user_prompt"), false)
-	case name == "gen_ai.assistant.message" || strings.Contains(name, "assistant_response"):
+	case name == "gen_ai.assistant.message" || eventSuffix(name) == "assistant_response" || e.Source == "codex" && name == "codex.agent_response":
 		p.Kind = "assistant"
 		p.Title = "Assistant"
 		p.block("Response", get("response", "response_text", "assistant_response", "text"), false)
-	case strings.Contains(name, "tool") || op == "execute_tool":
+	case isToolEvent(name, a) || op == "execute_tool":
 		p.Kind = "tool"
 		p.Title = str(get("gen_ai.tool.name", "tool_name", "tool_name_safe"))
 		if p.Title == "" {
@@ -162,7 +165,7 @@ func describe(e Event, d document) Detail {
 		p.field("Truncated", get("output_truncated"))
 		p.field("Decision", get("decision"))
 		p.field("Exit code", get("exit_code"))
-	case containsAny(name, "api_request", "llm_request", "response", "sse_event", "chat") || op == "chat":
+	case isModelEvent(name, a) || op == "chat":
 		p.Kind = "model"
 		p.Title = "Model request"
 		if e.Source == "codex" && str(a["agentlog.origin"]) == "import" && name == "gen_ai.client.operation" && present(a["agentlog.import.id"]) {
@@ -278,6 +281,7 @@ func describe(e Event, d document) Detail {
 	if p.Kind == "tool" && len(p.Blocks) == 0 {
 		p.block("Details", "Tool content not exported", false)
 	}
+	p.Diagnostic = diagnosticDetail(e, p)
 	return p
 }
 func containsAny(s string, values ...string) bool {

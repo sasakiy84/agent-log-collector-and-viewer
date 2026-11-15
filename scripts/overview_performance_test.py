@@ -36,12 +36,15 @@ if __name__=='__main__':
   with sqlite3.connect(fixture) as src,sqlite3.connect(db) as dst:src.backup(dst)
   start_time=time.perf_counter();proc,base=start(binary,db);print('STARTUP',round(time.perf_counter()-start_time,3),flush=True)
   try:
-   for path in ['/api/folders','/api/sessions?folder=/work/project-00','/api/sessions']:
+   for path in ['/api/folders','/api/projects','/api/sessions?folder=/work/project-00','/api/sessions']:
+    if path=='/api/projects' and name=='baseline':continue
     samples=[]
     for i in range(4):
      begin=time.perf_counter();body=api(base,path);samples.append(round((time.perf_counter()-begin)*1000,2))
     print(name,args.sessions,path,'first_ms',samples[0],'median_ms',statistics.median(samples[1:]),'bytes',len(body),flush=True)
     result=json.loads(body)
+    if path=='/api/projects':
+     assert result['total']==min(20,args.sessions) and result['sessions']==args.sessions
     if name=='baseline':expected[path]=result
     elif path in expected:assert result==expected[path],path
     if path=='/api/folders':
@@ -50,7 +53,7 @@ if __name__=='__main__':
    if args.browser:
     from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
-     browser=p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox']);page=browser.new_page(viewport={'width':1440,'height':1000});page.goto(base);page.locator('#token').fill(token);page.locator('#loginform button').click();page.wait_for_selector('.folder')
+     browser=p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox']);page=browser.new_page(viewport={'width':1440,'height':1000});page.goto(base);page.locator('#token').fill(token);page.locator('#loginform button').click();page.wait_for_selector('.session')
      response=json.loads(api(base,'/api/sessions?folder=/work/project-00'))
      t=page.evaluate('rows=>{const start=performance.now();renderSessions(rows,1000);return performance.now()-start}',response)
      print('BROWSER render',min(200,len(response)),'sessions ms',round(t,2),flush=True);browser.close()
