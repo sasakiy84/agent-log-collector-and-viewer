@@ -129,6 +129,13 @@ func TestProjectExportIncludesWholeSessionsAndHiddenData(t *testing.T) {
 	if !reflect.DeepEqual(want, got) {
 		t.Fatal("original OTLP document changed")
 	}
+	// The list's direct action must honor its root/internal/lock visibility.
+	visible := url.Values{"project": {"name:project"}, "diagnostics": {"0"}, "include_children": {"0"}, "include_locked": {"0"}}
+	response = archiveReq(a, "GET", "/api/export/download?"+visible.Encode(), "")
+	manifest, events = decodeExport(t, response.Body.Bytes())
+	if manifest.Sessions != 1 || len(events) != 1 || events[0].Session != claude.Session {
+		t.Fatal("direct-list export differs from visible sessions", manifest, events)
+	}
 }
 
 func TestExportIgnoresPaginationAndSupportsUnassignedProject(t *testing.T) {

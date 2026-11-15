@@ -86,7 +86,7 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("POST /api/archives/{id}/delete", a.archiveDelete)
 	mux.HandleFunc("POST /api/archives/{id}/cancel", a.archiveCancel)
 	mux.HandleFunc("POST /api/archives/{id}/compact", a.archiveCompact)
-	mux.HandleFunc("GET /archive", serveShell)
+	mux.HandleFunc("GET /archive", redirectSessionAction)
 	mux.HandleFunc("GET /api/sessions", a.sessions)
 	mux.HandleFunc("GET /api/search/summary", a.searchSummary)
 	mux.HandleFunc("GET /api/folders", a.folders)
@@ -99,7 +99,7 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("GET /api/export", a.export)
 	mux.HandleFunc("GET /api/export/sessions", a.exportSessions)
 	mux.HandleFunc("GET /api/export/download", a.filteredExport)
-	mux.HandleFunc("GET /export", serveShell)
+	mux.HandleFunc("GET /export", redirectSessionAction)
 	mux.HandleFunc("GET /api/status", a.status)
 	mux.HandleFunc("GET /api/stats", func(w http.ResponseWriter, r *http.Request) {
 		var n, s int
@@ -139,11 +139,21 @@ func serveShell(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/skills":
 		title = "Skills"
-	case "/archive":
-		title = "Archive"
-	case "/export":
-		title = "Export"
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte(strings.Replace(string(b), "<title>Sessions · Agentlog</title>", "<title>"+title+" · Agentlog</title>", 1)))
+}
+
+// Retired standalone actions return to the shared session list. Preserve saved
+// filters; archive links open the list's inactive-session panel.
+func redirectSessionAction(w http.ResponseWriter, r *http.Request) {
+	params := r.URL.Query()
+	if r.URL.Path == "/archive" {
+		params.Set("manage", "inactive")
+	}
+	target := "/"
+	if len(params) > 0 {
+		target += "?" + params.Encode()
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
 }

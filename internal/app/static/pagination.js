@@ -42,6 +42,7 @@ class Pagination {
     this.pages = Math.max(1, Math.ceil(total / size));
     this.page = Math.min(this.pages, Math.floor(offset / size) + 1);
     this.element.classList.toggle("pagination-many", this.pages >= 100);
+    this.element.classList.toggle("pagination-single", this.pages === 1);
     const button = (page, text, aria, disabled = false, neighbor = false) =>
       `<button type="button" data-page="${page}" aria-label="${aria}"${neighbor ? ' class="pagination-neighbor"' : ""}${page === this.page ? ' aria-current="page"' : ""}${disabled ? " disabled" : ""}>${text}</button>`;
     // Always expose the endpoints and at most three pages around the current one.

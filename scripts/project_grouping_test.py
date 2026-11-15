@@ -103,10 +103,10 @@ with tempfile.TemporaryDirectory() as directory:
             expect(page.locator('#projectlist button small')).to_have_text('47')
             expect(page.locator('[data-project="name:shop"]')).to_have_attribute('aria-current', 'true')
             assert urllib.parse.parse_qs(urllib.parse.urlsplit(page.url).query)['project'] == ['name:shop']
-            page.locator('#projectexport').click()
+            page.locator('#dataoptions summary').click()
             expect(page.locator('.session')).to_have_count(47)
             with page.expect_download() as pending:
-                page.locator('#downloadexport').click()
+                page.locator('#projectexport').click()
             with zipfile.ZipFile(pending.value.path()) as archive:
                 manifest = json.loads(archive.read('manifest.json'))
                 events = archive.read('events.jsonl').splitlines()

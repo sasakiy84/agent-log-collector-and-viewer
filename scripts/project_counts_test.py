@@ -104,11 +104,11 @@ with tempfile.TemporaryDirectory() as root:
             page.locator('#showdiagnostics').uncheck()
             expect(page.locator('.session')).to_have_count(2)
             expect(page.locator('[data-project="name:shop"] small')).to_have_text('2')
-            page.locator('#projectexport').click()
-            expect(page.locator('.session')).to_have_count(42)
-            expect(page.locator('[data-project="name:shop"] small')).to_have_text('42')
+            page.locator('#dataoptions summary').click()
+            expect(page.locator('.session')).to_have_count(2)
+            expect(page.locator('[data-project="name:shop"] small')).to_have_text('2')
             with page.expect_download() as pending:
-                page.locator('#downloadexport').click()
+                page.locator('#projectexport').click()
             with zipfile.ZipFile(pending.value.path()) as archive:
                 manifest = json.loads(archive.read('manifest.json'))
                 assert manifest['sessions'] == manifest['records'] == len(archive.read('events.jsonl').splitlines()) == 42

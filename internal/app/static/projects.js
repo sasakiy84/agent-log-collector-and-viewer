@@ -18,13 +18,12 @@ function projectName(id) {
 }
 function renderProjects() {
   const selection = selectedProjects();
-  $("#projectexport").hidden = exportMode || !selection.length;
-  const exportParams = new URLSearchParams({ diagnostics: "1" });
-  for (const id of selection) exportParams.append("project", id);
-  $("#projectexport").href = "/export?" + exportParams;
+  $("#projectexport").hidden = skillsMode || !selection.length;
   $("#skillsnav").href =
     "/skills" +
     (() => { const params = appendSearchScope(new URLSearchParams(), { kinds: false, text: false }); return params.size ? "?" + params : ""; })();
+  const sessionParams = appendSearchScope(new URLSearchParams(), { kinds: false, text: false });
+  $("#sessionsnav").href = "/" + (sessionParams.size ? "?" + sessionParams : "");
   const focused = document.activeElement?.dataset.project;
   const focusedCheck = document.activeElement?.dataset.projectCheck;
   const all = $("#allprojects");
@@ -77,7 +76,6 @@ async function loadProjects(signal, more = false) {
   }
   params.set("q", projectsQuery);
   if ($("#showdiagnostics").checked) params.set("diagnostics", "1");
-  if (exportMode && $("#exportchildren").checked) params.set("include_children", "1");
   const key = params.toString();
   if (!more && projectsKey === key) {
     renderProjects();
@@ -93,6 +91,14 @@ async function loadProjects(signal, more = false) {
   renderProjects();
 }
 function setupProjects() {
+  $("#projectexport").onclick = () => {
+    const params = new URLSearchParams({ diagnostics: "1" });
+    for (const id of selectedProjects()) params.append("project", id);
+    $("#dataoptions").open = false;
+    location.assign("/api/export/download?" + params);
+  };
+  $("#sessionsnav").setAttribute("aria-current", skillsMode ? "false" : "page");
+  $("#skillsnav").setAttribute("aria-current", skillsMode ? "page" : "false");
   $("#allprojects").onclick = () => chooseProject(null);
   let timer,
     composing = false;
