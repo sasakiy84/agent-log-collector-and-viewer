@@ -6,6 +6,8 @@ messages, including intermediate assistant explanations, in chronological order.
 up to 50 logs; **Load more logs** fetches the next batch. Closed groups show error
 counts, and clicking an error count opens just those errors. **Include diagnostics**
 adds internal telemetry. Reopening a loaded group reuses its loaded cards.
+Group counts follow the diagnostics toggle; diagnostic-only records do not inflate
+the normal processing count.
 
 ![Conversation with collapsed processing logs](ui-conversation.png)
 
@@ -54,6 +56,12 @@ tool output. They stay in Diagnostics, do not count as tool executions, and cann
 pair with real tool inputs/outputs. Their displayed duration is the observation
 span's duration. `codex.guardian_assessment` is a separate assessment event; when
 provided, its outcome, risk, authorization and rationale are shown.
+
+Native Codex tool spans such as `exec` or `exec_command` that carry only timing
+and contextual IDs appear as **Tool execution timing** in Diagnostics. A completed
+span does not prove that output was recorded. Timing-only spans cannot pair with
+real tool input/output records. Spans containing actual tool content stay visible;
+failures remain accessible with diagnostics disabled.
 
 Existing databases receive versioned migrations and a resumable presentation
 backfill after HTTP startup. Original event IDs and OTLP payloads are preserved.

@@ -11,6 +11,31 @@ func guardianInternal(name string, a map[string]any) bool {
 		strings.HasPrefix(str(a["code.file.path"]), "ext/guardian-v2/")
 }
 
+func toolBodyPresent(d Detail) bool {
+	for _, block := range d.Blocks {
+		switch block.Label {
+		case "Input", "Output", "Command", "File", "Diff":
+			text := strings.TrimSpace(block.Text)
+			if text != "" && text != "Content not exported" && text != "Tool content not exported" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func codexToolMetadata(e Event, d Detail) bool {
+	return e.Source == "codex" && e.Signal == "traces" && e.Origin != "import" &&
+		str(d.Attributes["agentlog.origin"]) != "import" && d.Kind == "tool" && !toolBodyPresent(d)
+}
+
+// A contextual tool_name and a completed span do not establish a tool result.
+// Explicit tool event names/operations retain their input/output semantics.
+func codexToolTiming(e Event, d Detail) bool {
+	return codexToolMetadata(e, d) && toolPhase(d.Name, "", nil) == "" &&
+		str(d.Attributes["gen_ai.operation.name"]) != "execute_tool"
+}
+
 func eventSuffix(name string) string {
 	for _, prefix := range []string{"codex.", "claude_code.", "github.copilot.", "copilot."} {
 		if strings.HasPrefix(name, prefix) {
@@ -41,6 +66,9 @@ func isModelEvent(name string, a map[string]any) bool {
 
 func diagnosticDetail(e Event, d Detail) bool {
 	if e.Source == "codex" && guardianInternal(d.Name, d.Attributes) {
+		return true
+	}
+	if codexToolMetadata(e, d) {
 		return true
 	}
 	if d.Kind == "metric" {

@@ -87,6 +87,7 @@ func (a *App) prepareDatabase(ctx context.Context) error {
 		{"event presentation", func() error { return a.runMaintenance(ctx, "presentation.v1", backfillPresentation, 0) }},
 		{"Claude and Copilot presentations", func() error { return a.runMaintenance(ctx, "providers.v1", backfillProviders, 0) }},
 		{"conversation and Guardian presentations", func() error { return a.runMaintenance(ctx, conversationJob, backfillConversation, 0) }},
+		{"Codex tool timing presentations", func() error { return a.runMaintenance(ctx, toolTimingJob, backfillToolTiming, 0) }},
 		{"model call ancestry", func() error {
 			return inTransaction(ctx, a.DB, func(tx *sql.Tx) error { return refreshModelCalls(ctx, tx) })
 		}},
