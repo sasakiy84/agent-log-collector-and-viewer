@@ -308,6 +308,17 @@ func describe(e Event, d document) Detail {
 		at := decodedAttributes(event["attributes"])
 		p.block(str(event["name"]), firstValue(at, "tool.output", "exception.message", "output", "content"), false)
 	}
+	if codexToolTiming(e, p) {
+		p.Kind, p.Title, p.ToolPhase = "event", "Tool execution timing", ""
+		p.field("Tool", get("gen_ai.tool.name", "tool_name", "tool_name_safe"))
+		p.field("Phase", get("codex.tool.phase"))
+		p.field("Aborted", get("aborted"))
+		for i := range p.Fields {
+			if duration := spanDuration(r); p.Fields[i][0] == "Duration" && duration != "" {
+				p.Fields[i] = [2]string{"Span duration", duration + " ms"}
+			}
+		}
+	}
 	if p.Kind == "tool" && len(p.Blocks) == 0 {
 		p.block("Details", "Tool content not exported", false)
 	}

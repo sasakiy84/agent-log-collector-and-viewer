@@ -16,7 +16,7 @@ function conversationTimelineHTML(visible) {
       group, events: [], next: "", loaded: false, request: null,
       diagnostics: group.activity === 0, matches: false, errors: false,
     });
-    return `<details class="processing-group" data-processing="${index}"><summary><span>${group.activity ? "Processing details" : "Diagnostics"}<span class="muted"> · ${group.count.toLocaleString()} logs</span></span>${group.errors ? `<button type="button" class="processing-error status failed">${group.errors.toLocaleString()} ${group.errors === 1 ? "error" : "errors"}</button>` : ""}${group.matches ? `<button type="button" class="processing-match">${group.matches.toLocaleString()} ${group.matches === 1 ? "log matches" : "logs match"}</button>` : ""}</summary><div class="processing-body"><div class="processing-options">${group.count > group.activity ? `<label><input type="checkbox" data-processing-diagnostics ${group.activity === 0 ? "checked" : ""}>Include diagnostics</label>` : ""}${group.matches ? '<label><input type="checkbox" data-processing-matches>Matching logs only</label>' : ""}${group.errors ? '<label><input type="checkbox" data-processing-errors>Errors only</label>' : ""}</div><p class="processing-status muted" role="status"></p><div class="processing-events"></div><button type="button" class="processing-more" hidden>Load more logs</button><button type="button" class="processing-retry" hidden>Retry</button></div></details>`;
+    return `<details class="processing-group" data-processing="${index}"><summary><span>${group.activity ? "Processing details" : "Diagnostics"}<span class="muted processing-count" title="${group.count.toLocaleString()} total logs"> · ${(group.activity || group.count).toLocaleString()} logs</span></span>${group.errors ? `<button type="button" class="processing-error status failed">${group.errors.toLocaleString()} ${group.errors === 1 ? "error" : "errors"}</button>` : ""}${group.matches ? `<button type="button" class="processing-match">${group.matches.toLocaleString()} ${group.matches === 1 ? "log matches" : "logs match"}</button>` : ""}</summary><div class="processing-body"><div class="processing-options">${group.count > group.activity ? `<label><input type="checkbox" data-processing-diagnostics ${group.activity === 0 ? "checked" : ""}>Include diagnostics (${(group.count - group.activity).toLocaleString()})</label>` : ""}${group.matches ? '<label><input type="checkbox" data-processing-matches>Matching logs only</label>' : ""}${group.errors ? '<label><input type="checkbox" data-processing-errors>Errors only</label>' : ""}</div><p class="processing-status muted" role="status"></p><div class="processing-events"></div><button type="button" class="processing-more" hidden>Load more logs</button><button type="button" class="processing-retry" hidden>Retry</button></div></details>`;
   };
   let html = visible.length ? "" : '<p class="empty">Conversation text was not recorded.</p>';
   for (const [event, detail] of visible) {
@@ -81,6 +81,7 @@ function bindProcessingGroups() {
 }
 
 async function loadProcessing(element, state, more = false) {
+  element.querySelector(".processing-count").textContent = ` · ${(state.diagnostics ? state.group.count : state.group.activity).toLocaleString()} logs`;
   state.request?.abort();
   const controller = new AbortController();
   state.request = controller;

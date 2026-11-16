@@ -1,0 +1,246 @@
+{
+  "record": {
+    "attributes": [
+      {
+        "key": "code.file.path",
+        "value": {
+          "stringValue": "core/src/tools/parallel.rs"
+        }
+      },
+      {
+        "key": "code.module.name",
+        "value": {
+          "stringValue": "codex_core::tools::parallel"
+        }
+      },
+      {
+        "key": "code.line.number",
+        "value": {
+          "intValue": "263"
+        }
+      },
+      {
+        "key": "thread.id",
+        "value": {
+          "intValue": "31"
+        }
+      },
+      {
+        "key": "thread.name",
+        "value": {
+          "stringValue": "tokio-rt-worker"
+        }
+      },
+      {
+        "key": "target",
+        "value": {
+          "stringValue": "codex_core::tools::parallel"
+        }
+      },
+      {
+        "key": "tool_name",
+        "value": {
+          "stringValue": "exec"
+        }
+      },
+      {
+        "key": "thread.id",
+        "value": {
+          "stringValue": "fixture-session"
+        }
+      },
+      {
+        "key": "conversation.id",
+        "value": {
+          "stringValue": "fixture-session"
+        }
+      },
+      {
+        "key": "turn.id",
+        "value": {
+          "stringValue": "fixture-turn"
+        }
+      },
+      {
+        "key": "turn_id",
+        "value": {
+          "stringValue": "fixture-turn"
+        }
+      },
+      {
+        "key": "tool_source",
+        "value": {
+          "stringValue": "direct"
+        }
+      },
+      {
+        "key": "call_id",
+        "value": {
+          "stringValue": "fixture-call"
+        }
+      },
+      {
+        "key": "codex.tool.phase",
+        "value": {
+          "stringValue": "dispatch"
+        }
+      },
+      {
+        "key": "aborted",
+        "value": {
+          "boolValue": false
+        }
+      },
+      {
+        "key": "busy_ns",
+        "value": {
+          "intValue": "3725556"
+        }
+      },
+      {
+        "key": "idle_ns",
+        "value": {
+          "intValue": "5213020810"
+        }
+      }
+    ],
+    "endTimeUnixNano": "1794754456334216869",
+    "events": [
+      {
+        "attributes": [
+          {
+            "key": "level",
+            "value": {
+              "stringValue": "INFO"
+            }
+          },
+          {
+            "key": "target",
+            "value": {
+              "stringValue": "codex_otel.trace_safe"
+            }
+          },
+          {
+            "key": "event.name",
+            "value": {
+              "stringValue": "codex.tool_result_ready"
+            }
+          },
+          {
+            "key": "dispatch_to_result_ready_ms",
+            "value": {
+              "doubleValue": 5216.542355
+            }
+          },
+          {
+            "key": "conversation.id",
+            "value": {
+              "stringValue": "fixture-session"
+            }
+          },
+          {
+            "key": "turn_id",
+            "value": {
+              "stringValue": "fixture-turn"
+            }
+          },
+          {
+            "key": "call_id",
+            "value": {
+              "stringValue": "fixture-call"
+            }
+          },
+          {
+            "key": "tool_name",
+            "value": {
+              "stringValue": "exec"
+            }
+          },
+          {
+            "key": "tool_namespace",
+            "value": {
+              "stringValue": "functions"
+            }
+          },
+          {
+            "key": "tool_source",
+            "value": {
+              "stringValue": "direct"
+            }
+          },
+          {
+            "key": "code.file.path",
+            "value": {
+              "stringValue": "core/src/tools/call_trace.rs"
+            }
+          },
+          {
+            "key": "code.module.name",
+            "value": {
+              "stringValue": "codex_core::tools::call_trace"
+            }
+          },
+          {
+            "key": "code.line.number",
+            "value": {
+              "intValue": "75"
+            }
+          }
+        ],
+        "name": "codex.tool_result_ready",
+        "timeUnixNano": "1794754456334037278"
+      }
+    ],
+    "flags": 257,
+    "kind": "SPAN_KIND_INTERNAL",
+    "name": "exec",
+    "parentSpanId": "cccccccccccccccc",
+    "spanId": "bbbbbbbbbbbbbbbb",
+    "startTimeUnixNano": "1794754451117470827",
+    "status": {},
+    "traceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "resource": {
+    "attributes": [
+      {
+        "key": "service.name",
+        "value": {
+          "stringValue": "codex-app-server"
+        }
+      },
+      {
+        "key": "telemetry.sdk.version",
+        "value": {
+          "stringValue": "0.31.0"
+        }
+      },
+      {
+        "key": "service.version",
+        "value": {
+          "stringValue": "0.169.0"
+        }
+      },
+      {
+        "key": "telemetry.sdk.name",
+        "value": {
+          "stringValue": "opentelemetry"
+        }
+      },
+      {
+        "key": "env",
+        "value": {
+          "stringValue": "dev"
+        }
+      },
+      {
+        "key": "telemetry.sdk.language",
+        "value": {
+          "stringValue": "rust"
+        }
+      }
+    ]
+  },
+  "scope": {
+    "name": "codex-app-server"
+  }
+}

@@ -65,7 +65,11 @@ with tempfile.TemporaryDirectory() as directory:
             'name': 'guardian_scoring_observation', 'traceId': 'a' * 32, 'spanId': 'b' * 16,
             'startTimeUnixNano': str(stamp + 3000000000), 'endTimeUnixNano': str(stamp + 3000012938),
             'attributes': attrs({'session.id': 'chat', 'tool_name': 'exec_command', 'call_id': 'call',
-                                 'code.module.name': 'codex_guardian_v2::async_scorer::observation'})}]}]}]})
+                                 'code.module.name': 'codex_guardian_v2::async_scorer::observation'})}, {
+            'name': 'exec', 'traceId': 'a' * 32, 'spanId': 'c' * 16,
+            'startTimeUnixNano': str(stamp + 2500000000), 'endTimeUnixNano': str(stamp + 3500000000),
+            'attributes': attrs({'session.id': 'chat', 'tool_name': 'exec_command', 'call_id': 'call',
+                                 'codex.tool.phase': 'dispatch', 'code.module.name': 'codex_core::tools::parallel'})}]}]}]})
         wait_for_ingestion(base, '')
         with sync_playwright() as p:
             browser = p.chromium.launch(executable_path='/usr/bin/chromium', headless=True, args=['--no-sandbox'])
@@ -83,13 +87,24 @@ with tempfile.TemporaryDirectory() as directory:
             page.evaluate('document.activeElement?.blur();window.scrollTo(0,0)')
             page.screenshot(path=str(out / 'conversation-desktop.png'), full_page=True)
             first = page.locator('.processing-group').first
+            expect(first.locator('.processing-count')).to_have_text(' · 2 logs')
             first.locator('summary').click()
             expect(first.locator('.event')).to_have_count(2)
             first.locator('.event.tool').first.click()
             expect(page.locator('.toolpair')).to_contain_text('日本語の認証エラー')
             page.locator('#closeinspector').click()
             first.locator('[data-processing-diagnostics]').check()
-            expect(first.locator('.event')).to_have_count(3)
+            expect(first.locator('.event')).to_have_count(4)
+            expect(first.locator('.processing-count')).to_have_text(' · 4 logs')
+            expect(first.locator('.event.tool')).to_have_count(2)
+            timing = first.locator('.event').filter(has_text='Tool execution timing')
+            timing.click()
+            expect(page.locator('#inspectortitle')).to_have_text('Tool execution timing')
+            expect(page.locator('#inspectdetails')).to_contain_text('dispatch')
+            expect(page.locator('.toolpair')).to_have_count(0)
+            assert 'Tool content not exported' not in first.inner_text()
+            page.screenshot(path=str(out / 'tool-timing-inspector.png'), full_page=True)
+            page.locator('#closeinspector').click()
             guardian = first.locator('.event').filter(has_text='Guardian internal observation')
             guardian.click()
             expect(page.locator('#inspectortitle')).to_have_text('Guardian internal observation')

@@ -60,16 +60,7 @@ func backfillConversation(ctx context.Context, tx *sql.Tx, cursor string) (strin
 			// Dirty both sides before removing false identities. A previously
 			// merged real tool result must reappear as its own timeline card.
 			if guardian {
-				_, err = tx.ExecContext(ctx, `INSERT OR IGNORE INTO read_model_dirty
- SELECT session,import_id FROM timeline_entries WHERE (import_id=? OR otel_id=?) AND import_id<>''
- UNION ALL SELECT session,otel_id FROM timeline_entries WHERE (import_id=? OR otel_id=?) AND otel_id<>''`, e.ID, e.ID, e.ID, e.ID)
-				if err == nil {
-					_, err = tx.ExecContext(ctx, "INSERT OR IGNORE INTO read_model_dirty VALUES(?,?)", e.Session, e.ID)
-				}
-				if err == nil {
-					_, err = tx.ExecContext(ctx, "DELETE FROM event_keys WHERE event_id=?", e.ID)
-				}
-				if err != nil {
+				if err = removeToolIdentity(ctx, tx, e); err != nil {
 					return cursor, 0, err
 				}
 			}
