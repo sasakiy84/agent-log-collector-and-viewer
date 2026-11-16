@@ -34,6 +34,21 @@ Python統合テストの起動fixture重複が残ります。今回の障害修�
 - 検索は既存の日本語・時間・複数プロジェクト・origin条件のAPIテストと、
   検索→集計→ZIP出力→Skillsのブラウザーフローを使います。
 
+### Docker build follow-up
+
+Dockerfile・Compose・リリース設定・Dockerテストを別担当がレビューしました。
+SSL終端はホストNginx、コンテナはHTTPの構成を維持しています。
+
+| 重要度 | 問題 | 対応 |
+| --- | --- | --- |
+| P2 | ソース変更でGoのコンパイル層が失効すると、SQLite・日本語辞書などの依存も毎回コンパイルされる。 | module/build cacheをBuildKitで共有し、VERSION指定を依存取得の後へ移動。テスト専用ファイルもコンテキストから除外。 |
+| P2 | 大規模DockerテストでDBを差し替えて同じURLで再起動すると、古い準備済みキャッシュと原本件数だけで成功判定し、索引整備中の一覧を検証してしまう。 | 毎回`/api/status`のready・未処理0件を確認してから検証する。 |
+| P3 | Dockerテストが固定socketで利用者のDocker contextを上書きする。 | 標準Docker CLIのcontext・DOCKER_HOSTをそのまま使う。 |
+
+ソース1ファイルを変更した実測では、コンパイル工程が32.0秒から3.4秒へ短縮しました。
+テスト専用ファイルの変更はコンパイル層がCACHEDになり、VERSION変更でも依存取得層を再利用します。
+キャッシュ変更前後の既定ビルドは同一の実行イメージになりました。
+
 ## v0.13.0
 
 This records the v0.13.0 review. CI-proof release verification was subsequently removed in favor of local checks; see [the current development workflow](development.md#local-checks-and-releases).
