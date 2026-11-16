@@ -18,7 +18,7 @@ func serviceSettled(t *testing.T, a *App) {
 				t.Fatal(a.maintenanceErr)
 			}
 			var pending int
-			if err := a.inbox.QueryRow("SELECT COUNT(*) FROM ingest_batches").Scan(&pending); err != nil {
+			if err := a.inbox.db.QueryRow("SELECT COUNT(*) FROM ingest_batches").Scan(&pending); err != nil {
 				t.Fatal(err)
 			}
 			if pending == 0 {
@@ -61,7 +61,7 @@ func TestDurableReceiverDuringMigrationAndRestart(t *testing.T) {
 		}
 	}
 	var pending int
-	if err = a.inbox.QueryRow("SELECT COUNT(*) FROM ingest_batches").Scan(&pending); err != nil || pending != 2 {
+	if err = a.inbox.db.QueryRow("SELECT COUNT(*) FROM ingest_batches").Scan(&pending); err != nil || pending != 2 {
 		t.Fatal(pending, err)
 	}
 	w := archiveReq(a, "GET", "/", "")
@@ -144,7 +144,7 @@ func TestQueueCapacityRejectsWithoutAcknowledgingOrDropping(t *testing.T) {
 	}
 	defer a.Close()
 	serviceSettled(t, a)
-	if _, err = a.inbox.Exec("UPDATE ingest_size SET bytes=?", maxInboxBytes); err != nil {
+	if _, err = a.inbox.db.Exec("UPDATE ingest_size SET bytes=?", maxInboxBytes); err != nil {
 		t.Fatal(err)
 	}
 	w := request(a, "/v1/logs", logBody("codex", "full", "", ""), token)
@@ -152,10 +152,10 @@ func TestQueueCapacityRejectsWithoutAcknowledgingOrDropping(t *testing.T) {
 		t.Fatal("acknowledged a full queue", w.Code)
 	}
 	var pending int
-	if err = a.inbox.QueryRow("SELECT COUNT(*) FROM ingest_batches").Scan(&pending); err != nil || pending != 0 {
+	if err = a.inbox.db.QueryRow("SELECT COUNT(*) FROM ingest_batches").Scan(&pending); err != nil || pending != 0 {
 		t.Fatal(pending, err)
 	}
-	if _, err = a.inbox.Exec("UPDATE ingest_size SET bytes=0"); err != nil {
+	if _, err = a.inbox.db.Exec("UPDATE ingest_size SET bytes=0"); err != nil {
 		t.Fatal(err)
 	}
 	if countEvents(t, a) != 0 {
@@ -222,11 +222,11 @@ func TestBulkImportsReserveSpaceForLiveOTLP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = a.openInbox(filepath.Join(t.TempDir(), "views.db")); err != nil {
+	if a.inbox, err = openIngestQueue(a.ctx, filepath.Join(t.TempDir(), "views.db")); err != nil {
 		t.Fatal(err)
 	}
 	defer a.Close()
-	if _, err = a.inbox.Exec("UPDATE ingest_size SET bytes=?", maxImportBytes); err != nil {
+	if _, err = a.inbox.db.Exec("UPDATE ingest_size SET bytes=?", maxImportBytes); err != nil {
 		t.Fatal(err)
 	}
 	var root map[string]any
@@ -245,7 +245,7 @@ func TestBulkImportsReserveSpaceForLiveOTLP(t *testing.T) {
 		t.Fatal("live OTLP was rejected by the bulk threshold", w.Code)
 	}
 	var batches int
-	if err = a.inbox.QueryRow("SELECT batches FROM ingest_size WHERE id=1").Scan(&batches); err != nil || batches != 1 {
+	if err = a.inbox.db.QueryRow("SELECT batches FROM ingest_size WHERE id=1").Scan(&batches); err != nil || batches != 1 {
 		t.Fatal("incorrect queue accounting", batches, err)
 	}
 }
@@ -259,7 +259,7 @@ func TestPendingIngestionOnlyBlocksItsOwnArchive(t *testing.T) {
 	defer a.Close()
 	save(t, a, oldEvent(t, "old-record", "old"), oldEvent(t, "other-record", "other"))
 	// Keep an accepted batch pending without a view consumer, as during startup.
-	if err = a.openInbox(path); err != nil {
+	if a.inbox, err = openIngestQueue(a.ctx, path); err != nil {
 		t.Fatal(err)
 	}
 	if w := request(a, "/v1/logs", logBody("codex", "old", "", ""), token); w.Code != 200 {

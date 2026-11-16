@@ -12,10 +12,7 @@ import (
 )
 
 type App struct {
-	inbox              *sql.DB
-	checkpoints        *checkpoint.Store
-	queueWake          chan struct{}
-	queueSpace         chan struct{}
+	inbox              *ingestQueue
 	maintenancePause   time.Duration
 	initialized        chan struct{}
 	maintained         chan struct{}
@@ -48,7 +45,7 @@ func (a *App) Close() error {
 		err = errors.Join(err, a.DB.Close())
 	}
 	if a.inbox != nil {
-		err = errors.Join(err, a.inbox.Close())
+		err = errors.Join(err, a.inbox.close())
 	}
 	return err
 }
@@ -63,4 +60,9 @@ func newApp(ctx context.Context, token string) (*App, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	return &App{ctx: ctx, cancel: cancel, token: token}, nil
 }
-func (a *App) WatchState() *checkpoint.Store { return a.checkpoints }
+func (a *App) WatchState() *checkpoint.Store {
+	if a.inbox == nil {
+		return nil
+	}
+	return a.inbox.checkpoints
+}
