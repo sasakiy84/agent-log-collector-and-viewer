@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"log"
 	"net/http"
 	"net/url"
 	"time"
@@ -53,9 +52,7 @@ func (a *App) filteredExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer rows.Close()
-	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", `attachment; filename="agentlog-export.zip"`)
-	w.Header().Set("X-Accel-Buffering", "no")
+	prepareDownload(w, "application/zip", "agentlog-export.zip")
 	archive := zip.NewWriter(w)
 	err = writeFilteredExport(r.Context(), tx, rows, archive, filter, r.URL.Query(), sessions, expected)
 	if err == nil {
@@ -64,8 +61,7 @@ func (a *App) filteredExport(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// Never finalize a partial archive as a successful download, or append
 		// an HTTP error message after ZIP bytes have already been sent.
-		log.Printf("Session export interrupted: %v", err)
-		panic(http.ErrAbortHandler)
+		abortDownload(err)
 	}
 }
 
