@@ -70,6 +70,9 @@ func correlationKeys(e Event, p Detail, d document) []correlationKey {
 	return out
 }
 func toolPhase(name, signal string, r map[string]any) string {
+	if guardianInternal(name, decodedAttributes(r["attributes"])) {
+		return ""
+	}
 	for _, prefix := range []string{"codex.", "claude_code.", "copilot.", "github.copilot."} {
 		name = strings.TrimPrefix(name, prefix)
 	}

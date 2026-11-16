@@ -19,9 +19,11 @@ type SessionSummary struct {
 	Usage   UsageSummary `json:"usage"`
 }
 type SessionPage struct {
-	TotalCount int    `json:"total_count,omitempty"`
-	View       string `json:"view,omitempty"`
-	Kind       string `json:"kind,omitempty"`
+	MatchID    string            `json:"match_id,omitempty"`
+	Processing []ProcessingGroup `json:"processing,omitempty"`
+	TotalCount int               `json:"total_count,omitempty"`
+	View       string            `json:"view,omitempty"`
+	Kind       string            `json:"kind,omitempty"`
 	SessionSummary
 	Offset   int             `json:"offset"`
 	Limit    int             `json:"limit"`
@@ -184,7 +186,7 @@ func (a *App) session(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("view") != "" || filter.Kind != "" {
 		page.TotalCount = page.Count
 		page.View = r.URL.Query().Get("view")
-		page.Kind = filter.Kind
+		page.Kind = r.URL.Query().Get("kind")
 		page.Count, err = filteredTimelineCount(r.Context(), tx, id, origin, filter)
 		if err != nil {
 			databaseError(w, r, err)
@@ -213,10 +215,30 @@ func (a *App) session(w http.ResponseWriter, r *http.Request) {
 		order = timelineLatest
 		size = page.Count - page.Offset
 	}
+	if match := r.URL.Query().Get("match"); match != "" && position == "latest" && r.URL.Query().Get("view") == "conversation" {
+		page.MatchID, page.Offset, err = conversationMatchPosition(r.Context(), tx, id, origin, match, page.Limit, page.Count)
+		if err != nil {
+			http.Error(w, "Unable to apply search conditions", 400)
+			return
+		}
+		order, size = timelineChronological, page.Limit+1
+	}
 	page.Events, err = readFilteredTimeline(r.Context(), tx, id, origin, size, page.Offset, order, filter)
 	if err != nil {
 		databaseError(w, r, err)
 		return
+	}
+	if r.URL.Query().Get("view") == "conversation" {
+		page.Events = page.Events[:min(len(page.Events), page.Limit)]
+		page.Processing, err = conversationGroups(r.Context(), tx, page, origin, r.URL.Query().Get("match"))
+		if err != nil {
+			databaseError(w, r, err)
+			return
+		}
+		for i := range page.Events {
+			page.Events[i].Detail.Blocks = conversationBlocks(page.Events[i].Detail, page.Source)
+			page.Events[i].Detail.Fields = [][2]string{}
+		}
 	}
 	if origin == "" {
 		var detail Detail
@@ -255,20 +277,21 @@ func (a *App) session(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	page.Skills, err = sessionSkills(r.Context(), tx, id, origin)
-	if err == nil {
+	if err == nil && r.URL.Query().Get("view") != "conversation" {
 		err = attachSkills(r.Context(), tx, page.Events)
 	}
 	if err != nil {
 		databaseError(w, r, err)
 		return
 	}
-	if err = attachModelCalls(r.Context(), tx, page.Events, origin); err != nil {
-		databaseError(w, r, err)
-		return
-	}
-	if err = attachSubagents(r.Context(), tx, page.Events); err != nil {
-		databaseError(w, r, err)
-		return
+	if r.URL.Query().Get("view") != "conversation" {
+		if err = attachModelCalls(r.Context(), tx, page.Events, origin); err == nil {
+			err = attachSubagents(r.Context(), tx, page.Events)
+		}
+		if err != nil {
+			databaseError(w, r, err)
+			return
+		}
 	}
 	if err = tx.Commit(); err != nil {
 		databaseError(w, r, err)

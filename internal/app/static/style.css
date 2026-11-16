@@ -491,6 +491,33 @@ input[type=checkbox] {
   }
 }
 /* Event cards and on-demand inspector. Session list stays on its own page. */
+.processing-group {
+  margin: 8px 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-alt);
+  min-width: 0;
+}
+.processing-group > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  list-style: none;
+}
+.processing-group > summary::-webkit-details-marker { display: none; }
+.processing-group > summary::before { content: "▸"; color: var(--muted); }
+.processing-group[open] > summary::before { content: "▾"; }
+.processing-group > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.processing-body { padding: 0 12px 12px; }
+.processing-options { display: flex; flex-wrap: wrap; gap: 12px; margin: 4px 0 12px; }
+.processing-options label { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.processing-status:empty { display: none; }
+.processing-match { margin-left: auto; }
+.processing-events .event { background: var(--surface); }
+.conversation-status { margin: 12px; }
 .eventlayout {
   display:grid;
   grid-template-columns:minmax(0,1fr);

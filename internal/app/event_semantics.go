@@ -2,6 +2,15 @@ package app
 
 import "strings"
 
+// Guardian observations describe the review machinery, not execution of the
+// tool named in their context. They must never acquire tool-call identities.
+func guardianInternal(name string, a map[string]any) bool {
+	return strings.HasPrefix(name, "guardian_") ||
+		strings.HasPrefix(str(a["code.module.name"]), "codex_guardian_v2::") ||
+		strings.HasPrefix(str(a["target"]), "codex_guardian_v2::") ||
+		strings.HasPrefix(str(a["code.file.path"]), "ext/guardian-v2/")
+}
+
 func eventSuffix(name string) string {
 	for _, prefix := range []string{"codex.", "claude_code.", "github.copilot.", "copilot."} {
 		if strings.HasPrefix(name, prefix) {
@@ -31,6 +40,9 @@ func isModelEvent(name string, a map[string]any) bool {
 }
 
 func diagnosticDetail(e Event, d Detail) bool {
+	if e.Source == "codex" && guardianInternal(d.Name, d.Attributes) {
+		return true
+	}
 	if d.Kind == "metric" {
 		return true
 	}
@@ -61,17 +73,34 @@ func diagnosticDetail(e Event, d Detail) bool {
 func detailActivity(d Detail) bool { return !d.Diagnostic || d.Error }
 
 // Preserve conversations exported as message blocks inside a model/agent event.
-func detailConversation(d Detail) bool {
-	if d.Kind == "user" || d.Kind == "assistant" {
-		return true
+func detailConversation(d Detail, source string) bool {
+	// Child model spans often repeat the complete input history. The root
+	// Copilot agent envelope is authoritative; delegated tasks are processing.
+	if d.Diagnostic || source == "copilot" && d.Kind == "agent" && !d.SessionPrompt {
+		return false
 	}
-	if d.Kind == "model" || d.Kind == "agent" {
-		for _, b := range d.Blocks {
-			switch b.Label {
-			case "user", "assistant", "Input", "Output":
-				return true
+	return len(conversationBlocks(d, source)) > 0
+}
+
+func conversationBlocks(d Detail, source string) []Block {
+	out := []Block{}
+	if d.Kind != "user" && d.Kind != "assistant" && d.Kind != "model" && d.Kind != "agent" {
+		return out
+	}
+	for _, b := range d.Blocks {
+		switch b.Label {
+		case "Request", "user":
+			b.Text = userPromptText(b.Text, source)
+			if source == "codex" && codexAutomaticPrompt(b.Text, d.Model) {
+				continue
 			}
+		case "Response", "assistant", "Input", "Output":
+		default:
+			continue
+		}
+		if b.Text != "" {
+			out = append(out, b)
 		}
 	}
-	return false
+	return out
 }

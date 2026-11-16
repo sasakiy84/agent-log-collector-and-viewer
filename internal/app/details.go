@@ -13,7 +13,7 @@ type Block struct {
 	Code  bool   `json:"code"`
 }
 type Detail struct {
-	sessionPrompt bool
+	SessionPrompt bool            `json:"session_prompt,omitempty"`
 	SkillFacts    []SkillEvidence `json:"-"`
 	Diagnostic    bool            `json:"diagnostic,omitempty"`
 	Turn          string          `json:"turn,omitempty"`
@@ -125,6 +125,16 @@ func describe(e Event, d document) Detail {
 	p.Turn = str(get("turn.id", "turn_id", "root.turn.id"))
 	op := str(get("gen_ai.operation.name"))
 	switch {
+	case e.Source == "codex" && guardianInternal(name, a):
+		p.Title = "Guardian internal observation"
+		p.field("Tool context", get("gen_ai.tool.name", "tool_name"))
+	case e.Source == "codex" && name == "codex.guardian_assessment":
+		p.Title = "Guardian assessment"
+		p.field("Assessment status", get("status"))
+		p.field("Outcome", get("outcome"))
+		p.field("Risk level", get("risk_level"))
+		p.field("User authorization", get("user_authorization"))
+		p.block("Rationale", get("rationale"), false)
 	case e.Source == "codex" && name == "codex.skill_invocation":
 		p.Kind = "skill"
 		p.Title = firstString(skillString(a["skill.name"], 256), "Skill")
@@ -253,7 +263,9 @@ func describe(e Event, d document) Detail {
 	if ms != nil {
 		n, err := strconv.ParseFloat(str(ms), 64)
 		if err == nil {
-			if n >= 1000 {
+			if e.Source == "codex" && guardianInternal(name, a) && spanDuration(r) != "" {
+				p.field("Span duration", spanDuration(r)+" ms")
+			} else if n >= 1000 {
 				p.field("Duration", fmt.Sprintf("%.2f s", n/1000))
 			} else {
 				p.field("Duration", fmt.Sprintf("%.0f ms", n))

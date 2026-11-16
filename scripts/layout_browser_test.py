@@ -74,7 +74,7 @@ with tempfile.TemporaryDirectory() as folder:
                 page.locator('#searchtime summary').click();page.locator('#searchrange').select_option('custom');capture('time-picker',width);page.keyboard.press('Escape')
                 page.locator('[data-project="name:日本語の長いプロジェクト名-long-project-name-for-layout-review"]').click();expect(page.locator('.session')).to_have_count(1);capture('long-project',width)
                 page.goto(base+'/skills');expect(page.locator('.skill-row')).to_have_count(4);capture('skills',width)
-                page.goto(base+'/sessions/codex%3Areview');expect(page.locator('#timeline .event')).to_have_count(5)
+                page.goto(base+'/sessions/codex%3Areview?view=activity');expect(page.locator('#timeline .event')).to_have_count(5)
                 page.evaluate('window.scrollTo(0,0)');capture('session-detail',width)
                 held=[]
                 if width==1024:page.route('**/api/event?**',lambda route:held.append(route))
@@ -88,7 +88,7 @@ with tempfile.TemporaryDirectory() as folder:
                 page.locator('#dataoptions summary').click();page.locator('#openarchive').click();expect(page.locator('.archive-row')).to_have_count(2);capture('archive',width);page.keyboard.press('Escape')
             # A shorter window and scrolling must keep the sticky inspector usable.
             if verify:
-                page.set_viewport_size({'width':1024,'height':520});page.goto(base+'/sessions/codex%3Areview')
+                page.set_viewport_size({'width':1024,'height':520});page.goto(base+'/sessions/codex%3Areview?view=activity')
                 expect(page.locator('#timeline .event')).to_have_count(5);page.locator('#timeline .event.tool').first.click()
                 expect(page.locator('#inspectstatus')).to_have_text('')
                 page.wait_for_function("document.querySelector('#inspector').getBoundingClientRect().bottom <= innerHeight-8")
