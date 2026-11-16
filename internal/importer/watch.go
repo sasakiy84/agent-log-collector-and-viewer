@@ -52,7 +52,18 @@ func sessionFiles(ctx context.Context, o Options, missingOK bool) ([]string, err
 	}
 	var failures []error
 	for _, dir := range dirs {
-		err := filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
+		// Follow a root the user explicitly selected, including common links to
+		// synced session directories. Links encountered inside it stay excluded
+		// so they cannot pull unrelated trees or cycles into recursive discovery.
+		root, err := filepath.EvalSymlinks(dir)
+		if err != nil {
+			if missingOK && errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			failures = append(failures, fmt.Errorf("scan %s: %w", dir, err))
+			continue
+		}
+		err = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
 			if e := ctx.Err(); e != nil {
 				return e
 			}

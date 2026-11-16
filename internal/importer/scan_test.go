@@ -5,8 +5,53 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"testing"
 )
+
+func TestSessionFilesFollowsSelectedRootButNotNestedLinks(t *testing.T) {
+	root := t.TempDir()
+	directory := filepath.Join(root, "sessions")
+	if err := os.MkdirAll(filepath.Join(directory, "nested"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(directory, "nested", "session.jsonl")
+	if err := os.WriteFile(want, []byte("{}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	// macOS temp roots can themselves be aliases (/var -> /private/var).
+	// Discovery returns the canonical root for both configured directory forms.
+	var err error
+	want, err = filepath.EvalSymlinks(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "configured")
+	if err := os.Symlink(directory, link); err != nil {
+		if runtime.GOOS == "windows" {
+			t.Skipf("symlink creation unavailable: %v", err)
+		}
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "outside.jsonl"), []byte("{}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for name, target := range map[string]string{"outside": outside, "loop": directory, "linked.jsonl": want} {
+		if err := os.Symlink(target, filepath.Join(directory, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, dirs := range [][]string{{link}, {link, directory}} {
+		for _, missingOK := range []bool{false, true} {
+			files, err := sessionFiles(context.Background(), Options{Dirs: dirs}, missingOK)
+			if err != nil || !slices.Equal(files, []string{want}) {
+				t.Fatalf("dirs=%v missingOK=%v: got %v, err %v", dirs, missingOK, files, err)
+			}
+		}
+	}
+}
 
 func TestWatchScanContinuesAfterUnreadableDirectory(t *testing.T) {
 	root := t.TempDir()
