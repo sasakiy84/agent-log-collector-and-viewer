@@ -2,17 +2,10 @@ package app
 
 import (
 	"context"
-	"database/sql"
-	"encoding/json"
-	"errors"
-	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"strings"
 	"time"
-
-	"github.com/sasakiy84/agent-log-collector-and-viewer/internal/checkpoint"
 )
 
 // Start opens the durable inbox before preparing the view database. HTTP can
@@ -24,10 +17,8 @@ func Start(ctx context.Context, path, token string) (*App, error) {
 	}
 	a.initialized = make(chan struct{})
 	a.maintained = make(chan struct{})
-	a.queueWake = make(chan struct{}, 1)
-	a.queueSpace = make(chan struct{}, 1)
 	a.maintenancePause = 10 * time.Millisecond
-	if err = a.openInbox(path); err != nil {
+	if a.inbox, err = openIngestQueue(a.ctx, path); err != nil {
 		a.Close()
 		return nil, err
 	}
@@ -58,165 +49,18 @@ func Start(ctx context.Context, path, token string) (*App, error) {
 			return
 		}
 		log.Print("Database preparation complete; processing durable inbox")
-		a.processInbox()
+		a.inbox.process(a.Save)
 	}()
 	return a, nil
 }
 
-const maxInboxBytes = 256 << 20
-const maxImportBytes = maxInboxBytes / 2
-
-var errInboxFull = errors.New("ingestion queue is full")
-
-func (a *App) openInbox(path string) error {
-	inboxPath := path + ".ingest.db"
-	if path == ":memory:" {
-		inboxPath = path
-	} else {
-		file, err := os.OpenFile(inboxPath, os.O_CREATE|os.O_RDWR, 0600)
-		if err != nil {
-			return err
-		}
-		if err = file.Close(); err != nil {
-			return err
-		}
-	}
-	uri, err := databaseURI(inboxPath, false)
-	if err != nil {
-		return err
-	}
-	db, err := sql.Open("sqlite", uri+"&_pragma=synchronous(FULL)")
-	if err != nil {
-		return err
-	}
-	a.inbox = db
-	db.SetMaxOpenConns(1)
-	if _, err = db.ExecContext(a.ctx, "PRAGMA journal_mode=WAL"); err != nil {
-		return err
-	}
-	if err = migrate(a.ctx, db, inboxMigrations); err != nil {
-		return err
-	}
-	a.checkpoints, err = checkpoint.New(a.ctx, db)
-	return err
-}
-
+// Embedded callers save synchronously. The server acknowledges the queue's
+// durable commit and projects events independently of the HTTP request.
 func (a *App) accept(ctx context.Context, events []Event, wait bool) error {
 	if a.inbox == nil {
 		return a.Save(ctx, events)
 	}
-	if len(events) == 0 {
-		return nil
-	}
-	encoded, err := json.Marshal(events)
-	if err != nil {
-		return err
-	}
-	limit := maxInboxBytes
-	imported := len(events) > 0
-	for _, event := range events {
-		if event.Origin != "import" {
-			imported = false
-			break
-		}
-	}
-	if wait || imported {
-		limit = maxImportBytes
-	}
-	if len(encoded) > limit {
-		return fmt.Errorf("batch exceeds ingestion queue capacity")
-	}
-
-	for {
-		err = inTransaction(ctx, a.inbox, func(tx *sql.Tx) error {
-			var size int
-			if err := tx.QueryRowContext(ctx, "SELECT bytes FROM ingest_size WHERE id=1").Scan(&size); err != nil {
-				return err
-			}
-			if size+len(encoded) > limit {
-				return errInboxFull
-			}
-			result, err := tx.ExecContext(ctx, "INSERT INTO ingest_batches(data) VALUES(?)", encoded)
-			if err != nil {
-				return err
-			}
-			id, err := result.LastInsertId()
-			if err != nil {
-				return err
-			}
-			sessions := map[string]bool{}
-			for _, event := range events {
-				sessions[event.Session] = true
-			}
-			for session := range sessions {
-				if _, err = tx.ExecContext(ctx, "INSERT INTO ingest_sessions VALUES(?,?)", id, session); err != nil {
-					return err
-				}
-			}
-			return nil
-		})
-		if !errors.Is(err, errInboxFull) || !wait {
-			break
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-a.ctx.Done():
-			return a.ctx.Err()
-		case <-a.queueSpace:
-		case <-time.After(time.Second):
-		}
-	}
-	if err == nil {
-		select {
-		case a.queueWake <- struct{}{}:
-		default:
-		}
-	}
-	return err
-}
-
-func (a *App) processInbox() {
-	for a.ctx.Err() == nil {
-		var id int64
-		var data []byte
-		err := a.inbox.QueryRowContext(a.ctx, "SELECT id,data FROM ingest_batches ORDER BY id LIMIT 1").Scan(&id, &data)
-		if errors.Is(err, sql.ErrNoRows) {
-			select {
-			case <-a.ctx.Done():
-				return
-			case <-a.queueWake:
-			}
-			continue
-		}
-		if err == nil {
-			var events []Event
-			err = json.Unmarshal(data, &events)
-			if err == nil {
-				err = a.Save(a.ctx, events)
-			}
-			// A crash after Save but before DELETE replays the same stable IDs.
-			if err == nil {
-				_, err = a.inbox.ExecContext(a.ctx, "DELETE FROM ingest_batches WHERE id=?", id)
-			}
-		}
-		if err != nil {
-			if a.ctx.Err() != nil {
-				return
-			}
-			log.Printf("durable inbox batch %d retained for retry: %v", id, err)
-			select {
-			case <-a.ctx.Done():
-				return
-			case <-time.After(time.Second):
-			}
-		} else {
-			select {
-			case a.queueSpace <- struct{}{}:
-			default:
-			}
-		}
-	}
+	return a.inbox.accept(ctx, events, wait)
 }
 
 func closed(channel <-chan struct{}) bool {
@@ -268,7 +112,9 @@ func (a *App) status(w http.ResponseWriter, r *http.Request) {
 	}
 	var batches, bytes int64
 	if a.inbox != nil {
-		if err := a.inbox.QueryRowContext(r.Context(), "SELECT batches,bytes FROM ingest_size WHERE id=1").Scan(&batches, &bytes); err != nil {
+		var err error
+		batches, bytes, err = a.inbox.size(r.Context())
+		if err != nil {
 			databaseError(w, r, err)
 			return
 		}

@@ -31,6 +31,25 @@ func setup(t *testing.T) *App {
 	t.Cleanup(func() { a.Close() })
 	return a
 }
+
+// Tests inspect stored originals in small fixtures. Production downloads stream
+// rows and do not expose an unbounded materializing read API.
+func (a *App) readRecords(ctx context.Context, session, origin string, limit, off int) ([]Event, error) {
+	rows, err := a.readers.QueryContext(ctx, "SELECT "+eventColumns+" FROM events WHERE session=? AND (?='' OR origin=?) ORDER BY time,sequence,id LIMIT ? OFFSET ?", session, origin, origin, limit, off)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Event{}
+	for rows.Next() {
+		event, err := scanEvent(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, event)
+	}
+	return out, rows.Err()
+}
 func request(a *App, path, body, auth string) *httptest.ResponseRecorder {
 	r := httptest.NewRequest("POST", path, strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")

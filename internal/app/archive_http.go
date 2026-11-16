@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"mime"
@@ -191,11 +190,8 @@ func (a *App) archiveDownload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Archive file is incomplete", 409)
 		return
 	}
-	http.NewResponseController(w).SetWriteDeadline(time.Time{})
-	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="agentlog-%s.zip"`, job.ID))
+	prepareDownload(w, "application/zip", "agentlog-"+job.ID+".zip")
 	w.Header().Set("ETag", `"`+job.SHA256+`"`)
-	w.Header().Set("X-Accel-Buffering", "no")
 	tracked := &downloadWriter{ResponseWriter: w}
 	http.ServeContent(tracked, r, "archive.zip", info.ModTime(), file)
 	if r.Method == "GET" && tracked.bytes > 0 && (tracked.status == http.StatusOK || tracked.status == http.StatusPartialContent) {

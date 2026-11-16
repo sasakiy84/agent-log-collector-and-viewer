@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"database/sql"
-	"strings"
 )
 
 // A queued event already counts as activity even though its view is not yet
@@ -18,15 +17,7 @@ func (a *App) archiveHasPending(ctx context.Context, tx *sql.Tx, id string) (boo
 		return false, err
 	}
 	defer rows.Close()
-	check := func(ids []any) (bool, error) {
-		if len(ids) == 0 {
-			return false, nil
-		}
-		var pending bool
-		err := a.inbox.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM ingest_sessions WHERE session IN ("+strings.TrimRight(strings.Repeat("?,", len(ids)), ",")+"))", ids...).Scan(&pending)
-		return pending, err
-	}
-	ids := []any{}
+	ids := []string{}
 	for rows.Next() {
 		var session string
 		if err = rows.Scan(&session); err != nil {
@@ -34,7 +25,7 @@ func (a *App) archiveHasPending(ctx context.Context, tx *sql.Tx, id string) (boo
 		}
 		ids = append(ids, session)
 		if len(ids) == 200 {
-			pending, err := check(ids)
+			pending, err := a.inbox.hasSessions(ctx, ids)
 			if err != nil || pending {
 				return pending, err
 			}
@@ -44,5 +35,5 @@ func (a *App) archiveHasPending(ctx context.Context, tx *sql.Tx, id string) (boo
 	if err = rows.Err(); err != nil {
 		return false, err
 	}
-	return check(ids)
+	return a.inbox.hasSessions(ctx, ids)
 }

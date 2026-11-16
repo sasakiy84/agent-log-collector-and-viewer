@@ -82,11 +82,12 @@ func processingMatch(ctx context.Context, origin, encoded string) (string, []any
 		return "", nil, err
 	}
 	f := parseSessionFilter(params)
-	query, args, err := f.matchingCards(ctx)
+	selection, err := f.matchingCards(ctx)
 	if err != nil {
 		return "", nil, err
 	}
-	ids := "SELECT c.id" + query
+	ids := "SELECT c.id" + selection.sql()
+	args := selection.args
 	if origin != "" {
 		return " AND id IN(" + ids + ")", args, nil
 	}

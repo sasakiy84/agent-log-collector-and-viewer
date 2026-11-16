@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -228,4 +229,29 @@ func TestWatchRootCreatedAfterStart(t *testing.T) {
 		err := db.DB.QueryRow("SELECT COUNT(*) FROM events").Scan(&n)
 		return err == nil && n == 1
 	})
+}
+
+func TestWatchSymlinkRootTargetAppearsAndChanges(t *testing.T) {
+	db, _ := setup(t)
+	root := t.TempDir()
+	directory := filepath.Join(root, "synced-sessions")
+	link := filepath.Join(root, "sessions")
+	if err := os.Symlink(directory, link); err != nil {
+		if runtime.GOOS == "windows" {
+			t.Skipf("symlink creation unavailable: %v", err)
+		}
+		t.Fatal(err)
+	}
+	startWatcher(t, importer.Options{Dirs: []string{link}, Sink: db.IngestLogs})
+	path := file(t, directory, "nested/session.jsonl", claudeLine("initial", "synced directory"))
+	count := func(want int) func() bool {
+		return func() bool {
+			var n int
+			err := db.DB.QueryRow("SELECT COUNT(*) FROM events").Scan(&n)
+			return err == nil && n == want
+		}
+	}
+	eventually(t, count(1))
+	appendFile(t, path, claudeLine("appended", "new synced data"))
+	eventually(t, count(2))
 }

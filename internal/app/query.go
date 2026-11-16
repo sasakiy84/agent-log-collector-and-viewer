@@ -393,17 +393,3 @@ func (a *App) event(w http.ResponseWriter, r *http.Request) {
 	}
 	write(w, event)
 }
-func (a *App) export(w http.ResponseWriter, r *http.Request) {
-	origin, ok := eventOrigin(r)
-	if !ok {
-		http.Error(w, "Invalid event origin", 400)
-		return
-	}
-	out, err := a.readRecords(r.Context(), r.URL.Query().Get("session"), origin, -1, 0)
-	if err != nil {
-		databaseError(w, r, err)
-		return
-	}
-	w.Header().Set("Content-Disposition", `attachment; filename="session.json"`)
-	write(w, out)
-}
