@@ -36,14 +36,17 @@ const dateFormat = new Intl.DateTimeFormat(undefined, {
   minute: "2-digit",
   hour12: false,
 });
-const clockFormat = new Intl.DateTimeFormat(undefined, {
-  hour: "numeric",
-  minute: "numeric",
-  second: "numeric",
+const eventTimeFormat = new Intl.DateTimeFormat(undefined, {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
   hour12: false,
 });
 const date = (s) => dateFormat.format(new Date(s));
-const clock = (s) => clockFormat.format(new Date(s));
+const eventTime = (s) => eventTimeFormat.format(new Date(s));
 // Labels belong to the view: cached cards and full inspector records use the
 // same wording without rewriting stored telemetry or rebuilding projections.
 function eventTitle(detail) {
@@ -303,7 +306,7 @@ function renderSessions(rows, total) {
 }
 
 function eventCardHTML(e, p = e.detail, conversation = false) {
-  return `<article class="event ${esc(p.kind)} ${p.error ? "error" : ""}" id="span-${esc(e.span || e.id)}" data-event="${esc(e.id)}" role="button" tabindex="0" aria-label="${esc(eventTitle(p) + " · " + clock(e.time))}" aria-expanded="${e.id === inspectedID}" aria-controls="inspector"><div class="eventcontent"><div class="eventheading"><h2>${esc(eventTitle(p))}</h2>${e.origins.length > 1 ? '<span class="kind">Imported + OTEL</span>' : ""}${["tool", "metric", "skill"].includes(p.kind) ? `<span class="kind">${esc(toolPhaseLabel(p))}</span>` : ""}${p.error ? '<span class="status failed">Failed</span>' : String(p.attributes.success) === "true" ? '<span class="status succeeded">Succeeded</span>' : ""}<time datetime="${esc(e.time)}" title="${esc(date(e.time))}">${esc(clock(e.time))}</time></div>${p.blocks.map((b) => `<div class="block ${b.label === "Error" ? "failure-detail" : ""}">${["Request", "Response", "Message", p.kind].includes(b.label) ? "" : `<div class="blocklabel">${esc(blockLabel(b, p))}</div>`}<${b.code ? "pre" : "div"} class="${b.code ? "code" : "prose"}">${esc(b.text)}</${b.code ? "pre" : "div"}></div>`).join("")}${conversation ? "" : modelCallsHTML(e)}${conversation ? "" : subagentLinks(e.subagents)}${conversation ? "" : eventSkillsHTML(e.skills)}${
+  return `<article class="event ${esc(p.kind)} ${p.error ? "error" : ""}" id="span-${esc(e.span || e.id)}" data-event="${esc(e.id)}" role="button" tabindex="0" aria-label="${esc(eventTitle(p) + " · " + eventTime(e.time))}" aria-expanded="${e.id === inspectedID}" aria-controls="inspector"><div class="eventcontent"><div class="eventheading"><h2>${esc(eventTitle(p))}</h2>${e.origins.length > 1 ? '<span class="kind">Imported + OTEL</span>' : ""}${["tool", "metric", "skill"].includes(p.kind) ? `<span class="kind">${esc(toolPhaseLabel(p))}</span>` : ""}${p.error ? '<span class="status failed">Failed</span>' : String(p.attributes.success) === "true" ? '<span class="status succeeded">Succeeded</span>' : ""}<time datetime="${esc(e.time)}" title="${esc(date(e.time))}">${esc(eventTime(e.time))}</time></div>${p.blocks.map((b) => `<div class="block ${b.label === "Error" ? "failure-detail" : ""}">${["Request", "Response", "Message", p.kind].includes(b.label) ? "" : `<div class="blocklabel">${esc(blockLabel(b, p))}</div>`}<${b.code ? "pre" : "div"} class="${b.code ? "code" : "prose"}">${esc(b.text)}</${b.code ? "pre" : "div"}></div>`).join("")}${conversation ? "" : modelCallsHTML(e)}${conversation ? "" : subagentLinks(e.subagents)}${conversation ? "" : eventSkillsHTML(e.skills)}${
               p.fields.length
                 ? `<dl class="fields">${p.fields
                     .filter(([k]) => k !== "Result")
