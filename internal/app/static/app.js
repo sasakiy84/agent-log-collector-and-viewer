@@ -91,7 +91,7 @@ let requestSerial = 0,
   eventLimit = 200,
   query = "",
   kind = "",
-  view = "activity",
+  view = "conversation",
   origin = "",
   pageOrigin = "",
   events = [],
@@ -136,10 +136,9 @@ let idKey = listURL.searchParams.get("id_key") || "",
   idValue = listURL.searchParams.get("id_value") || "";
 sessionOffset = Number(listURL.searchParams.get("offset")) || 0;
 if (selected) {
-  view =
-    listURL.searchParams.get("view") === "diagnostics"
-      ? "diagnostics"
-      : "activity";
+  view = ["activity", "diagnostics", "conversation"].includes(listURL.searchParams.get("view"))
+    ? listURL.searchParams.get("view")
+    : listURL.searchParams.has("kind") ? "activity" : "conversation";
   kind = [
     "conversation",
     "tool",
@@ -152,6 +151,7 @@ if (selected) {
   ].includes(listURL.searchParams.get("kind"))
     ? listURL.searchParams.get("kind")
     : "";
+  if (view === "conversation") kind = "";
   const page = Number(listURL.searchParams.get("page"));
   if (
     Number.isSafeInteger(page) &&
@@ -271,8 +271,9 @@ function detailState(latest) {
   const p = new URLSearchParams();
   if (!latest) p.set("page", Math.floor(meta.offset / meta.limit) + 1);
   if (pageOrigin) p.set("origin", pageOrigin);
-  if (view !== "activity") p.set("view", view);
-  if (kind) p.set("kind", kind);
+  if (view !== "conversation") p.set("view", view);
+  if (conversationMatch) p.set("match", conversationMatch);
+  if (kind && view !== "conversation") p.set("kind", kind);
   history.replaceState(null, "", link(selected) + (p.size ? "?" + p : ""));
 }
 function projectLabel(p) {
@@ -283,6 +284,10 @@ function projectLabel(p) {
     .filter(Boolean)
     .join(" · ");
 }
+function sessionSearchLink(id) {
+  if (!query && !idValue && !searchScope.kinds.length && !searchScope.from && !searchScope.to) return link(id);
+  return link(id) + "?" + new URLSearchParams({ match: listParameters().toString() });
+}
 function renderSessions(rows, total) {
   renderListHeading(total);
   $("#sessions").innerHTML = rows.length
@@ -290,11 +295,45 @@ function renderSessions(rows, total) {
         .slice(0, 200)
         .map(
           (s) =>
-            `<a class="session" href="${esc(link(s.id))}" data-session="${esc(s.id)}"><div><h2>${esc(titleFor(s.id, s.preview))}</h2><small>${projectLabel(s.preview) ? esc(projectLabel(s.preview)) + " · " : ""}${esc(s.id)}${s.parent ? " · Subagent" : ""}</small></div><span class="source">${esc(label(s.source))}</span><time>${esc(date(s.end))}</time>${usageRow(s.usage)}<span class="count">${s.count}</span></a>`,
+            `<a class="session" href="${esc(sessionSearchLink(s.id))}" data-session="${esc(s.id)}"><div><h2>${esc(titleFor(s.id, s.preview))}</h2><small>${projectLabel(s.preview) ? esc(projectLabel(s.preview)) + " · " : ""}${esc(s.id)}${s.parent ? " · Subagent" : ""}</small></div><span class="source">${esc(label(s.source))}</span><time>${esc(date(s.end))}</time>${usageRow(s.usage)}<span class="count">${s.count}</span></a>`,
         )
         .join("")
     : '<p class="empty">No sessions</p>';
   sessionPager.update({ total, offset: sessionOffset, size: 200 });
+}
+
+function eventCardHTML(e, p = e.detail, conversation = false) {
+  return `<article class="event ${esc(p.kind)} ${p.error ? "error" : ""}" id="span-${esc(e.span || e.id)}" data-event="${esc(e.id)}" role="button" tabindex="0" aria-label="${esc(eventTitle(p) + " · " + clock(e.time))}" aria-expanded="${e.id === inspectedID}" aria-controls="inspector"><div class="eventcontent"><div class="eventheading"><h2>${esc(eventTitle(p))}</h2>${e.origins.length > 1 ? '<span class="kind">Imported + OTEL</span>' : ""}${["tool", "metric", "skill"].includes(p.kind) ? `<span class="kind">${esc(toolPhaseLabel(p))}</span>` : ""}${p.error ? '<span class="status failed">Failed</span>' : String(p.attributes.success) === "true" ? '<span class="status succeeded">Succeeded</span>' : ""}<time datetime="${esc(e.time)}" title="${esc(date(e.time))}">${esc(clock(e.time))}</time></div>${p.blocks.map((b) => `<div class="block ${b.label === "Error" ? "failure-detail" : ""}">${["Request", "Response", "Message", p.kind].includes(b.label) ? "" : `<div class="blocklabel">${esc(blockLabel(b, p))}</div>`}<${b.code ? "pre" : "div"} class="${b.code ? "code" : "prose"}">${esc(b.text)}</${b.code ? "pre" : "div"}></div>`).join("")}${conversation ? "" : modelCallsHTML(e)}${conversation ? "" : subagentLinks(e.subagents)}${conversation ? "" : eventSkillsHTML(e.skills)}${
+              p.fields.length
+                ? `<dl class="fields">${p.fields
+                    .filter(([k]) => k !== "Result")
+                    .map(
+                      ([k, v]) =>
+                        `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`,
+                    )
+                    .join("")}</dl>`
+                : ""
+            }</div></article>`;
+}
+
+function bindEventCards(root) {
+  root.querySelectorAll("[data-event]").forEach((card) => {
+    card.classList.toggle("selected", card.dataset.event === inspectedID);
+    card.onclick = (event) => {
+      if (
+        !event.target.closest("a,button") &&
+        !window.getSelection()?.toString()
+      )
+        openInspector(card.dataset.event);
+    };
+    card.onkeydown = (e) => {
+      if (e.target !== card) return;
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        openInspector(card.dataset.event);
+      }
+    };
+  });
 }
 
 function renderEvents() {
@@ -339,43 +378,15 @@ function renderEvents() {
   $("#pageinfo").textContent = meta.count
     ? `${meta.offset + 1}–${meta.offset + slice.length} / ${meta.count}${meta.total_count !== undefined ? " · " + meta.total_count + " total events" : ""}`
     : "0 events";
-  $("#timeline").innerHTML = visible.length
-    ? visible
-        .map(
-          ([e, p]) =>
-            `<article class="event ${esc(p.kind)} ${p.error ? "error" : ""}" id="span-${esc(e.span || e.id)}" data-event="${esc(e.id)}" role="button" tabindex="0" aria-label="${esc(eventTitle(p) + " · " + clock(e.time))}" aria-expanded="${e.id === inspectedID}" aria-controls="inspector"><div class="eventcontent"><div class="eventheading"><h2>${esc(eventTitle(p))}</h2>${e.origins.length > 1 ? '<span class="kind">Imported + OTEL</span>' : ""}${["tool", "metric", "skill"].includes(p.kind) ? `<span class="kind">${esc(toolPhaseLabel(p))}</span>` : ""}${p.error ? '<span class="status failed">Failed</span>' : String(p.attributes.success) === "true" ? '<span class="status succeeded">Succeeded</span>' : ""}<time datetime="${esc(e.time)}" title="${esc(date(e.time))}">${esc(clock(e.time))}</time></div>${p.blocks.map((b) => `<div class="block ${b.label === "Error" ? "failure-detail" : ""}">${["Request", "Response", "Message", p.kind].includes(b.label) ? "" : `<div class="blocklabel">${esc(blockLabel(b, p))}</div>`}<${b.code ? "pre" : "div"} class="${b.code ? "code" : "prose"}">${esc(b.text)}</${b.code ? "pre" : "div"}></div>`).join("")}${modelCallsHTML(e)}${subagentLinks(e.subagents)}${eventSkillsHTML(e.skills)}${
-              p.fields.length
-                ? `<dl class="fields">${p.fields
-                    .filter(([k]) => k !== "Result")
-                    .map(
-                      ([k, v]) =>
-                        `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`,
-                    )
-                    .join("")}</dl>`
-                : ""
-            }</div></article>`,
-        )
-        .join("")
-    : '<p class="empty">No matching events on this page</p>';
+  $("#timeline").innerHTML = view === "conversation"
+    ? conversationTimelineHTML(visible)
+    : visible.length
+      ? visible.map(([e, p]) => eventCardHTML(e, p)).join("")
+      : '<p class="empty">No matching events on this page</p>';
+  if (view === "conversation") bindProcessingGroups();
   if (inspectedID && !visible.some(([e]) => e.id === inspectedID))
     closeInspector(false);
-  document.querySelectorAll("[data-event]").forEach((card) => {
-    card.classList.toggle("selected", card.dataset.event === inspectedID);
-    card.onclick = (event) => {
-      if (
-        !event.target.closest("a,button") &&
-        !window.getSelection()?.toString()
-      )
-        openInspector(card.dataset.event);
-    };
-    card.onkeydown = (e) => {
-      if (e.target !== card) return;
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        openInspector(card.dataset.event);
-      }
-    };
-  });
+  bindEventCards($("#timeline"));
   bindModelCalls($("#timeline"));
   bindSubagentLinks($("#timeline"));
   bindSubagentLinks($("#relations"));
@@ -684,7 +695,11 @@ function captureTimelinePosition() {
 function placeTimeline(mode, anchor, serial) {
   requestAnimationFrame(() => {
     if (serial !== requestSerial) return;
-    if (mode === "bottom")
+    if (mode === "match") {
+      const target = $(".processing-match") || (meta.match_id ? document.querySelector(`[data-event="${CSS.escape(meta.match_id)}"]`) : null);
+      if (target) target.scrollIntoView({ block: "center", behavior: "instant" });
+      else $("#pageinfo").scrollIntoView({ block: "start", behavior: "instant" });
+    } else if (mode === "bottom")
       window.scrollTo({
         top: document.documentElement.scrollHeight,
         behavior: "instant",
@@ -726,14 +741,15 @@ async function refresh(scrollMode) {
         ? "&position=latest"
         : `&offset=${eventOffset}&limit=${eventLimit}`;
       const page = await api(
-        `/api/session?id=${encodeURIComponent(selected)}&origin=${encodeURIComponent(origin)}&view=${view}&kind=${kind}${paging}`,
+        `/api/session?id=${encodeURIComponent(selected)}&origin=${encodeURIComponent(origin)}&view=${view}&kind=${kind}${conversationMatch ? "&match=" + encodeURIComponent(conversationMatch) : ""}${paging}`,
         controller.signal,
       );
       if (controller.signal.aborted) return;
       anchor = captureTimelinePosition();
-      scrollMode ??= latest ? "bottom" : meta ? "preserve" : "top";
+      scrollMode ??= latest && conversationMatch && view === "conversation" ? "match" : latest ? "bottom" : meta ? "preserve" : "top";
       closeInspector(false);
       inspectorCache.clear();
+      resetProcessingGroups();
       meta = page;
       pageOrigin = origin;
       events = page.events;
@@ -788,7 +804,7 @@ async function refresh(scrollMode) {
       eventOffset = meta.offset;
       eventLimit = meta.limit;
       origin = pageOrigin;
-      view = meta.view || "activity";
+      view = meta.view || "conversation";
       kind = meta.kind || "";
       syncEventFilters();
       $("#origin").value = origin;
@@ -861,6 +877,7 @@ $("#logout").onclick = async () => {
   location.reload();
 };
 function syncEventFilters() {
+  $("#eventfilters").hidden = view === "conversation";
   document
     .querySelectorAll("button[data-kind]")
     .forEach((b) => b.classList.toggle("active", b.dataset.kind === kind));
@@ -885,6 +902,7 @@ document.querySelectorAll("[data-view]").forEach(
   (b) =>
     (b.onclick = () => {
       view = b.dataset.view;
+      if (view === "conversation") kind = "";
       if (view === "activity" && kind === "metric") kind = "";
       eventOffset = null;
       eventLimit = 200;

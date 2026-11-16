@@ -41,13 +41,19 @@ func (f eventFilter) predicate(alias string) string {
 }
 
 func parseEventFilter(view, kind string) (eventFilter, error) {
-	if view != "" && view != "activity" && view != "diagnostics" {
+	if view != "" && view != "activity" && view != "diagnostics" && view != "conversation" {
 		return eventFilter{}, fmt.Errorf("invalid event view")
 	}
 	switch kind {
 	case "", "conversation", "tool", "error", "model", "metric", "skill", "agent", "event":
 	default:
 		return eventFilter{}, fmt.Errorf("invalid event type")
+	}
+	if view == "conversation" {
+		if kind != "" && kind != "conversation" {
+			return eventFilter{}, fmt.Errorf("conversation view does not accept event-type filters")
+		}
+		kind = "conversation"
 	}
 	return eventFilter{Activity: view == "activity", Kind: kind}, nil
 }
@@ -154,7 +160,7 @@ func backfillPresentation(ctx context.Context, tx *sql.Tx, cursor string) (strin
 			if err != nil {
 				return cursor, 0, err
 			}
-			if _, err = tx.ExecContext(ctx, "UPDATE event_cards SET presentation_ready=1,detail=?,activity=?,kind=?,is_error=?,turn=?,conversation=?,has_skill=EXISTS(SELECT 1 FROM skill_events WHERE event_id=?) WHERE id=?", encoded, detailActivity(d), d.Kind, d.Error, d.Turn, detailConversation(d), e.ID, e.ID); err != nil {
+			if _, err = tx.ExecContext(ctx, "UPDATE event_cards SET presentation_ready=1,detail=?,activity=?,kind=?,is_error=?,turn=?,conversation=?,has_skill=EXISTS(SELECT 1 FROM skill_events WHERE event_id=?) WHERE id=?", encoded, detailActivity(d), d.Kind, d.Error, d.Turn, detailConversation(d, e.Source), e.ID, e.ID); err != nil {
 				return cursor, 0, err
 			}
 		}

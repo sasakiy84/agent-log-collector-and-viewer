@@ -90,7 +90,7 @@ func codexPageContext(text string) (string, bool) {
 }
 
 func promptTitle(source string, d Detail) string {
-	if d.Kind != "user" && !(source == "copilot" && d.Kind == "agent" && d.sessionPrompt) {
+	if d.Kind != "user" && !(source == "copilot" && d.Kind == "agent" && d.SessionPrompt) {
 		return ""
 	}
 	for _, block := range userRequestBlocks(d) {

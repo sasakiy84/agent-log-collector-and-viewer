@@ -104,7 +104,7 @@ func providerDetails(e Event, p *Detail, r map[string]any) {
 			p.Turn = str(get("github.copilot.interaction_id"))
 		}
 		if a["gen_ai.operation.name"] == "invoke_agent" {
-			p.sessionPrompt = e.ParentSpan == "" || present(a["server.address"])
+			p.SessionPrompt = e.ParentSpan == "" || present(a["server.address"])
 			p.Title = firstString(str(a["gen_ai.agent.name"]), "Agent turn")
 			for _, v := range arr(r["events"]) {
 				ev := obj(v)
