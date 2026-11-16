@@ -14,7 +14,8 @@ from playwright.sync_api import expect, sync_playwright
 
 BINARY = os.getenv('AGENTLOG_BIN', './agentlog')
 TOKEN = 'synthetic-activity-projects-test-token'
-OUT = Path(__file__).resolve().parents[1] / 'docs'
+OUT = Path(os.getenv('AGENTLOG_SCREENSHOT_DIR', Path(__file__).resolve().parents[1] / 'docs'))
+OUT.mkdir(parents=True, exist_ok=True)
 
 
 def attrs(values):
@@ -115,8 +116,35 @@ with tempfile.TemporaryDirectory() as directory:
             page.reload()
             expect(page.locator('.event')).to_have_count(2)
             expect(page.locator('button[data-kind="conversation"]')).to_have_class('active')
+            # Browsers may restore form controls after deferred scripts run.
+            # A restored checkbox must not silently change the URL's filters.
+            page.add_init_script('''document.addEventListener('DOMContentLoaded', () => {
+                if (location.pathname === '/' && !new URL(location.href).searchParams.has('diagnostics'))
+                    document.querySelector('#showdiagnostics').checked = true;
+            });''')
             page.locator('#detailpage > .back').click()
             expect(page.locator('[data-project="name:Agentlog"]')).to_have_attribute('aria-current', 'true')
+            expect(page.locator('.session')).to_have_count(2)
+            expect(page.locator('#showdiagnostics')).not_to_be_checked()
+            assert 'diagnostics=' not in page.url, page.url
+            page.go_back()
+            expect(page.locator('#detailpage')).to_be_visible()
+            page.go_forward()
+            expect(page.locator('.session')).to_have_count(2)
+            expect(page.locator('#showdiagnostics')).not_to_be_checked()
+            assert 'diagnostics=' not in page.url, page.url
+            # Explicit inclusion remains enabled when returning from details.
+            page.locator('#showdiagnostics').check()
+            expect(page).to_have_url(base + '/?project=name%3AAgentlog&diagnostics=1')
+            page.locator('[data-session="codex:search"]').click()
+            expect(page.locator('#detailpage')).to_be_visible()
+            page.locator('[data-view="diagnostics"]').click()
+            page.locator('#detailpage > .back').click()
+            expect(page.locator('.session')).to_have_count(2)
+            expect(page.locator('#showdiagnostics')).to_be_checked()
+            assert 'diagnostics=1' in page.url, page.url
+            page.locator('#showdiagnostics').uncheck()
+            expect(page).to_have_url(base + '/?project=name%3AAgentlog')
             page.locator('[data-project=""]').click()
             expect(page.locator('.session')).to_have_count(1)
             expect(page.locator('.session h2')).to_have_text('Hello!')

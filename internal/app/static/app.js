@@ -124,9 +124,13 @@ let folder = listURL.searchParams.has("folder")
   ? listURL.searchParams.get("folder")
   : null;
 if (projectSelections.length > 1) project = null;
-$("#showdiagnostics").checked = listURL.searchParams.has("diagnostics")
-  ? listURL.searchParams.get("diagnostics") === "1"
-  : false;
+let includeInternalSessions = listURL.searchParams.get("diagnostics") === "1";
+$("#showdiagnostics").checked = includeInternalSessions;
+// History navigation can restore form controls after initialization. Search
+// state belongs to the URL and explicit user changes, not restored DOM values.
+window.addEventListener("pageshow", () => {
+  $("#showdiagnostics").checked = includeInternalSessions;
+});
 query = listURL.searchParams.get("q") || "";
 let idKey = listURL.searchParams.get("id_key") || "",
   idValue = listURL.searchParams.get("id_value") || "";
@@ -222,7 +226,7 @@ function listParameters() {
     p.set("skill", skillFilter);
     p.set("plugin", skillPlugin);
   }
-  if ($("#showdiagnostics").checked) p.set("diagnostics", "1");
+  if (includeInternalSessions) p.set("diagnostics", "1");
   if (query) p.set("q", query);
   if (idValue) {
     p.set("id_value", idValue);
@@ -757,7 +761,7 @@ async function refresh(scrollMode) {
         project,
         projectSelections: [...projectSelections],
         searchScope: structuredClone(searchScope),
-        diagnostics: $("#showdiagnostics").checked,
+        diagnostics: includeInternalSessions,
         skillFilter,
         skillPlugin,
       };
@@ -813,7 +817,7 @@ async function refresh(scrollMode) {
         skillFilter,
         skillPlugin,
       } = sessionData);
-      $("#showdiagnostics").checked = sessionData.diagnostics;
+      includeInternalSessions = sessionData.diagnostics;
       renderSearchControls();
       $("#search").value = query;
       syncIdentifierSearch();
@@ -894,7 +898,7 @@ setupProjects();
 function matchingExportURL() {
   const params = listParameters();
   if (folder !== null) params.set("folder", folder);
-  params.set("diagnostics", $("#showdiagnostics").checked ? "1" : "0");
+  params.set("diagnostics", includeInternalSessions ? "1" : "0");
   params.set("include_children", "0");
   params.set("include_locked", "0");
   return "/api/export/download?" + params;
@@ -944,6 +948,7 @@ function scheduleSearch() {
   }, 250);
 }
 $("#showdiagnostics").onchange = () => {
+  includeInternalSessions = $("#showdiagnostics").checked;
   sessionOffset = 0;
   listState();
   refresh();

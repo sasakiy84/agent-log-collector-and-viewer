@@ -45,6 +45,7 @@ function applyTextOptions() {
   searchScope.exclude = $("#searchexclude").value.trim();
 }
 function renderSearchControls() {
+  $("#showdiagnostics").checked = includeInternalSessions;
   $("#searchfrom").value = localDateValue(searchScope.from);
   $("#searchto").value = localDateValue(searchScope.to);
   $("#searchdates").hidden = searchScope.range === "all";
@@ -127,7 +128,7 @@ function setupSearchControls() {
     project = null; projectSelections = []; folder = null;
     idKey = idValue = skillFilter = skillPlugin = query = skillsQuery = "";
     $("#search").value = $("#skillsearch").value = "";
-    $("#showdiagnostics").checked = false;
+    includeInternalSessions = false;
     syncIdentifierSearch();
     searchScopeChanged();
     $("#searchtime").open = $("#searchoptions").open = false;

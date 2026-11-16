@@ -75,7 +75,7 @@ async function loadProjects(signal, more = false) {
     if (skillFilter) {params.set("skill", skillFilter);params.set("plugin", skillPlugin);}
   }
   params.set("q", projectsQuery);
-  if ($("#showdiagnostics").checked) params.set("diagnostics", "1");
+  if (includeInternalSessions) params.set("diagnostics", "1");
   const key = params.toString();
   if (!more && projectsKey === key) {
     renderProjects();
