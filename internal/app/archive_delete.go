@@ -122,7 +122,10 @@ func (a *App) deleteArchive(ctx context.Context, job ArchiveJob) error {
 			return err
 		}
 		a.notifyArchive()
-		if _, err = a.DB.ExecContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
+		// A concurrent export can retain an older WAL snapshot for minutes.
+		// Do not spend the writer's busy timeout waiting for it after every
+		// deletion batch; compaction handles final truncation separately.
+		if _, err = a.DB.ExecContext(ctx, "PRAGMA wal_checkpoint(PASSIVE)"); err != nil {
 			return err
 		}
 	}
