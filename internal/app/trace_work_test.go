@@ -17,6 +17,74 @@ func ambiguousTraceFixture(t *testing.T, a *App) {
 	save(t, a, one, two, pending)
 }
 
+func TestTraceReconciliationUsesExplicitParentWhenAmbiguous(t *testing.T) {
+	a := setup(t)
+	ambiguousTraceFixture(t, a)
+	child := recorded(t, "child", "otel", "codex", "unused", "handle_responses", nil)
+	child.Trace, child.Span, child.ParentSpan, child.Session = "shared", "child-span", "pb", "trace:codex:shared"
+	save(t, a, child)
+	for id, want := range map[string]string{"child": "codex:b", "pending": "trace:codex:shared"} {
+		var session string
+		if err := a.DB.QueryRow("SELECT session FROM events WHERE id=?", id).Scan(&session); err != nil || session != want {
+			t.Fatalf("%s: got %q, want %q: %v", id, session, want, err)
+		}
+	}
+}
+
+func TestTraceReconciliationFallbackIgnoresUnassignedAndOtherSources(t *testing.T) {
+	a := setup(t)
+	owner := recorded(t, "owner", "otel", "codex", "root", "user_prompt", map[string]any{"prompt": "Hello"})
+	owner.Trace, owner.Span = "shared", "owner-span"
+	other := recorded(t, "other", "otel", "claude", "other", "user_prompt", map[string]any{"prompt": "Other"})
+	other.Trace, other.Span = "shared", "other-span"
+	unassigned := recorded(t, "unassigned", "otel", "codex", "unused", "event", nil)
+	unassigned.Trace, unassigned.Session = "shared", "unassigned:codex"
+	child := recorded(t, "child", "otel", "codex", "unused", "receiving", nil)
+	child.Trace, child.ParentSpan, child.Session = "shared", "missing", "trace:codex:shared"
+	save(t, a, owner, other, unassigned, child)
+	var session string
+	if err := a.DB.QueryRow("SELECT session FROM events WHERE id='child'").Scan(&session); err != nil || session != "codex:root" {
+		t.Fatal("unambiguous fallback lost", session, err)
+	}
+}
+
+// Match a long Codex streaming trace and an OTLP batch of receiving /
+// handle_responses spans. No raw payloads are needed to measure ownership work.
+func BenchmarkReconcileStreamingTrace(b *testing.B) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer db.Close()
+	_, err = db.Exec(`CREATE TABLE events(id TEXT PRIMARY KEY,source TEXT,trace TEXT,session TEXT,span TEXT,parent_span TEXT);
+ CREATE INDEX events_trace ON events(source,trace,span);
+ CREATE INDEX events_pending_trace ON events(source,trace,parent_span) WHERE trace<>'' AND session GLOB 'trace:*';
+ CREATE TABLE trace_dirty(source TEXT,trace TEXT,PRIMARY KEY(source,trace)) WITHOUT ROWID;
+ CREATE TABLE archive_locks(session TEXT PRIMARY KEY);
+ WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<120000)
+ INSERT INTO events SELECT printf('%d',x),'codex','shared','codex:root',printf('%016x',x),'' FROM n;`)
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	for b.Loop() {
+		tx, err := db.Begin()
+		if err != nil {
+			b.Fatal(err)
+		}
+		_, err = tx.Exec(`WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<418)
+ INSERT INTO events SELECT printf('p%d',x),'codex','shared','trace:codex:shared',printf('p%d',x),printf('%016x',x) FROM n;
+ INSERT INTO trace_dirty VALUES('codex','shared');`)
+		if err == nil {
+			_, err = reconcileTraceBatch(context.Background(), tx)
+		}
+		tx.Rollback()
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func TestTraceMaintenanceDefersLockedIdentity(t *testing.T) {
 	a := setup(t)
 	ambiguousTraceFixture(t, a)
