@@ -42,14 +42,22 @@ func (f sessionFilter) usesFolderCache() bool {
 }
 
 func (f sessionFilter) sql(ctx context.Context) (string, []any, error) {
-	query := ` FROM session_catalog s WHERE 1`
+	selection, err := f.selection(ctx)
+	if err != nil {
+		return "", nil, err
+	}
+	return selection.sql(), selection.args, nil
+}
+
+func (f sessionFilter) selection(ctx context.Context) (sqlSelection, error) {
+	query := ""
 	if !f.IncludeLocked {
 		query += ` AND NOT EXISTS(SELECT 1 FROM archive_locks l WHERE l.session=s.session)`
 	}
 	args := []any{}
 	idQuery, idArgs, err := identifierFilter(f.IDKey, f.IDValue)
 	if err != nil {
-		return "", nil, err
+		return sqlSelection{}, err
 	}
 	query += idQuery
 	args = append(args, idArgs...)
@@ -67,10 +75,10 @@ func (f sessionFilter) sql(ctx context.Context) (string, []any, error) {
 	}
 
 	if f.Facets.Err != nil {
-		return "", nil, f.Facets.Err
+		return sqlSelection{}, f.Facets.Err
 	}
 	if f.TextMode != "" && f.TextMode != "all" && f.TextMode != "any" {
-		return "", nil, fmt.Errorf("Invalid text match mode")
+		return sqlSelection{}, fmt.Errorf("Invalid text match mode")
 	}
 	scope, scopeArgs := f.Facets.sessionSQL()
 	query += scope
@@ -84,20 +92,20 @@ func (f sessionFilter) sql(ctx context.Context) (string, []any, error) {
 		args = append(args, *f.Project)
 	}
 	if f.Search != "" || f.Exclude != "" || f.Facets.hasEvents() {
-		cards, cardArgs, err := f.matchingCards(ctx)
+		cards, err := f.matchingCards(ctx)
 		if err != nil {
-			return "", nil, err
+			return sqlSelection{}, err
 		}
 		if f.Search != "" {
-			query += " AND s.session IN(SELECT c.session" + cards + " GROUP BY c.session)"
+			query += " AND s.session IN(SELECT c.session" + cards.sql() + " GROUP BY c.session)"
 		} else {
-			query += " AND EXISTS(SELECT 1" + cards + " AND c.session=s.session)"
+			query += " AND EXISTS(SELECT 1" + cards.sql() + " AND c.session=s.session)"
 		}
-		args = append(args, cardArgs...)
+		args = append(args, cards.args...)
 	}
 	if f.Folder != nil {
 		query += " AND " + directoryColumn + "=?"
 		args = append(args, *f.Folder)
 	}
-	return query, args, nil
+	return sqlSelection{from: " FROM session_catalog s", where: query, args: args}, nil
 }

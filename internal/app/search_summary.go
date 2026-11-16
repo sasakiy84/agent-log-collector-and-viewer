@@ -2,14 +2,13 @@ package app
 
 import (
 	"net/http"
-	"strings"
 )
 
 // Analysis is an explicit request, never part of initial list loading. It uses
 // the same event predicate as search and reads cached metadata, not raw logs.
 func (a *App) searchSummary(w http.ResponseWriter, r *http.Request) {
 	filter := parseSessionFilter(r.URL.Query())
-	cards, args, err := filter.matchingCards(r.Context())
+	cards, err := filter.matchingCards(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), 400)
 		return
@@ -22,26 +21,25 @@ func (a *App) searchSummary(w http.ResponseWriter, r *http.Request) {
 	membership.Facets.To = ""
 	membership.Facets.Origins = nil
 	membership.Facets.Kinds = nil
-	metadata, metadataArgs, err := membership.sql(r.Context())
+	metadata, err := membership.selection(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), 400)
 		return
 	}
-	split := strings.Index(cards, " WHERE 1")
 	if filter.Search == "" {
 		// With no FTS posting list, project/source catalog rows drive indexed
 		// session/origin/time probes instead of a scan of all cached card payloads.
-		cards = " FROM session_catalog s CROSS JOIN event_cards c ON c.session=s.session" + cards[split:]
+		cards.from = " FROM session_catalog s CROSS JOIN event_cards c ON c.session=s.session"
 	} else {
-		cards = cards[:split] + " JOIN session_catalog s ON s.session=c.session" + cards[split:]
+		cards.from += " JOIN session_catalog s ON s.session=c.session"
 	}
-	cards += strings.TrimPrefix(metadata, " FROM session_catalog s WHERE 1") + " AND length(s.parent)=0"
-	args = append(args, metadataArgs...)
+	cards.where += metadata.where + " AND length(s.parent)=0"
+	cards.args = append(cards.args, metadata.args...)
 	if filter.Skill != "" {
 		evidence, more := filter.Facets.evidenceSQL("k")
-		cards += ` AND EXISTS(SELECT 1 FROM skill_events k WHERE k.session=s.session AND k.name=? AND k.plugin=?` + evidence + `)`
-		args = append(args, filter.Skill, filter.Plugin)
-		args = append(args, more...)
+		cards.where += ` AND EXISTS(SELECT 1 FROM skill_events k WHERE k.session=s.session AND k.name=? AND k.plugin=?` + evidence + `)`
+		cards.args = append(cards.args, filter.Skill, filter.Plugin)
+		cards.args = append(cards.args, more...)
 	}
 	group := r.URL.Query().Get("group")
 	column := ""
@@ -69,7 +67,7 @@ func (a *App) searchSummary(w http.ResponseWriter, r *http.Request) {
 	if group != "day" {
 		order = "COUNT(*) DESC,group_key"
 	}
-	rows, err := a.readers.QueryContext(r.Context(), "SELECT "+column+" AS group_key,COUNT(*),COUNT(DISTINCT c.session),SUM(c.is_error)"+cards+" GROUP BY group_key ORDER BY "+order+" LIMIT 101", append(columnArgs, args...)...)
+	rows, err := a.readers.QueryContext(r.Context(), "SELECT "+column+" AS group_key,COUNT(*),COUNT(DISTINCT c.session),SUM(c.is_error)"+cards.sql()+" GROUP BY group_key ORDER BY "+order+" LIMIT 101", append(columnArgs, cards.args...)...)
 	if err != nil {
 		databaseError(w, r, err)
 		return

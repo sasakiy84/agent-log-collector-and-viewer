@@ -97,12 +97,12 @@ func (f searchFacets) hasEvents() bool {
 // The FTS posting lookup remains the driver when text is present. Additional
 // event predicates join by card primary key, so words outside the selected
 // window/type/origin cannot accidentally satisfy the same search.
-func (f sessionFilter) matchingCards(ctx context.Context) (string, []any, error) {
+func (f sessionFilter) matchingCards(ctx context.Context) (sqlSelection, error) {
 	if f.Facets.Err != nil {
-		return "", nil, f.Facets.Err
+		return sqlSelection{}, f.Facets.Err
 	}
 	if f.TextMode != "" && f.TextMode != "all" && f.TextMode != "any" {
-		return "", nil, fmt.Errorf("Invalid text match mode")
+		return sqlSelection{}, fmt.Errorf("Invalid text match mode")
 	}
 	from := " FROM event_cards c"
 	scope := f.Facets
@@ -133,7 +133,7 @@ func (f sessionFilter) matchingCards(ctx context.Context) (string, []any, error)
 	if f.Search != "" {
 		match, err := searchMatchMode(ctx, f.Search, f.TextMode)
 		if err != nil {
-			return "", nil, err
+			return sqlSelection{}, err
 		}
 		if match == "" {
 			query += " AND 0"
@@ -155,12 +155,12 @@ func (f sessionFilter) matchingCards(ctx context.Context) (string, []any, error)
 	if f.Exclude != "" {
 		match, err := searchMatchMode(ctx, f.Exclude, "any")
 		if err != nil {
-			return "", nil, err
+			return sqlSelection{}, err
 		}
 		if match != "" {
 			query += ` AND c.id NOT IN(SELECT d.event_id FROM event_search CROSS JOIN search_documents d ON d.rowid=event_search.rowid WHERE event_search MATCH ?)`
 			args = append(args, match)
 		}
 	}
-	return from + " WHERE 1" + query, args, nil
+	return sqlSelection{from: from, where: query, args: args}, nil
 }
