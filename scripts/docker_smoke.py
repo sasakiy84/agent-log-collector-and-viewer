@@ -6,7 +6,7 @@ parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--skip-
 project='agentlog-smoke-'+secrets.token_hex(4)
 token=secrets.token_hex(24)
 env={**os.environ,'AGENTLOG_TOKEN':token,'AGENTLOG_PORT':'0'}
-compose=['docker','--host=unix:///var/run/docker.sock','compose','-p',project,'-f','compose.yaml']
+compose=['docker','compose','-p',project,'-f','compose.yaml']
 def run(*args):return subprocess.check_output([*compose,*args],env=env,text=True).strip()
 def base():return 'http://'+run('port','agentlog','4318')
 def request(path,body=None,auth=token,timeout=5):
@@ -14,23 +14,32 @@ def request(path,body=None,auth=token,timeout=5):
  req=urllib.request.Request(base()+path,b,headers={'Content-Type':'application/json','Authorization':'Bearer '+auth})
  with settled_urlopen(req,timeout=timeout) as response:return json.load(response)
 def ready():
- deadline=time.monotonic()+180;maximum=time.monotonic()+600;probe=time.monotonic()+5;previous='';logs=''
- while time.monotonic()<min(deadline,maximum):
-  try:return request('/api/stats')
-  except (OSError,subprocess.CalledProcessError):
-   if time.monotonic()>=probe:
-    logs=run('logs','--no-color','--tail','6','agentlog')
-    progress='\n'.join(line.split('|',1)[-1].strip().split(' ',2)[-1] for line in logs.splitlines() if any(term in line for term in ('Database preparation:', 'Preparing ', 'Prepared ', 'Maintenance ', 'Database migration ')))
-    if progress and progress!=previous:deadline=time.monotonic()+180;previous=progress
-    probe=time.monotonic()+5
-   time.sleep(.2)
- raise RuntimeError('Compose startup stopped progressing:\n'+logs)
+    deadline=time.monotonic()+180;maximum=time.monotonic()+600;probe=time.monotonic()+5;previous='';logs=''
+    while time.monotonic()<min(deadline,maximum):
+        try:
+            # A stop/start keeps the same port. test_support's per-base cache
+            # cannot establish readiness after replacing the database below.
+            # Raw event counts are readable before historical views are ready.
+            state=request('/api/status')
+            if state['state']=='failed':
+                raise RuntimeError('Compose database preparation failed:\n'+run('logs','--no-color','--tail','20','agentlog'))
+            if state['state']=='ready' and state['pending_batches']==0:
+                return request('/api/stats')
+        except (OSError,subprocess.CalledProcessError):
+            pass
+        if time.monotonic()>=probe:
+            logs=run('logs','--no-color','--tail','6','agentlog')
+            progress='\n'.join(line.split('|',1)[-1].strip().split(' ',2)[-1] for line in logs.splitlines() if any(term in line for term in ('Database preparation:', 'Preparing ', 'Prepared ', 'Maintenance ', 'Database migration ')))
+            if progress and progress!=previous:deadline=time.monotonic()+180;previous=progress
+            probe=time.monotonic()+5
+        time.sleep(.2)
+    raise RuntimeError('Compose startup stopped progressing:\n'+logs)
 
 def large_history(cid):
  # Seed only synthetic rows. A long history must not exhaust the 64 MiB /tmp
  # mount while SQLite materializes timeline groups and preview selection.
  run('stop','agentlog')
- docker=['docker','--host=unix:///var/run/docker.sock']
+ docker=['docker']
  with tempfile.TemporaryDirectory() as tmp:
   database=pathlib.Path(tmp)/'agentlog.db'
   subprocess.run([*docker,'cp',cid+':/data/agentlog.db',str(database)],check=True)
@@ -100,7 +109,7 @@ try:
  run('up','-d','--no-build')
  assert ready()=={'events':0,'sessions':0}
  cid=run('ps','-q','agentlog')
- config=json.loads(subprocess.check_output(['docker','--host=unix:///var/run/docker.sock','inspect',cid],text=True))[0]
+ config=json.loads(subprocess.check_output(['docker','inspect',cid],text=True))[0]
  assert config['Config']['User']=='65532:65532'
  assert config['HostConfig']['ReadonlyRootfs']
  assert 'SQLITE_TMPDIR=/data' in config['Config']['Env']

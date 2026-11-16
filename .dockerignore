@@ -15,3 +15,7 @@ agentlog.json
 /config.json
 
 /archives/
+
+# Test-only sources must not invalidate the production compile layer.
+**/*_test.go
+**/testdata/

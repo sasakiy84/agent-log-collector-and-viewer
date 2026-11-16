@@ -73,6 +73,25 @@ When transcript normalization changes, bump `watchParserVersion` so persistent u
 
 Use the browser flows for affected features. `AGENTLOG_BIN=./agentlog python3 scripts/activity_projects_browser_test.py` checks project navigation and Activity/Diagnostics pagination on desktop and mobile.
 
+## Docker builds
+
+The BuildKit stages cache downloaded Go modules and compiled packages separately.
+Source edits reuse dependency compilation; test sources and `testdata` do not enter
+the production build context. `VERSION` affects compilation, not dependency download.
+Only the static binary, public CA bundle, writable data directory and licenses
+enter the scratch runtime image. TLS termination remains on the host's Nginx;
+the container receives HTTP. The CA bundle supports outbound HTTPS imports.
+
+```sh
+docker compose build
+python3 scripts/docker_smoke.py
+```
+
+The smoke test uses the selected Docker context or `DOCKER_HOST`, and creates and
+removes its own project and volume. It waits for database preparation after every
+restart before checking persisted data, Japanese search and the large-history
+archive flow. `--skip-scale` omits the 150,000-record import/archive scenario.
+
 ## Local checks and releases
 
 Run checks locally according to the changed behavior. The commands above cover Go/static checks and database upgrades. Use watcher, search, accounting, overview, browser or Docker scripts when the change affects those paths. There is no CI workflow or CI-artifact requirement for merging or releasing.
