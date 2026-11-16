@@ -29,6 +29,22 @@ Archive listings join indexed session timestamps with `archive_stats` record/byt
 
 Database URI construction applies foreign keys, busy timeout and writer transaction settings to every connection, including replacements. WAL readers and archive snapshots use read-only connections.
 
+## Runtime boundaries
+
+- `service.go` owns startup/readiness and connects the durable queue to `Save`.
+  `ingest_queue.go` owns the inbox connection, capacity, FIFO replay and watch
+  checkpoints. Archive checks and status queries use that boundary rather than
+  knowing the inbox schema. Shutdown stops workers before closing connections.
+- `sqlSelection` keeps a selection's driving tables, conditions and parameters
+  together. Session search, analysis and conversation navigation reuse those
+  parts without extracting conditions from already-rendered SQL strings.
+- Downloads share response/deadline preparation in `download.go`. Session JSON
+  and filtered ZIP exports stream originals rather than materializing sessions;
+  failed streams abort without a valid closing JSON/ZIP delimiter.
+- Archive deletion checkpoints are passive between batches, so a concurrent
+  export snapshot does not block the writer after each batch. Final compaction
+  retains its separate space-reclamation and reader coordination rules.
+
 ## Validation
 
 ```sh
