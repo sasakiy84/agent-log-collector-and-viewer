@@ -121,7 +121,7 @@ func conversationMatchPosition(ctx context.Context, tx *sql.Tx, session, origin,
 	return p.ID, pageOffset(preceding, total, limit), err
 }
 
-func processingSummary(ctx context.Context, tx *sql.Tx, session, origin, after, before, match string) (ProcessingGroup, error) {
+func processingSummary(ctx context.Context, tx *sql.Tx, session, origin, after, before, matchPredicate string, matchArgs []any) (ProcessingGroup, error) {
 	g := ProcessingGroup{After: after, Before: before}
 	query, args, err := processingRange(ctx, tx, session, origin, after, before)
 	if err != nil {
@@ -129,19 +129,22 @@ func processingSummary(ctx context.Context, tx *sql.Tx, session, origin, after, 
 	}
 	from := " FROM " + timelineTable(origin) + " WHERE " + query
 	err = tx.QueryRowContext(ctx, "SELECT COUNT(*),COALESCE(SUM(activity),0),COALESCE(SUM(is_error),0)"+from, args...).Scan(&g.Count, &g.Activity, &g.Errors)
-	if err == nil && match != "" && g.Count > 0 {
-		var predicate string
-		var more []any
-		predicate, more, err = processingMatch(ctx, origin, match)
-		if err == nil {
-			err = tx.QueryRowContext(ctx, "SELECT COUNT(*)"+from+predicate, append(args, more...)...).Scan(&g.Matches)
-		}
+	if err == nil && matchPredicate != "" && g.Count > 0 {
+		err = tx.QueryRowContext(ctx, "SELECT COUNT(*)"+from+matchPredicate, append(args, matchArgs...)...).Scan(&g.Matches)
 	}
 	return g, err
 }
 
 func conversationGroups(ctx context.Context, tx *sql.Tx, page SessionPage, origin, match string) ([]ProcessingGroup, error) {
 	groups := []ProcessingGroup{}
+	matchPredicate, matchArgs := "", []any{}
+	if match != "" {
+		var err error
+		matchPredicate, matchArgs, err = processingMatch(ctx, origin, match)
+		if err != nil {
+			return nil, err
+		}
+	}
 	after := ""
 	if len(page.Events) > 0 {
 		first, err := conversationPosition(ctx, tx, page.ID, origin, page.Events[0].ID, true)
@@ -156,7 +159,7 @@ func conversationGroups(ctx context.Context, tx *sql.Tx, page SessionPage, origi
 		}
 	}
 	add := func(before string) error {
-		group, err := processingSummary(ctx, tx, page.ID, origin, after, before, match)
+		group, err := processingSummary(ctx, tx, page.ID, origin, after, before, matchPredicate, matchArgs)
 		if err == nil && group.Count > 0 {
 			groups = append(groups, group)
 		}

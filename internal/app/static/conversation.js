@@ -124,6 +124,14 @@ async function loadProcessing(element, state, more = false) {
   } catch (error) {
     if (error.name === "AbortError" || !element.isConnected) return;
     status.textContent = error.message;
+    if (error.message.includes("HTTP 409")) {
+      status.textContent = "Logs changed. Reload the session to update this range.";
+      retry.textContent = "Reload session";
+      retry.onclick = () => refresh("preserve");
+    } else {
+      retry.textContent = "Retry";
+      retry.onclick = () => loadProcessing(element, state, !!state.events.length);
+    }
     retry.hidden = false;
   } finally {
     if (state.request === controller) {

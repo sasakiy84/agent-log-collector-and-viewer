@@ -146,6 +146,17 @@ with tempfile.TemporaryDirectory() as directory:
             expect(page.locator('#timeline > .empty')).to_have_text('Conversation text was not recorded.')
             page.locator('.processing-group summary').click()
             expect(page.locator('.processing-events')).to_contain_text('Tool-only telemetry')
+            # An import may replace a boundary's ID between reading and opening.
+            page.goto(base + '/sessions/codex%3Achat')
+            expect(page.locator('#timeline > .event')).to_have_count(3)
+            page.route('**/api/processing?*', lambda route: route.fulfill(status=409, body='stale range'))
+            page.locator('.processing-group summary').first.click()
+            expect(page.locator('.processing-retry').first).to_have_text('Reload session')
+            page.unroute('**/api/processing?*')
+            page.locator('.processing-retry').first.click()
+            expect(page.locator('.processing-group[open]')).to_have_count(0)
+            page.locator('.processing-group summary').first.click()
+            expect(page.locator('.processing-group').first.locator('.event')).to_have_count(2)
             assert not errors, errors
             browser.close()
     finally:
