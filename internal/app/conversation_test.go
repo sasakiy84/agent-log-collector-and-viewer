@@ -6,9 +6,95 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 )
+
+func TestConversationGroupCountsUseLogicalPositionsAcrossPages(t *testing.T) {
+	a := setup(t)
+	var events []Event
+	for i := 0; i < 12; i++ {
+		for _, origin := range []string{"import", "otel"} {
+			e := recorded(t, fmt.Sprintf("question-%s-%02d", origin, i), origin, "codex", "bounds", "gen_ai.user.message", map[string]any{"event.id": fmt.Sprint("question-", i), "prompt": "Question"})
+			e.Sequence = i * 10
+			if origin == "otel" {
+				e.Sequence += 3 // The merged position differs from the imported card.
+			}
+			events = append(events, e)
+		}
+		for _, sequence := range []int{1, 4, 8} {
+			e := recorded(t, fmt.Sprintf("processing-%02d-%d", i, sequence), "otel", "codex", "bounds", "codex.tool_result", map[string]any{"output": "Processing", "success": i%3 != 0})
+			e.Sequence = i*10 + sequence
+			events = append(events, e)
+		}
+		e := recorded(t, fmt.Sprintf("answer-%02d", i), "import", "codex", "bounds", "gen_ai.assistant.message", map[string]any{"response": "Answer"})
+		e.Sequence = i*10 + 9
+		events = append(events, e)
+	}
+	save(t, a, events...)
+	for _, origin := range []string{"", "import", "otel"} {
+		// An independent chronological walk computes the reference groups;
+		// equal timestamps and merged sequence numbers must not lose logs.
+		type entry struct {
+			id                             string
+			conversation, activity, errors int
+		}
+		query, args := timelineScope("codex:bounds", origin)
+		rows, err := a.DB.Query("SELECT id,conversation,activity,is_error FROM "+timelineTable(origin)+" WHERE "+query+" ORDER BY time,sequence,id", args...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var entries []entry
+		for rows.Next() {
+			var e entry
+			if err = rows.Scan(&e.id, &e.conversation, &e.activity, &e.errors); err != nil {
+				t.Fatal(err)
+			}
+			entries = append(entries, e)
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var all []ProcessingGroup
+		g := ProcessingGroup{}
+		for _, e := range entries {
+			if e.conversation == 1 {
+				g.Before = e.id
+				if g.Count > 0 {
+					all = append(all, g)
+				}
+				g = ProcessingGroup{After: e.id}
+			} else {
+				g.Count++
+				g.Activity += e.activity
+				g.Errors += e.errors
+			}
+		}
+		if g.Count > 0 {
+			all = append(all, g)
+		}
+		for _, paging := range []string{"offset=0", "offset=7", "position=latest"} {
+			var page SessionPage
+			getJSON(t, a, "/api/session?id=codex:bounds&view=conversation&origin="+origin+"&limit=7&"+paging, &page)
+			visible := map[string]bool{}
+			for _, e := range page.Events {
+				visible[e.ID] = true
+			}
+			want := []ProcessingGroup{}
+			for _, group := range all {
+				if visible[group.Before] || group.Before == "" && page.Offset+len(page.Events) >= page.Count {
+					want = append(want, group)
+				}
+			}
+			if !slices.Equal(page.Processing, want) {
+				t.Fatalf("origin=%q %s: got %+v, want %+v", origin, paging, page.Processing, want)
+			}
+		}
+	}
+}
 
 func TestConversationRangesAndLazyPagination(t *testing.T) {
 	a := setup(t)
