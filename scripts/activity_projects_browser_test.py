@@ -98,6 +98,10 @@ with tempfile.TemporaryDirectory() as directory:
             page.route('**/api/projects?*', hold_first_scope)
             with page.expect_request(lambda request: '/api/projects?' in request.url and 'session_q=setup' in request.url):
                 page.locator('#search').fill('setup')
+            # Results must render while the independent project query is held.
+            expect(page.locator('.session')).to_have_count(1)
+            expect(page.locator('.session')).to_contain_text('Update the setup guide.')
+            expect(page.locator('#workspace')).not_to_have_attribute('aria-busy', 'true')
             page.locator('#projectsearch').fill('Documentation')
             expect(page.locator('.session')).to_have_count(1)
             expect(page.locator('.session')).to_contain_text('Update the setup guide.')
@@ -105,8 +109,38 @@ with tempfile.TemporaryDirectory() as directory:
             for route in held:
                 route.abort()
             page.unroute('**/api/projects?*', hold_first_scope)
+            def fail_scope(route):
+                route.fulfill(status=500, body='Synthetic sidebar failure')
+            page.route('**/api/projects?*', fail_scope)
+            page.locator('#search').fill('guide')
+            expect(page.locator('.session')).to_have_count(1)
+            expect(page.locator('.session')).to_contain_text('Update the setup guide.')
+            expect(page.locator('#error')).to_be_empty()
+            expect(page.locator('#projectstatus')).to_contain_text('HTTP 500')
+            page.unroute('**/api/projects?*', fail_scope)
             page.goto(base)
             expect(page.locator('.session')).to_have_count(7)
+            # A successful sidebar for a rejected query must not survive when
+            # the main list restores its previous successful search scope.
+            rejected_lists = []
+            def hold_rejected_list(route):
+                query = urllib.parse.parse_qs(urllib.parse.urlsplit(route.request.url).query)
+                if query.get('q') == ['setup']:
+                    rejected_lists.append(route)
+                else:
+                    route.continue_()
+            page.route('**/api/sessions?*', hold_rejected_list)
+            page.locator('#search').fill('setup')
+            expect(page.locator('#projectlist button')).to_have_count(1)
+            expect(page.locator('[data-project="name:Documentation"]')).to_be_visible()
+            assert rejected_lists, 'Main list request was not held'
+            rejected_lists.pop().fulfill(status=500, body='Synthetic list failure')
+            expect(page.locator('#search')).to_have_value('')
+            expect(page.locator('.session')).to_have_count(7)
+            expect(page.locator('#error')).to_contain_text('HTTP 500')
+            expect(page.locator('#projectlist button')).to_have_count(5)
+            expect(page.locator('[data-project="name:Agentlog"] small')).to_have_text('2')
+            page.unroute('**/api/sessions?*', hold_rejected_list)
             page.locator('[data-project="name:Agentlog"]').click()
             expect(page.locator('.session')).to_have_count(2)
             page.locator('#search').fill('日本語')
@@ -187,6 +221,43 @@ with tempfile.TemporaryDirectory() as directory:
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
             page.mouse.move(0,0);page.evaluate('document.activeElement?.blur()')
             page.screenshot(path=str(OUT / 'ui-projects-mobile.png'), full_page=True)
+            # The same independent navigation contract applies to Skills.
+            skill_projects = []
+            def hold_skill_projects(route):
+                skill_projects.append(route)
+            page.route('**/api/projects?*', hold_skill_projects)
+            page.goto(base + '/skills')
+            expect(page.locator('#skillrows .empty')).to_have_text('No skills found')
+            expect(page.locator('#workspace')).not_to_have_attribute('aria-busy', 'true')
+            assert skill_projects, 'Sidebar request was not exercised'
+            for route in skill_projects:
+                route.abort()
+            page.unroute('**/api/projects?*', hold_skill_projects)
+            page.route('**/api/projects?*', fail_scope)
+            page.reload()
+            expect(page.locator('#skillrows .empty')).to_have_text('No skills found')
+            expect(page.locator('#error')).to_be_empty()
+            expect(page.locator('#projectstatus')).to_contain_text('HTTP 500')
+            page.unroute('**/api/projects?*', fail_scope)
+            page.reload()
+            expect(page.locator('#projectlist button')).to_have_count(5)
+            rejected_skills = []
+            def hold_rejected_skills(route):
+                query = urllib.parse.parse_qs(urllib.parse.urlsplit(route.request.url).query)
+                if query.get('source') == ['claude']:
+                    rejected_skills.append(route)
+                else:
+                    route.continue_()
+            page.route('**/api/skills?*', hold_rejected_skills)
+            page.set_viewport_size({'width': 1440, 'height': 1000})
+            page.locator('[name="searchsource"][value="claude"]').check()
+            expect(page.locator('#projectlist button')).to_have_count(0)
+            assert rejected_skills, 'Skills request was not held'
+            rejected_skills.pop().fulfill(status=500, body='Synthetic skills failure')
+            expect(page.locator('[name="searchsource"][value="claude"]')).not_to_be_checked()
+            expect(page.locator('#projectlist button')).to_have_count(5)
+            expect(page.locator('#error')).to_contain_text('HTTP 500')
+            page.unroute('**/api/skills?*', hold_rejected_skills)
             assert not errors, errors
             browser.close()
     finally:
