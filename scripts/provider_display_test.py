@@ -26,7 +26,7 @@ with tempfile.TemporaryDirectory() as folder:
  def fingerprint():
   digest=hashlib.sha256()
   with sqlite3.connect('file:'+db+'?mode=ro',uri=True) as c:
-   for id,raw in c.execute('SELECT id,raw FROM events ORDER BY id'):digest.update(id.encode());digest.update(raw)
+   for id,raw in c.execute('SELECT id,raw FROM records ORDER BY id'):digest.update(id.encode());digest.update(raw)
   return digest.hexdigest()
  try:
   start(baseline or binary);api('/v1/traces',fixture);before=fingerprint()
@@ -51,7 +51,7 @@ with tempfile.TemporaryDirectory() as folder:
   with sync_playwright() as p:
    browser=p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox']);page=browser.new_page(viewport={'width':1440,'height':1000});errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
    page.goto(base);page.locator('#token').fill(token);page.locator('#loginform button').click();expect(page.locator('.session')).to_have_count(2);assert '<current_datetime>' not in page.locator('#sessions').inner_text()
-   page.locator('[data-session="copilot:fixture-session"]').click();expect(page.locator('#timeline > .event')).to_have_count(1);page.locator('[data-view=activity]').click();expect(page.locator('#sessionskills')).to_contain_text('review ×1');expect(page.locator('#sessionusage')).to_contain_text('300');expect(page.locator('#timeline .event')).to_have_count(4)
+   page.locator('[data-session="copilot:fixture-session"]').click();expect(page.locator('#timeline > .event')).to_have_count(1);page.locator('[data-view=activity]').click();expect(page.locator('#sessionskills')).to_contain_text('review 1 reported');expect(page.locator('#sessionusage')).to_contain_text('300');expect(page.locator('#timeline .event')).to_have_count(4)
    root=page.locator('#timeline .event').filter(has=page.get_by_role('heading',name='Agent turn',exact=True));expect(root.locator('[data-model-call]')).to_have_count(3)
    tool=page.locator('#timeline .event').filter(has=page.get_by_role('heading',name='view',exact=True));tool.click();expect(page.locator('#inspectdetails')).to_contain_text('Synthetic file contents for Agentlog display test.');expect(page.locator('#inspectdetails > .block').filter(has=page.get_by_text('Output',exact=True)).locator('pre')).to_have_text('Synthetic file contents for Agentlog display test.');page.locator('#jsontab').click();expect(page.locator('#eventjson')).to_contain_text('gen_ai.tool.call.result');page.keyboard.press('Escape')
    page.locator('.subagent-link').filter(has_text='Explore').click();expect(page.locator('#inspectagent')).to_contain_text('Only this subagent work');expect(page.locator('#inspectagent .subagent-link')).to_have_count(0);page.keyboard.press('Escape')
@@ -63,8 +63,8 @@ with tempfile.TemporaryDirectory() as folder:
    if output:page.evaluate('document.activeElement?.blur();window.scrollTo(0,0)');page.screenshot(path=output+'/ui-claude-display.png',full_page=True)
    page.locator('#skillsnav').click();expect(page.locator('.skill-row')).to_have_count(2);assert 'test-guide' in page.locator('#skillrows').inner_text();assert 'review' in page.locator('#skillrows').inner_text()
    page.set_viewport_size({'width':390,'height':844});assert page.evaluate('document.documentElement.scrollWidth<=innerWidth');assert not errors,errors;browser.close()
-  with sqlite3.connect('file:'+db+'?mode=ro',uri=True) as c:checkpoint=c.execute("SELECT cursor,processed FROM maintenance_jobs WHERE name='providers.v1'").fetchone()
+  with sqlite3.connect('file:'+db+'?mode=ro',uri=True) as c:checkpoint=c.execute("SELECT id,detail FROM record_facts ORDER BY id").fetchall()
   stop();start(binary)
-  with sqlite3.connect('file:'+db+'?mode=ro',uri=True) as c:assert checkpoint==c.execute("SELECT cursor,processed FROM maintenance_jobs WHERE name='providers.v1'").fetchone(),'repair repeated on restart'
+  with sqlite3.connect('file:'+db+'?mode=ro',uri=True) as c:assert checkpoint==c.execute("SELECT id,detail FROM record_facts ORDER BY id").fetchall(),'repair repeated on restart'
  finally:stop()
-print('PASS: real Copilot fixture 600→300 tokens, skill recovery, readable tool content/JSON, invocation statistics, trace-scoped subagent preview, Claude documented formats, original preservation and checkpointed restart')
+print('PASS: real Copilot fixture 600→300 tokens, skill evidence, readable tool content/JSON, invocation statistics, trace-scoped subagent preview, Claude documented formats, original preservation and restart without historical reprocessing')

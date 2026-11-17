@@ -42,7 +42,7 @@ def start(binary, database):
 
 def fingerprint(database):
     with sqlite3.connect(database) as connection:
-        rows = connection.execute("SELECT id,hex(raw) FROM events ORDER BY id").fetchall()
+        rows = connection.execute("SELECT id,hex(raw) FROM records ORDER BY id").fetchall()
     return hashlib.sha256(json.dumps(rows).encode()).hexdigest()
 
 

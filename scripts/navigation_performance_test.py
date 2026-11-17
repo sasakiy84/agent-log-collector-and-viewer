@@ -11,22 +11,9 @@ import time
 from session_performance_test import SESSION, api, fixture, server, browser_check
 
 
-def wait_summaries(database):
-    with sqlite3.connect('file:' + str(database) + '?mode=ro', uri=True) as db:
-        deadline = time.monotonic() + 180
-        while time.monotonic() < deadline:
-            jobs = db.execute("SELECT complete,error FROM maintenance_jobs WHERE name IN('processing.cards.v1','processing.timeline.v1')").fetchall()
-            assert not any(error for _, error in jobs), jobs
-            if not jobs or all(complete for complete, _ in jobs):
-                return
-            time.sleep(.05)
-        raise TimeoutError('Processing summary history did not finish')
-
-
 def measure(binary, database, label, browser):
     expected = {}
     with server(binary, database) as base:
-        wait_summaries(database)
         for path in ['/api/sessions?offset=0', '/api/sessions?project=name:large',
                      *['/api/session?id=' + SESSION + '&' + query for query in (
                          'view=conversation&position=latest', 'view=conversation&offset=0',
@@ -64,7 +51,7 @@ def main():
             preview = json.dumps({'name':'codex.user_prompt','kind':'user','title':'User',
                                   'blocks':[{'label':'Request','text':'Synthetic question ' + 'x' * 700}],
                                   'fields':[],'attributes':{}})
-            db.executemany('''INSERT INTO session_catalog(session,source,parent,count,start,end,
+            db.executemany('''INSERT INTO sessions(session,source,parent,count,start,end,
  import_count,import_start,import_end,otel_count,otel_start,otel_end,preview)
  VALUES(?,'codex','',1,'2026-11-01T00:00:00.000000000Z','2026-11-01T00:00:00.000000000Z',
  0,'','',1,'2026-11-01T00:00:00.000000000Z','2026-11-01T00:00:00.000000000Z',?)''',
