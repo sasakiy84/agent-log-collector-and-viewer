@@ -35,8 +35,9 @@ type SkillSummary struct {
 func skillRollup() string {
 	return `SELECT k.name,k.plugin,COUNT(DISTINCT k.session) AS sessions,
  COUNT(DISTINCT CASE WHEN k.evidence='injection' THEN
- COALESCE((SELECT id FROM logical_events WHERE session=k.session AND
- (id=k.event_id OR (otel_id=k.event_id AND import_id<>'')) LIMIT 1),k.group_key)
+ COALESCE((SELECT id FROM logical_events WHERE id=k.event_id AND session=k.session
+ UNION ALL SELECT id FROM logical_events WHERE otel_id=k.event_id
+ AND import_id<>'' AND otel_id<>'' AND session=k.session LIMIT 1),k.group_key)
  ELSE k.group_key END) AS attempts,MAX(k.time) AS last,
  json_group_array(DISTINCT k.scope) AS scopes`
 }
