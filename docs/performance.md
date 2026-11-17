@@ -75,6 +75,53 @@ session read latency from import/backfill throughput. Omit `--browser` to run
 only the API comparison. Use `performance_check.py` for the separate historical
 import and overview workload.
 
+## Browser rendering and incremental loading
+
+Chromium at 1440×1000 was tested with 2,000, 20,000 and 277,022 total events.
+To isolate browser scaling from API work and different page contents, the
+controlled comparison supplies the same 200 conversation cards, 600 Japanese
+characters per card and 201 collapsed processing groups at every size. Only
+the total event count and gap counts change. Medians across five fresh pages:
+
+| Total events | `renderEvents` JavaScript | Response end → two animation frames | DOM nodes |
+| --- | ---: | ---: | ---: |
+| 2,000 | 26.0 ms | 311.8 ms | 4,195 |
+| 20,000 | 30.3 ms | 325.6 ms | 4,195 |
+| 277,022 | 28.5 ms | 321.0 ms | 4,195 |
+
+Initial browser work does not grow with the total history in this comparison.
+Laying out 200 long messages still takes about 0.3 seconds locally; that cost
+depends on visible content, viewport and device. The animation-frame metric
+includes parsing the response, JavaScript and layout scheduling; it is not a
+hardware paint measurement or an end-to-end production latency guarantee.
+Mock-response HTTP times are not server benchmarks.
+
+A separate real-API check uses the prepared database fixture above. Its latest
+pages contain 4, 40 and 156 conversation cards respectively, so those browser
+times also reflect different amounts of visible content. At 277,022 events,
+the session HTTP request took 71.6 ms, `renderEvents` took 12.8 ms and the
+response-to-frames interval was 70.1 ms. Every scenario opened on the latest
+conversation, rendered at most 200 cards and made no processing-log or original
+JSON request before expansion. Project/skill/subagent-heavy headers and slower
+devices are separate workloads, not covered by these fixtures.
+
+Explicit processing-log expansion remains incremental at 50 cards per request.
+Appending previously rebound handlers on every loaded card and retained complete
+event objects just to count them. It now initializes only the new fragment and
+retains the count. Across twenty 50-card pages this reduces initialized cards
+from 10,500 to 1,000. Already opened DOM cards remain until the timeline or filter
+is replaced; this change does not virtualize an arbitrarily expanded log group.
+
+```sh
+python3 scripts/frontend_performance_test.py --binary ./agentlog --real-api
+```
+
+The controlled comparison and append check run by default. `--real-api` also
+creates disposable prepared databases up to 277,022 events. Playwright and
+Chromium at `/usr/bin/chromium` are required. Timing values are reported without
+flaky wall-clock thresholds; bounded DOM size, lazy requests and page-local
+handler initialization are asserted.
+
 ## Other read paths and earlier measurements
 
 Session lists are ordered by latest activity. Shared numbered pagination shows the current range and total, first/last pages, nearby pages with ellipses, and a validated page-number field. The compact bar stays visible while scrolling. Lists count only indexed session summaries; filtered totals and rows share one read transaction (`X-Total-Count` and `X-Page-Offset`). Stale offsets clamp to the last valid page.
