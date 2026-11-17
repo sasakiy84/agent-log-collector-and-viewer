@@ -27,7 +27,7 @@ func TestArchiveDeletionMakesProgressWithLongRunningReader(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer a.Close()
-	events := make([]Event, 600)
+	events := make([]Event, 401)
 	for i := range events {
 		events[i] = oldEvent(t, fmt.Sprint(i), "archived")
 	}
@@ -51,9 +51,12 @@ func TestArchiveDeletionMakesProgressWithLongRunningReader(t *testing.T) {
 	if err = reader.QueryRow("SELECT COUNT(*) FROM events").Scan(&retained); err != nil || retained != len(events) {
 		t.Fatal(retained, err)
 	}
-	// The normal writer's busy timeout is five seconds. A pinned export must
-	// not consume it on each batch of 200 records while no reader is ending.
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	// Keep the busy timeout longer than the test deadline. A blocking TRUNCATE
+	// cannot pass, while race-instrumented deletion has time to execute its SQL.
+	if _, err = a.DB.Exec("PRAGMA busy_timeout=60000"); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err = a.deleteArchive(ctx, job); err != nil {
 		t.Fatal("deletion waited for the export snapshot", err)

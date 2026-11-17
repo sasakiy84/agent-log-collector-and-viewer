@@ -124,6 +124,25 @@ handler initialization are asserted.
 
 ## Other read paths and earlier measurements
 
+Watched files still reparse when changed to preserve canonical-message and
+journal relationships. Acknowledged record hashes now suppress unchanged
+deliveries in bounded 200-record batches. A 1,000-record fixture plus one
+appended record sends one additional record across watcher restarts, rather
+than replaying all 1,001. This reduces delivery/queue work, not the asymptotic
+cost of parsing the changed source file. Hash metadata adds storage to the
+checkpoint DB without retaining source bodies.
+
+Session JSON and filtered ZIP downloads have a separate two-connection read
+pool and admission limit. Paused exports cannot exhaust the four navigation
+connections. A 30-second per-write deadline bounds stalled clients while
+allowing progressing downloads to exceed the ordinary total write timeout.
+Active snapshots still retain WAL pages until they end.
+
+The related-agent header is also bounded to 20 child links, with keyset pages
+loaded on demand. Its state and requests are owned separately from timeline
+rendering. The controlled event-count benchmark above has no child links;
+the child-page API/browser regression separately checks 47 children.
+
 Session lists are ordered by latest activity. Shared numbered pagination shows the current range and total, first/last pages, nearby pages with ellipses, and a validated page-number field. The compact bar stays visible while scrolling. Lists count only indexed session summaries; filtered totals and rows share one read transaction (`X-Total-Count` and `X-Page-Offset`). Stale offsets clamp to the last valid page.
 
 Timelines use fixed 200-entry pages from the oldest event. They open on the last page, ordered oldest to newest, with the newest event visible at the bottom. The last page uses a descending index read bounded to its actual size, rather than skipping the history. **Latest** returns to that page. Historical page links retain their page/origin on reload; reloading an older page preserves its page selection. Appending events does not shift previous page boundaries.

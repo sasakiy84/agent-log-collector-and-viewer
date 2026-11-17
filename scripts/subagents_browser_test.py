@@ -25,6 +25,7 @@ with tempfile.TemporaryDirectory() as folder:
   child[41]=record('child',41,'gen_ai.agent.started',{'parent.session.id':'parent','gen_ai.operation.name':'invoke_agent','gen_ai.agent.id':'grandchild','gen_ai.agent.name':'Second reviewer'})
   send('codex',child+[record('grandchild',0,'gen_ai.assistant.message',{'parent.session.id':'child','response':'Nested review\n'+'順序とページングを確認しました。\n'*60})])
   send('copilot',[record('inline',0,'gen_ai.agent.started',{'gen_ai.operation.name':'invoke_agent','gen_ai.agent.id':'inline-reviewer','gen_ai.agent.name':'Inline reviewer'})]+[record('inline',i+1,'gen_ai.assistant.message',{'agent_id':'inline-reviewer','response':f'Inline line {i}'}) for i in range(45)]+[record('inline',100,'gen_ai.assistant.message',{'agent_id':'other','response':'Other runtime agent'})])
+  send('codex',[record('many',0,'codex.user_prompt',{'prompt':'Many children'})]+[record(f'paged-{i:02d}',i+1,'gen_ai.assistant.message',{'parent.session.id':'many','response':f'Paged child {i}'}) for i in range(47)])
   root=pathlib.Path(folder)/'claude';(root/'subagents').mkdir(parents=True)
   (root/'parent.jsonl').write_text(json.dumps({'type':'assistant','sessionId':'cl-root','uuid':'launch','timestamp':'2026-05-28T10:00:00Z','message':{'content':[{'type':'tool_use','id':'task-1','name':'Task','input':{'prompt':'Review the change'}}]}})+'\n'+json.dumps({'type':'user','sessionId':'cl-root','uuid':'result','timestamp':'2026-05-28T10:01:00Z','message':{'content':[{'type':'tool_result','tool_use_id':'task-1','content':'Done.\nagentId: review (for resuming this agent)'}]}})+'\n')
   (root/'subagents'/'agent-review.jsonl').write_text(json.dumps({'type':'assistant','sessionId':'cl-root','uuid':'reply','timestamp':'2026-05-28T10:00:30Z','message':{'content':[{'type':'text','text':'Claude child review complete.'}]}})+'\n')
@@ -32,6 +33,19 @@ with tempfile.TemporaryDirectory() as folder:
   with sync_playwright() as p:
    browser=p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox']);page=browser.new_page(viewport={'width':1440,'height':1000});errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
    page.goto(base+'/sessions/codex%3Aparent?view=activity&page=1');page.locator('#token').fill(token);page.locator('#loginform button').click();expect(page.locator('#timeline .event')).to_have_count(200)
+   child_requests=[];page.on('request',lambda r:child_requests.append(r.url) if '/api/session/children?' in r.url else None)
+   page.goto(base+'/sessions/codex%3Amany');expect(page.locator('#relations .subagent-link')).to_have_count(20);assert not child_requests
+   expect(page.locator('#timeline > .event')).to_contain_text('Many children')
+   page.set_viewport_size({'width':390,'height':844})
+   page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+   page.screenshot(path='/tmp/agentlog-child-pages-initial.png',full_page=True)
+   page.set_viewport_size({'width':1440,'height':1000})
+   page.locator('.children-more').click();expect(page.locator('#relations .subagent-link')).to_have_count(40)
+   page.locator('.children-more').click();expect(page.locator('#relations .subagent-link')).to_have_count(47);expect(page.locator('.children-more')).to_be_hidden();assert len(child_requests)==2
+   page.locator('#relations .subagent-link').last.click();expect(page.locator('#subagentevents')).to_contain_text('Paged child 46');page.keyboard.press('Escape')
+   page.set_viewport_size({'width':390,'height':844});assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
+   page.screenshot(path='/tmp/agentlog-child-pages-mobile.png',full_page=True)
+   page.set_viewport_size({'width':1440,'height':1000});page.goto(base+'/sessions/codex%3Aparent?view=activity&page=1');expect(page.locator('#timeline .event')).to_have_count(200)
    launch=page.locator('#timeline .subagent-link').filter(has_text='Reviewer');expect(launch).to_have_count(1);expect(launch).to_have_attribute('href','/sessions/codex%3Achild')
    launch.focus();launch.press('Enter');expect(page.locator('#subagentevents .preview-entry')).to_have_count(5);expect(page.locator('#subagentevents')).to_contain_text('Child line 44');assert '/codex%3Aparent' in page.url;assert page.locator('#inspectdetails').is_hidden()
    page.locator('#subagentpagination [aria-label="Previous page"]').click();expect(page.locator('#subagentevents .preview-entry')).to_have_count(40);expect(page.locator('#subagentevents')).to_contain_text('Child line 0');assert page.evaluate('!window.xss');assert page.locator('#subagentevents img').count()==0

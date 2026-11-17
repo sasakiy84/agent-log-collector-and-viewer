@@ -190,7 +190,7 @@ func (a *App) archiveDownload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Archive file is incomplete", 409)
 		return
 	}
-	prepareDownload(w, "application/zip", "agentlog-"+job.ID+".zip")
+	w = prepareDownload(w, "application/zip", "agentlog-"+job.ID+".zip")
 	w.Header().Set("ETag", `"`+job.SHA256+`"`)
 	tracked := &downloadWriter{ResponseWriter: w}
 	http.ServeContent(tracked, r, "archive.zip", info.ModTime(), file)

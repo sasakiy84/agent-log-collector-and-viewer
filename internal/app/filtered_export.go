@@ -23,13 +23,17 @@ func exportSessionFilter(q url.Values) sessionFilter {
 }
 
 func (a *App) filteredExport(w http.ResponseWriter, r *http.Request) {
+	if !a.acquireExport(w) {
+		return
+	}
+	defer func() { <-a.exportSlots }()
 	filter := exportSessionFilter(r.URL.Query())
 	query, args, err := filter.sql(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	tx, err := a.readers.BeginTx(r.Context(), &sql.TxOptions{ReadOnly: true})
+	tx, err := a.exportReaders.BeginTx(r.Context(), &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		databaseError(w, r, err)
 		return
@@ -52,7 +56,7 @@ func (a *App) filteredExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer rows.Close()
-	prepareDownload(w, "application/zip", "agentlog-export.zip")
+	w = prepareDownload(w, "application/zip", "agentlog-export.zip")
 	archive := zip.NewWriter(w)
 	err = writeFilteredExport(r.Context(), tx, rows, archive, filter, r.URL.Query(), sessions, expected)
 	if err == nil {

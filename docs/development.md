@@ -47,10 +47,13 @@ Database URI construction applies foreign keys, busy timeout and writer transact
 
 ## Validation
 
+Build and release with Go 1.27.4 or a newer patched 1.27 release; the Docker builder is pinned to 1.27.4. Behavioral Go tests copy a closed, immutable empty database into each test's private directory. Migration and upgrade tests still exercise schema creation and historical versions directly, without sharing a writable database.
+
 ```sh
 bash scripts/check-static.sh
 go test -race ./...
 go vet ./...
+govulncheck ./...
 go build ./cmd/agentlog
 bash scripts/test-upgrade.sh
 ```

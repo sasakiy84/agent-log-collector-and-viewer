@@ -12,6 +12,8 @@ All file operations start in **Sessions**. No export or archive page is required
 
 Direct exports stream to the browser without retaining an export file on the server or assembling the dataset in browser memory. Counts, membership and event rows share one read snapshot. Interrupted exports are not finalized as successful ZIPs.
 
+JSON/ZIP exports use a separate two-connection read pool, keeping session browsing independent of slow downloads. Up to two direct exports run concurrently; additional requests return HTTP 503 with `Retry-After`. Downloads have no overall duration limit, but a blocked client write times out after 30 seconds. Active export snapshots can retain WAL pages until completion.
+
 Direct-export ZIP contents:
 
 - `manifest.json`: format/version, creation time, filters and session/record counts.

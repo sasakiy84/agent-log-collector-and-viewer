@@ -268,7 +268,7 @@ function renderListHeading(total) {
   $("#folderpath").hidden = !path;
   $("#folderpath").textContent = path || "";
   $("#listcount").textContent = `${total.toLocaleString()} ${total === 1 ? "session" : "sessions"}`;
-  renderProjects();
+  projectNavigation.render();
 }
 function detailState(latest) {
   const p = new URLSearchParams();
@@ -368,16 +368,7 @@ function renderEvents() {
     `<strong>${esc(label(meta.source))}</strong>${meta.start ? `<span>${esc(date(meta.start))}</span>` : ""}${context.model ? `<span>${esc(context.model)}</span>` : ""}${context.cwd ? `<span>${esc(context.cwd)}</span>` : ""}${context.host ? `<span>${esc(context.host)}</span>` : ""}${context.project ? `<span>Project: ${esc(context.project)}</span>` : ""}${context.tags ? `<span>Tags: ${esc(Array.isArray(context.tags) ? context.tags.join(", ") : context.tags)}</span>` : ""}<span class="sessionid">${esc(selected)}</span>`;
   $("#sessionskills").innerHTML = sessionSkillsHTML(meta.skills);
   bindSkillEvents($("#sessionskills"));
-  $("#relations").innerHTML =
-    (meta.parent
-      ? `<a href="${esc(link(meta.parent))}">Parent session</a>`
-      : "") +
-    subagentLinks(
-      meta.children.map((id) => ({
-        session: id,
-        label: id.split("/agent:").pop(),
-      })),
-    );
+  childNavigation.render(meta);
   $("#pageinfo").textContent = meta.count
     ? `${meta.offset + 1}–${meta.offset + slice.length} / ${meta.count}${meta.total_count !== undefined ? " · " + meta.total_count + " total events" : ""}`
     : "0 events";
@@ -392,7 +383,6 @@ function renderEvents() {
   bindEventCards($("#timeline"));
   bindModelCalls($("#timeline"));
   bindSubagentLinks($("#timeline"));
-  bindSubagentLinks($("#relations"));
   if (focusedID)
     document
       .querySelector(`[data-event="${CSS.escape(focusedID)}"]`)
@@ -734,7 +724,7 @@ async function refresh(scrollMode) {
     if (skillsMode) {
       await Promise.all([
         refreshSkills(controller.signal),
-        loadProjects(controller.signal),
+        projectNavigation.load(controller.signal),
       ]);
       if (!controller.signal.aborted && scrollMode === "top")
         window.scrollTo({ top: 0, behavior: "instant" });
@@ -766,7 +756,7 @@ async function refresh(scrollMode) {
       if (folder !== null) params.set("folder", folder);
       const [response] = await Promise.all([
           apiResponse("/api/sessions?" + params, controller.signal),
-          loadProjects(controller.signal),
+          projectNavigation.load(controller.signal),
         ]),
         data = await response.json();
       if (controller.signal.aborted) return;
@@ -802,7 +792,7 @@ async function refresh(scrollMode) {
     if (selected) placeTimeline(scrollMode, anchor, serial);
     if (archiveRequested && !selected && !skillsMode) { archiveRequested = false; openArchive(); }
   } catch (e) {
-    if (e.name === "AbortError") return;
+    if (controller.signal.aborted || serial !== requestSerial || e.name === "AbortError") return;
     if (selected && meta) {
       eventOffset = meta.offset;
       eventLimit = meta.limit;
@@ -820,7 +810,7 @@ async function refresh(scrollMode) {
       searchScope = skillsData.searchScope;
       renderSearchControls();
       $("#skillsort").value = skillsSort;
-      renderProjects();
+      projectNavigation.render();
       $("#skillsearch").value = skillsQuery;
 
     } else if (sessionData) {
@@ -841,7 +831,7 @@ async function refresh(scrollMode) {
       $("#search").value = query;
       syncIdentifierSearch();
       listState();
-      renderProjects();
+      projectNavigation.render();
     }
     $("#error").textContent = e.message;
     if ($("#login").hidden) {
@@ -883,7 +873,10 @@ function syncEventFilters() {
   $("#eventfilters").hidden = view === "conversation";
   document
     .querySelectorAll("button[data-kind]")
-    .forEach((b) => b.classList.toggle("active", b.dataset.kind === kind));
+    .forEach((b) => {
+      b.classList.toggle("active", b.dataset.kind === kind);
+      b.setAttribute("aria-pressed", String(b.dataset.kind === kind));
+    });
   document.querySelectorAll("[data-view]").forEach((b) => {
     b.classList.toggle("active", b.dataset.view === view);
     b.setAttribute("aria-pressed", String(b.dataset.view === view));
@@ -915,7 +908,7 @@ document.querySelectorAll("[data-view]").forEach(
     }),
 );
 syncEventFilters();
-setupProjects();
+projectNavigation.setup();
 function matchingExportURL() {
   const params = listParameters();
   if (folder !== null) params.set("folder", folder);

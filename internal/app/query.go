@@ -25,11 +25,12 @@ type SessionPage struct {
 	View       string            `json:"view,omitempty"`
 	Kind       string            `json:"kind,omitempty"`
 	SessionSummary
-	Offset   int             `json:"offset"`
-	Limit    int             `json:"limit"`
-	Children []string        `json:"children"`
-	Events   []TimelineEvent `json:"events"`
-	Skills   []SkillSummary  `json:"skills,omitempty"`
+	Offset       int             `json:"offset"`
+	Limit        int             `json:"limit"`
+	Children     []string        `json:"children"`
+	ChildrenNext string          `json:"children_next,omitempty"`
+	Events       []TimelineEvent `json:"events"`
+	Skills       []SkillSummary  `json:"skills,omitempty"`
 }
 
 func (a *App) sessions(w http.ResponseWriter, r *http.Request) {
@@ -262,24 +263,12 @@ func (a *App) session(w http.ResponseWriter, r *http.Request) {
 		databaseError(w, r, err)
 		return
 	}
-	rows, err := tx.QueryContext(r.Context(), "SELECT session FROM session_catalog WHERE parent=? ORDER BY session", id)
+	children, err := readChildren(r.Context(), tx, id, "")
 	if err != nil {
 		databaseError(w, r, err)
 		return
 	}
-	for rows.Next() {
-		var child string
-		if err = rows.Scan(&child); err != nil {
-			break
-		}
-		page.Children = append(page.Children, child)
-	}
-	rowErr := rows.Err()
-	rows.Close()
-	if err != nil || rowErr != nil {
-		databaseError(w, r, errors.Join(err, rowErr))
-		return
-	}
+	page.Children, page.ChildrenNext = children.Children, children.Next
 	page.Skills, err = sessionSkills(r.Context(), tx, id, origin)
 	if err == nil && r.URL.Query().Get("view") != "conversation" {
 		err = attachSkills(r.Context(), tx, page.Events)

@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM golang:1.25-bookworm AS build
+FROM golang:1.27.4-bookworm AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 # Optional combined CA bundle for development environments with an HTTPS proxy.

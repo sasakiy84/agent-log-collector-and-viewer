@@ -92,7 +92,7 @@ function projectCheckbox(id, checked) {
   project = ids.size === 1 ? [...ids][0] : null;
   if (ids.size <= 1) projectSelections = [];
   folder = null;
-  renderProjects();
+  projectNavigation.render();
   searchScopeChanged();
 }
 function setupSearchControls() {

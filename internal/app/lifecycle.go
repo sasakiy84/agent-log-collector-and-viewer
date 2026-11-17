@@ -20,6 +20,8 @@ type App struct {
 	maintenanceErr     error
 	DB                 *sql.DB
 	readers            *sql.DB
+	exportReaders      *sql.DB
+	exportSlots        chan struct{}
 	token              string
 	dbPath, archiveDir string
 	ctx                context.Context
@@ -38,6 +40,9 @@ func (a *App) Close() error {
 	a.cancel()
 	a.workers.Wait()
 	var err error
+	if a.exportReaders != nil && a.exportReaders != a.DB {
+		err = errors.Join(err, a.exportReaders.Close())
+	}
 	if a.readers != nil && a.readers != a.DB {
 		err = a.readers.Close()
 	}
@@ -58,7 +63,7 @@ func newApp(ctx context.Context, token string) (*App, error) {
 		return nil, fmt.Errorf("AGENTLOG_TOKEN must be empty or contain at least 16 characters")
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	return &App{ctx: ctx, cancel: cancel, token: token}, nil
+	return &App{ctx: ctx, cancel: cancel, token: token, exportSlots: make(chan struct{}, maxConcurrentExports)}, nil
 }
 func (a *App) WatchState() *checkpoint.Store {
 	if a.inbox == nil {
