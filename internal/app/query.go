@@ -187,10 +187,14 @@ func (a *App) session(w http.ResponseWriter, r *http.Request) {
 		page.TotalCount = page.Count
 		page.View = r.URL.Query().Get("view")
 		page.Kind = r.URL.Query().Get("kind")
-		page.Count, err = filteredTimelineCount(r.Context(), tx, id, origin, filter)
-		if err != nil {
-			databaseError(w, r, err)
-			return
+		// Diagnostics without a type filter has exactly the catalog's count.
+		// Do not recount a large history that this request has not narrowed.
+		if filter.Activity || filter.Kind != "" {
+			page.Count, err = filteredTimelineCount(r.Context(), tx, id, origin, filter)
+			if err != nil {
+				databaseError(w, r, err)
+				return
+			}
 		}
 	}
 	page.Offset = offset(r)

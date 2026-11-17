@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
@@ -122,22 +123,51 @@ func conversationMatchPosition(ctx context.Context, tx *sql.Tx, session, origin,
 	return p.ID, pageOffset(preceding, total, limit), err
 }
 
-func processingSummary(ctx context.Context, tx *sql.Tx, session, origin, after, before, matchPredicate string, matchArgs []any) (ProcessingGroup, error) {
-	g := ProcessingGroup{After: after, Before: before}
-	query, args, err := processingRange(ctx, tx, session, origin, after, before)
+// Resolve only this page's logical positions, including merged import/OTEL
+// entries. Their original card timestamps/sequences need not match the group.
+func conversationPositions(ctx context.Context, tx *sql.Tx, page SessionPage, origin string) (map[string]timelinePosition, error) {
+	positions := map[string]timelinePosition{}
+	if len(page.Events) == 0 {
+		return positions, nil
+	}
+	ids := make([]string, len(page.Events))
+	for i, event := range page.Events {
+		ids[i] = event.ID
+	}
+	encoded, err := json.Marshal(ids)
 	if err != nil {
-		return g, err
+		return nil, err
 	}
-	from := " FROM " + timelineTable(origin) + " WHERE " + query
-	err = tx.QueryRowContext(ctx, "SELECT COUNT(*),COALESCE(SUM(activity),0),COALESCE(SUM(is_error),0)"+from, args...).Scan(&g.Count, &g.Activity, &g.Errors)
-	if err == nil && matchPredicate != "" && g.Count > 0 {
-		err = tx.QueryRowContext(ctx, "SELECT COUNT(*)"+from+matchPredicate, append(args, matchArgs...)...).Scan(&g.Matches)
+	scope, args := timelineScope(page.ID, origin)
+	// JSON IDs drive primary-key probes, even if every row in a large session
+	// is conversational. Do not walk that session just to resolve 200 IDs.
+	rows, err := tx.QueryContext(ctx, "SELECT t.time,t.sequence,t.id FROM json_each(?) requested CROSS JOIN "+timelineTable(origin)+" t ON t.id=requested.value WHERE "+scope+" AND conversation=1", append([]any{string(encoded)}, args...)...)
+	if err != nil {
+		return nil, err
 	}
-	return g, err
+	defer rows.Close()
+	for rows.Next() {
+		var p timelinePosition
+		if err = rows.Scan(&p.Time, &p.Sequence, &p.ID); err != nil {
+			return nil, err
+		}
+		positions[p.ID] = p
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(positions) != len(ids) {
+		return nil, sql.ErrNoRows
+	}
+	return positions, nil
 }
 
 func conversationGroups(ctx context.Context, tx *sql.Tx, page SessionPage, origin, match string) ([]ProcessingGroup, error) {
 	groups := []ProcessingGroup{}
+	positions, err := conversationPositions(ctx, tx, page, origin)
+	if err != nil {
+		return nil, err
+	}
 	matchPredicate, matchArgs := "", []any{}
 	if match != "" {
 		var err error
@@ -146,21 +176,57 @@ func conversationGroups(ctx context.Context, tx *sql.Tx, page SessionPage, origi
 			return nil, err
 		}
 	}
-	after := ""
-	if len(page.Events) > 0 {
-		first, err := conversationPosition(ctx, tx, page.ID, origin, page.Events[0].ID, true)
-		if err != nil {
-			return nil, err
+	// Reuse the few range shapes (leading, bounded, trailing) for this request.
+	// Hundreds of gaps must not repeatedly parse the same count SQL.
+	statements := map[string]*sql.Stmt{}
+	defer func() {
+		for _, stmt := range statements {
+			stmt.Close()
 		}
+	}()
+	count := func(query string, args []any, values ...any) error {
+		stmt := statements[query]
+		if stmt == nil {
+			var err error
+			stmt, err = tx.PrepareContext(ctx, query)
+			if err != nil {
+				return err
+			}
+			statements[query] = stmt
+		}
+		return stmt.QueryRowContext(ctx, args...).Scan(values...)
+	}
+	var after *timelinePosition
+	if len(page.Events) > 0 {
+		first := positions[page.Events[0].ID]
 		query, args := timelineScope(page.ID, origin)
 		query, args = positionBound(query+" AND conversation=1", args, "<", first)
-		err = tx.QueryRowContext(ctx, "SELECT id FROM "+timelineTable(origin)+" WHERE "+query+" ORDER BY time DESC,sequence DESC,id DESC LIMIT 1", args...).Scan(&after)
+		var previous timelinePosition
+		err := tx.QueryRowContext(ctx, "SELECT time,sequence,id FROM "+timelineTable(origin)+" WHERE "+query+" ORDER BY time DESC,sequence DESC,id DESC LIMIT 1", args...).Scan(&previous.Time, &previous.Sequence, &previous.ID)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return nil, err
 		}
+		if err == nil {
+			after = &previous
+		}
 	}
-	add := func(before string) error {
-		group, err := processingSummary(ctx, tx, page.ID, origin, after, before, matchPredicate, matchArgs)
+	add := func(before *timelinePosition) error {
+		group := ProcessingGroup{}
+		query, args := timelineScope(page.ID, origin)
+		query += " AND conversation=0"
+		if after != nil {
+			group.After = after.ID
+			query, args = positionBound(query, args, ">", *after)
+		}
+		if before != nil {
+			group.Before = before.ID
+			query, args = positionBound(query, args, "<", *before)
+		}
+		from := " FROM " + timelineTable(origin) + " WHERE " + query
+		err := count("SELECT COUNT(*),COALESCE(SUM(activity),0),COALESCE(SUM(is_error),0)"+from, args, &group.Count, &group.Activity, &group.Errors)
+		if err == nil && matchPredicate != "" && group.Count > 0 {
+			err = count("SELECT COUNT(*)"+from+matchPredicate, append(args, matchArgs...), &group.Matches)
+		}
 		if err == nil && group.Count > 0 {
 			groups = append(groups, group)
 		}
@@ -168,19 +234,20 @@ func conversationGroups(ctx context.Context, tx *sql.Tx, page SessionPage, origi
 		return err
 	}
 	for _, event := range page.Events {
-		if err := add(event.ID); err != nil {
+		before := positions[event.ID]
+		if err := add(&before); err != nil {
 			return nil, err
 		}
 	}
 	if page.Offset+len(page.Events) >= page.Count {
-		if err := add(""); err != nil {
+		if err := add(nil); err != nil {
 			return nil, err
 		}
 	}
 	return groups, nil
 }
 
-// The first request reads indexed counters only. Bounded card bodies are read
+// The first request reads indexed summary flags only. Bounded card bodies are read
 // here on expansion, with keyset pagination even for very large log ranges.
 func (a *App) processing(w http.ResponseWriter, r *http.Request) {
 	origin, ok := eventOrigin(r)
