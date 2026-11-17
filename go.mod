@@ -1,6 +1,6 @@
 module github.com/sasakiy84/agent-log-collector-and-viewer
 
-go 1.27.0
+go 1.27.4
 
 require (
 	github.com/ikawaha/kagome-dict/ipa v1.2.6
