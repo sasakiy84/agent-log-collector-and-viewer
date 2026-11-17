@@ -8,12 +8,12 @@ import (
 )
 
 type skillCatalogPage struct {
-	Skills   []SkillSummary `json:"skills"`
-	Total    int            `json:"total"`
-	Uses     int            `json:"uses"`
-	Inferred int            `json:"inferred"`
-	Offset   int            `json:"offset"`
-	Sort     string         `json:"sort"`
+	Skills []SkillSummary `json:"skills"`
+	Total  int            `json:"total"`
+	Uses   int            `json:"uses"`
+	Reads  int            `json:"reads"`
+	Offset int            `json:"offset"`
+	Sort   string         `json:"sort"`
 }
 
 func TestSkillUsageCatalogProjectScopeAndOrdering(t *testing.T) {
@@ -38,19 +38,19 @@ func TestSkillUsageCatalogProjectScopeAndOrdering(t *testing.T) {
 	save(t, a, rows...)
 	var p skillCatalogPage
 	getJSON(t, a, "/api/skills", &p)
-	if p.Total != 4 || p.Uses != 10 || p.Inferred != 2 || p.Sort != "uses" || p.Skills[0].Name != "review" || p.Skills[0].Uses != 4 || p.Skills[0].Sessions != 3 {
+	if p.Total != 4 || p.Uses != 8 || p.Reads != 0 || p.Sort != "reads" || p.Skills[0].Name != "review" || p.Skills[0].Uses != 4 || p.Skills[0].Sessions != 3 {
 		t.Fatal(p)
 	}
 	getJSON(t, a, "/api/skills?project=name:A", &p)
-	if p.Total != 3 || p.Uses != 7 || p.Inferred != 1 || p.Skills[0].Name != "review" || p.Skills[0].Uses != 3 || p.Skills[0].Sessions != 2 {
+	if p.Total != 3 || p.Uses != 6 || p.Reads != 0 || p.Skills[0].Name != "review" || p.Skills[0].Uses != 3 || p.Skills[0].Sessions != 2 {
 		t.Fatal(p)
 	}
 	getJSON(t, a, "/api/skills?sort=recent", &p)
-	if p.Sort != "recent" || p.Skills[0].Name != "newest" || p.Uses != 10 || p.Inferred != 2 {
+	if p.Sort != "recent" || p.Skills[0].Name != "newest" || p.Uses != 8 || p.Reads != 0 {
 		t.Fatal(p)
 	}
 	getJSON(t, a, "/api/skills?sort=sessions", &p)
-	if p.Skills[0].Name != "review" || p.Skills[1].Name != "history" || p.Uses != 10 || p.Inferred != 2 {
+	if p.Skills[0].Name != "review" || p.Skills[1].Name != "history" || p.Uses != 8 || p.Reads != 0 {
 		t.Fatal(p)
 	}
 	getJSON(t, a, "/api/skills?q="+url.QueryEscape("ＲＥＶＩＥＷ"), &p)
@@ -62,7 +62,7 @@ func TestSkillUsageCatalogProjectScopeAndOrdering(t *testing.T) {
 		t.Fatal("path match from another project", p)
 	}
 	getJSON(t, a, "/api/skills?project=name:B&q=only-B", &p)
-	if p.Total != 1 || p.Uses != 1 || p.Inferred != 1 || p.Skills[0].References != 1 {
+	if p.Total != 1 || p.Uses != 0 || p.Reads != 0 || p.Skills[0].Pending != 1 {
 		t.Fatal(p)
 	}
 	// Archive-locked sessions contribute neither reported usage nor search metadata.
@@ -100,7 +100,7 @@ func TestSkillUsageTotalCoversAllPages(t *testing.T) {
 		if offset > 0 {
 			want = 5
 		}
-		if p.Total != 205 || p.Uses != 205 || p.Inferred != 103 || len(p.Skills) != want {
+		if p.Total != 205 || p.Uses != 102 || p.Reads != 0 || len(p.Skills) != want {
 			t.Fatal(offset, p)
 		}
 	}

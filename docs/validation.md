@@ -114,3 +114,9 @@ python3 scripts/browser_edge_test.py
 ```
 
 CLI setup examples were checked against the current official configuration references linked in README. Emitted content, signal coverage and parent attributes depend on CLI version and privacy settings. The viewer cannot recover information a sender does not export. This is a small single-user collector, not a high-volume ingestion service.
+
+## Skill evidence accounting (v0.22.0)
+
+Reported invocations and confirmed reads are separate metrics. Tests cover repeated reads within one session, import/OTEL and input/output deduplication, late and reverse result arrival, mixed origins, agent-scoped and reused call IDs, failure/deletion updates, shell/JavaScript literal parsing, and resumable recovery from original payloads rather than clipped cards. Nested Copilot invocation reports remain indexed during the rebuild.
+
+The release-baseline upgrade check recovers successful compound-shell and JavaScript reads while preserving event identities and raw payload fingerprints. Browser checks cover project/time/origin filters, distinct report/read/pending/failure labels, sort and URL state, event/JSON navigation, and desktop/mobile screenshots. Migration lookups use separate full-key indexes, avoiding a scan of every skill read in a long session.

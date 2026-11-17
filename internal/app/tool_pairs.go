@@ -55,23 +55,10 @@ func attachToolPair(ctx context.Context, tx *sql.Tx, event *TimelineEvent, origi
 	if pair.Phase != "tool.start" && pair.Phase != "tool.result" {
 		return nil
 	}
-	owner, valid := agentIdentity(event.Source, event.Detail.Attributes)
+	owner, call, valid := toolCallIdentity(event.Source, event.Detail)
 	if !valid {
 		pair.State = "ambiguous"
 		return nil
-	}
-	call := ""
-	for _, key := range []string{"gen_ai.tool.call.id", "tool_call_id", "call_id", "tool_use_id"} {
-		value := event.Detail.Attributes[key]
-		if !present(value) {
-			continue
-		}
-		id, ok := value.(string)
-		if !ok || call != "" && id != call {
-			pair.State = "ambiguous"
-			return nil
-		}
-		call = id
 	}
 	if call == "" {
 		pair.State = "no_id"

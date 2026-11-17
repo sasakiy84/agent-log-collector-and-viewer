@@ -65,8 +65,8 @@ with tempfile.TemporaryDirectory() as folder:
     manifest=json.loads(archive.read('manifest.json'));assert manifest['sessions']==1 and manifest['records']==3,manifest;assert manifest['filters']['project']==['name:A','name:B'],manifest;assert manifest['filters']['source']==['codex','claude'],manifest
    # Skill navigation retains the range and project/source selections, but not
    # the session body query or event-type facet.
-   page.locator('#skillsnav').click();expect(page.locator('.skill-row')).to_have_count(1);expect(page.locator('#skillcount')).to_have_text('1 skill · ≈2 uses');expect(page.locator('#skilltitle')).to_have_text('2 projects · Skills');assert 'from=' in page.url
-   page.reload();expect(page.locator('#skillcount')).to_have_text('1 skill · ≈2 uses');facets();page.locator('[name=searchorigin][value=otel]').uncheck();expect(page.locator('#skillcount')).to_have_text('1 skill · ≈1 use')
+   page.locator('#skillsnav').click();expect(page.locator('.skill-row')).to_have_count(1);expect(page.locator('#skillcount')).to_have_text('1 skill · 1 reported · 0 reads');expect(page.locator('#skilltitle')).to_have_text('2 projects · Skills');assert 'from=' in page.url
+   page.reload();expect(page.locator('#skillcount')).to_have_text('1 skill · 1 reported · 0 reads');facets();page.locator('[name=searchorigin][value=otel]').uncheck();expect(page.locator('#skillcount')).to_have_text('1 skill · 0 reported · 0 reads')
    page.locator('.skill-row').click();expect(page.locator('.session')).to_have_count(1);expect(page.locator('.session')).to_have_attribute('data-session','codex:d');assert 'from=' in page.url and page.url.count('project=')==2
    page.locator('.session').click();expect(page.locator('#detailpage')).to_be_visible();page.locator('#detailpage>.back').click();expect(page.locator('.session')).to_have_count(1)
    # Invalid local input keeps the last valid results and URL.
@@ -89,7 +89,7 @@ with tempfile.TemporaryDirectory() as folder:
    assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
    if output:page.screenshot(path=output+'/ui-search-time-mobile.png',full_page=True)
    page.keyboard.press('Escape')
-   page.set_viewport_size({'width':1440,'height':1000});page.locator('#skillsnav').click();expect(page.locator('#skillcount')).to_have_text('1 skill · ≈2 uses')
+   page.set_viewport_size({'width':1440,'height':1000});page.locator('#skillsnav').click();expect(page.locator('#skillcount')).to_have_text('1 skill · 1 reported · 0 reads')
    if output:page.screenshot(path=output+'/ui-search-skills.png',full_page=True)
    assert not errors,errors;browser.close()
  finally:proc.terminate();proc.wait(timeout=20)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Published v0.8.0 data keeps originals, tool links and recoverable skill evidence."""
+"""Released data keeps originals, tool links and recoverable skill evidence."""
 from test_support import settled_urlopen
 import hashlib,json,os,pathlib,socket,sqlite3,subprocess,tempfile,time,urllib.request
 binary=os.getenv('AGENTLOG_BIN','./agentlog');baseline=os.environ['AGENTLOG_BASELINE_BIN'];token='synthetic-event-upgrade-token'
@@ -22,6 +22,7 @@ with tempfile.TemporaryDirectory() as folder:
   return digest.hexdigest()
  def record(i,name,values):return {'eventName':name,'timeUnixNano':str(1780000000000000000+i*1000000000),'attributes':[{'key':k,'value':{'stringValue':v}} for k,v in {'session.id':'upgrade',**values}.items()]}
  rows=[record(0,'gen_ai.tool.start',{'tool_name':'exec_command','call_id':'read','arguments':'{"cmd":"cat /work/skills/review-core/SKILL.md"}'}),record(1,'gen_ai.tool.result',{'tool_name':'exec_command','call_id':'read','output':'Synthetic skill instructions'})]+[record(i+2,'codex.skill_invocation',{'skill.name':'review-core','turn.id':'turn','skill.invocation_type':'explicit'}) for i in range(2)]
+ rows += [record(4,'gen_ai.tool.start',{'tool_name':'exec_command','call_id':'compound','arguments':'{"cmd":"cd /work/skills/review-core && cat SKILL.md"}'}),record(5,'gen_ai.tool.result',{'tool_name':'exec_command','call_id':'compound','output':'Chunk ID: fixture\nWall time: 0.1 seconds\nProcess exited with code 0\nFinal output:\nInstructions'}),record(6,'gen_ai.tool.start',{'tool_name':'functions.exec','call_id':'script','arguments':'text(await tools.exec_command({cmd:"cat /work/skills/review-core/SKILL.md"}));'}),record(7,'gen_ai.tool.result',{'tool_name':'functions.exec','call_id':'script','output':'Script completed\nWall time 0.1 seconds\nOutput:\n{"exit_code":0,"output":"Instructions"}'})]
  old,base=start(baseline)
  try:api('/v1/logs',{'resourceLogs':[{'resource':{'attributes':[{'key':'service.name','value':{'stringValue':'codex'}}]},'scopeLogs':[{'logRecords':rows}]}]});before=fingerprint()
  finally:old.terminate();old.wait(timeout=20)
@@ -33,11 +34,11 @@ with tempfile.TemporaryDirectory() as folder:
    if catalog['ready']:break
    time.sleep(.05)
   assert catalog['ready'] and catalog['total']==1,catalog
-  skill=catalog['skills'][0];assert skill['uses']==1 and skill['references']==1 and skill['sessions']==1,skill
-  page=api('/api/session?id=codex:upgrade');assert page['count']==4 and len(page['skills'])==1,page
+  skill=catalog['skills'][0];assert skill['uses']==1 and skill['reads']==2 and skill['pending']==1 and skill['sessions']==1,skill
+  page=api('/api/session?id=codex:upgrade');assert page['count']==8 and len(page['skills'])==1,page
   first=next(e for e in page['events'] if e['detail']['name']=='gen_ai.tool.start')
   event=api('/api/event?session=codex:upgrade&id='+first['id']);assert event['tool_pair']['state']=='paired',event
   assert event['tool_pair']['counterpart']['detail']['blocks'][0]['text']=='Synthetic skill instructions'
   assert fingerprint()==before,'Original event identities/payloads changed during upgrade'
-  print('PASS: published v0.8.0 upgrades to tool links and reported/reference skill totals; event identities and original payloads unchanged')
+  print('PASS: released database upgrades to tool links and reported/confirmed/unconfirmed counts from original compound and JavaScript calls; event identities and original payloads unchanged')
  finally:current.terminate();current.wait(timeout=20)

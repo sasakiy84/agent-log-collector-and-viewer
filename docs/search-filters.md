@@ -22,7 +22,7 @@ The session list shows sessions containing a matching record. Time is **event ti
 
 ![Skill usage within the selected range and projects](ui-search-skills.png)
 
-Skills counts only evidence **inside** the chosen range/origin and projects. Same-turn invocation deduplication, OTEL precedence and the reference-only session estimate all use that scope: a native report outside the selected range cannot suppress an imported invocation or inferred use inside it. Project/time/agent/origin conditions carry across Skills and its matching-session link; body queries and skill-name queries remain specific to their respective pages.
+Skills counts only evidence **inside** the chosen range/origin and projects. Same-turn invocation deduplication, OTEL precedence and confirmed read counts all use that scope: a native report outside the selected range cannot suppress an imported invocation or read inside it. Project/time/agent/origin conditions carry across Skills and its matching-session link; body queries and skill-name queries remain specific to their respective pages.
 
 ## Design and API
 

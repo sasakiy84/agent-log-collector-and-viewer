@@ -11,7 +11,7 @@ import (
 const (
 	usageJob       = "usage.v1"
 	agentsJob      = "agents.v1"
-	skillsJob      = "skills.v1"
+	skillsJob      = "skills.reads.v2"
 	directoriesJob = "directories.v1"
 	titlesJob      = "titles.v1"
 )
