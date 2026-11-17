@@ -15,6 +15,10 @@ func (a *App) apiReadme(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(apiReference))
 }
 
+func (a *App) apiVersion(w http.ResponseWriter, r *http.Request) {
+	write(w, map[string]string{"version": a.Version})
+}
+
 type serverMetrics struct {
 	Version       string `json:"version"`
 	StartedAt     string `json:"started_at"`

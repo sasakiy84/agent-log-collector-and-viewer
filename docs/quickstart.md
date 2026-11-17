@@ -30,7 +30,7 @@ printf 'AGENTLOG_TOKEN=%s\nAGENTLOG_UID=%s\nAGENTLOG_GID=%s\n' \
 chmod 700 sessions data
 chmod 600 .env config.json
 
-docker compose up -d --build
+AGENTLOG_VERSION="$(git describe --tags --always --dirty)" docker compose up -d --build
 ```
 
 受信キューの準備後にHTTPの待ち受けを開始します。スキーマ準備・未完了の変更の回復中もOTELを受信でき、成功応答したデータは再起動後も処理を再開します。閲覧はスキーマ準備後から利用できます。キュー・索引・SQLiteの一時ファイルは`data/`に保存します。

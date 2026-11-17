@@ -9,6 +9,24 @@ curl -fsS -H 'Authorization: Bearer <API_KEY>' '<BASE_URL>/api/metrics'
 
 Replace `<BASE_URL>` with the server origin and `<API_KEY>` with the key. When `AGENTLOG_TOKEN` is unset, unauthenticated local access remains enabled. API keys are still read-only when explicitly supplied. Responses are JSON unless noted. Names, IDs and search strings must be URL-encoded. Timestamps use UTC RFC3339; event timestamps retain their source precision.
 
+## Server version
+
+`GET /api/version` returns the running binary's version:
+
+```json
+{"version":"v0.24.2"}
+```
+
+Use the same bearer API key as other read endpoints:
+
+```sh
+curl -fsS -H 'Authorization: Bearer <API_KEY>' '<BASE_URL>/api/version'
+```
+
+Release binaries report their release tag. Source builds use Go’s embedded module version, which can include the commit and a `+dirty` marker for local changes. Without embedded release or module version information, the value is `dev`. Docker builds accept `VERSION`; Docker Compose passes `AGENTLOG_VERSION` to it. Build from a Git checkout with `AGENTLOG_VERSION="$(git describe --tags --always --dirty)" docker compose up -d --build` to identify that deployment. The same value is returned in `/api/metrics` and shown in Settings.
+
+Owner credentials can retrieve the version while the database is initializing. Read-only API keys become available once their database has initialized, as for other read endpoints.
+
 ## Server metrics
 
 `GET /api/metrics`
