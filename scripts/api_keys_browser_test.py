@@ -27,7 +27,7 @@ with tempfile.TemporaryDirectory(prefix='agentlog-api-keys-') as directory:
             except OSError:
                 time.sleep(.05)
         with sync_playwright() as pw:
-            browser = pw.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox'])
+            browser = pw.chromium.launch(executable_path=os.getenv('AGENTLOG_CHROMIUM', '/usr/bin/chromium'),headless=True,args=['--no-sandbox'])
             context = browser.new_context(viewport={'width':1440,'height':1000},locale='ja-JP',permissions=['clipboard-read','clipboard-write'])
             page = context.new_page()
             errors, requests = [], []
@@ -38,7 +38,7 @@ with tempfile.TemporaryDirectory(prefix='agentlog-api-keys-') as directory:
             page.locator('#token').fill(token)
             page.locator('#loginform button').click()
             expect(page.locator('#settingspage')).to_be_visible()
-            expect(page).to_have_title('Settings · Agentlog')
+            expect(page).to_have_title('Settings · AGrahpite')
             expect(page.locator('#settingsnav')).to_have_attribute('aria-current','page')
             expect(page.locator('#apikeycount')).to_have_text('0 keys')
             expect(page.locator('#serverversion')).to_contain_text('Version ')
@@ -63,7 +63,7 @@ with tempfile.TemporaryDirectory(prefix='agentlog-api-keys-') as directory:
             command = page.evaluate('navigator.clipboard.readText()')
             assert '<API_KEY>' in command and base+'/api/readme' in command and key not in command
             result = subprocess.run(['curl','-fsS','-H','Authorization: Bearer '+key,base+'/api/readme'],capture_output=True,text=True,check=True)
-            assert '# Agentlog API' in result.stdout and '/api/metrics' in result.stdout
+            assert '# AGrahpite API' in result.stdout and '/api/metrics' in result.stdout
             metrics = page.request.get(base+'/api/metrics',headers={'Authorization':'Bearer '+key})
             assert metrics.status==200 and metrics.json()['events']==0
             assert page.request.get(base+'/api/settings/api-keys',headers={'Authorization':'Bearer '+key}).status==403

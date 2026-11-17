@@ -1,6 +1,10 @@
-# Agentlog
+# AGrahpite
+
+<img src="internal/app/static/logo.svg" alt="AGrahpite logo" width="96" height="80">
 
 A personal OpenTelemetry collector and session viewer for Codex CLI, Claude Code and GitHub Copilot CLI.
+
+Inspired by graphite, the mineral in pencil leads, AGrahpite makes recording and browsing daily agent logs feel as light as jotting a note. [Name, logo and compatibility](docs/branding.md).
 
 ![Project navigation and session search](docs/ui-projects.png)
 

@@ -8,7 +8,7 @@
 
 Downloading alone never deletes records. Updated sessions require a new archive. Canceling keeps DB records. Source files stay in place; identical archived records are ignored on reimport, while new or changed records can be imported.
 
-ZIP files contain `manifest.json`, a `sessions.jsonl` index, and one JSONL per session with all stored originals, including imported and OTEL records. These are Agentlog records, not the CLI's native import format. The index preserves each session's selected folder. The UI shows a SHA-256 checksum.
+ZIP files contain `manifest.json`, a `sessions.jsonl` index, and one JSONL per session with all stored originals, including imported and OTEL records. These are AGrahpite records, not the CLI's native import format. The index preserves each session's selected folder. The UI shows a SHA-256 checksum.
 
 Archives are built under `archives/` beside the database, streamed to disk, and downloaded directly with HTTP range support. Allow disk space for the compressed ZIP. The server copy is removed after download confirmation and integrity verification. Confirmed deletion resumes after a restart; interrupted ZIP creation must be retried.
 

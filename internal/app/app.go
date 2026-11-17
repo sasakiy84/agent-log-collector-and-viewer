@@ -162,7 +162,7 @@ func serveShell(w http.ResponseWriter, r *http.Request) {
 		title = "Settings"
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte(strings.Replace(string(b), "<title>Sessions · Agentlog</title>", "<title>"+title+" · Agentlog</title>", 1)))
+	w.Write([]byte(strings.Replace(string(b), "<title>Sessions · AGrahpite</title>", "<title>"+title+" · AGrahpite</title>", 1)))
 }
 
 // Retired standalone actions return to the shared session list. Preserve saved

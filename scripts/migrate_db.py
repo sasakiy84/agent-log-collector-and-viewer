@@ -6,7 +6,7 @@
 """Offline, Python-only conversion of a prepared v0.23 database to storage v2.
 
 The complete data directory is published only after byte-level table validation.
-No Agentlog binary, source transcript files, or network connection is needed.
+No AGrahpite binary, source transcript files, or network connection is needed.
 """
 from __future__ import annotations
 

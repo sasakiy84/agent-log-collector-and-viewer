@@ -149,7 +149,7 @@ func TestLogsAndAuth(t *testing.T) {
 	r = httptest.NewRequest("GET", "/", nil)
 	w = httptest.NewRecorder()
 	a.Handler().ServeHTTP(w, r)
-	if w.Code != 200 || !strings.Contains(w.Body.String(), "Agentlog") {
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "AGrahpite") {
 		t.Fatal(w.Code)
 	}
 }

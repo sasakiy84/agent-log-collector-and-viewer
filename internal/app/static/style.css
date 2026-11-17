@@ -63,11 +63,21 @@ h1 {
   padding:0 var(--shell-inset);
   gap:24px;
 }
+.brand,.login-brand {
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  flex-shrink:0;
+}
 .brand {
   color:var(--text);
   font-weight:650;
   font-size:17px;
   letter-spacing:-.5px;
+}
+.brand-mark {
+  display:block;
+  flex-shrink:0;
 }
 .topbar button {
   border:0;
@@ -1646,6 +1656,13 @@ html {
 .topbar > nav { gap: 20px; height: 100%; align-items: stretch; }
 .topbar > nav a { display: flex; align-items: center; color: var(--text-secondary); border-bottom: 2px solid transparent; padding-top: 2px; }
 .topbar > nav a[aria-current=page] { color: var(--accent); border-bottom-color: var(--accent); }
+@media(max-width:600px) {
+ :root { --appbar-height:82px; }
+ .topbar { display:grid; grid-template-columns:minmax(0,1fr) auto; grid-template-rows:36px 34px; gap:0 12px; height:var(--appbar-height); padding-block:6px; }
+ .topbar > .brand { grid-column:1; grid-row:1; justify-self:start; }
+ .topbar > nav { grid-column:1 / -1; grid-row:2; flex-wrap:nowrap; }
+ #logout { grid-column:2; grid-row:1; white-space:nowrap; }
+}
 .data-actions { display: flex; flex-shrink: 0; align-items: stretch; gap: 1px; }
 #downloadexport { border-radius: 5px 0 0 5px; }
 #dataoptions { position: relative; }

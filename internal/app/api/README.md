@@ -1,4 +1,4 @@
-# Agentlog API
+# AGrahpite API
 
 Use `Authorization: Bearer <API_KEY>` over HTTP. API keys created in Settings grant read-only access to stored data. Only the owner login / `AGENTLOG_TOKEN` can manage keys, ingest telemetry or perform archive mutations. Keys do not work as browser login tokens. Revoking a key rejects subsequent requests immediately.
 
