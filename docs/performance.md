@@ -28,7 +28,51 @@ Indexed session summaries and bounded card presentations are maintained in the s
 
 List/detail requests read their page from these indexes. Full attributes and original JSON load through `/api/event` only when a card is opened; the browser retains at most the latest full card. Search uses a separate FTS5 inverted index; only exports and explicit event inspection read original records. There are no periodic browser requests; Reloading the browser updates the current screen; **Latest** loads the newest timeline page.
 
-Existing databases build the display data once before accepting HTTP requests. Both card batches and completed sessions are committed separately so an interrupted upgrade resumes. These derived tables require additional disk space; original records remain intact.
+The service accepts durable ingestion before preparing the view database. Browsing
+starts after schema initialization, while historical presentation work continues
+in resumable background batches. These derived tables require additional disk
+space; original records remain intact. See [startup and the inbox](startup.md).
+
+## Large conversation sessions
+
+Initial conversation pages also summarize the collapsed processing gaps. On a
+277,022-event fixture, those summaries dominated CPU time: every gap repeated
+position queries and SQL preparation, and its counts visited the full card rows.
+
+Migration 0020 extends the existing chronological paging indexes with the three
+summary flags. Counts can read those indexes without loading card/detail rows;
+it does not add a separate full-history index. Visible logical positions are
+resolved in one bounded query, and count statements are reused within each
+request. No derived counter cache or new backfill job is needed.
+
+The local prepared fixture has 556 conversation entries and 276,466 processing
+entries. Warm HTTP medians across five reads after the first request were:
+
+| Request | Before | After |
+| --- | ---: | ---: |
+| Latest conversation page, all origins | 78.88 ms | 47.76 ms |
+| First conversation page | 101.08 ms | 62.83 ms |
+| Latest conversation page, OTEL | 156.17 ms | 45.67 ms |
+| Latest conversation page, imported | 186.08 ms | 57.04 ms |
+
+Complete responses, including gap counts, error counts, ordering and origin
+selection, matched the baseline. Chromium verified initial rendering, opening
+at the bottom and the absence of processing/original requests before expansion.
+These synthetic timings do not include production network or storage latency.
+The two enlarged indexes added approximately 2.3 MiB on this fixture. Updating
+an existing database rebuilds these indexes once during schema preparation.
+
+```sh
+python3 scripts/session_performance_test.py --binary ./agentlog \
+  --baseline /path/to/previous/agentlog --records 277022 --browser
+```
+
+This test seeds prepared synthetic rows in disposable databases, separating
+session read latency from import/backfill throughput. Omit `--browser` to run
+only the API comparison. Use `performance_check.py` for the separate historical
+import and overview workload.
+
+## Other read paths and earlier measurements
 
 Session lists are ordered by latest activity. Shared numbered pagination shows the current range and total, first/last pages, nearby pages with ellipses, and a validated page-number field. The compact bar stays visible while scrolling. Lists count only indexed session summaries; filtered totals and rows share one read transaction (`X-Total-Count` and `X-Page-Offset`). Stale offsets clamp to the last valid page.
 
