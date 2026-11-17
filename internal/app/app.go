@@ -88,6 +88,7 @@ func (a *App) Handler() http.Handler {
 	mux.Handle("DELETE /api/settings/api-keys/{id}", crossOrigin.Handler(http.HandlerFunc(a.deleteAPIKey)))
 	mux.HandleFunc("GET /api/readme", a.apiReadme)
 	mux.HandleFunc("GET /api/metrics", a.metrics)
+	mux.HandleFunc("GET /api/version", a.apiVersion)
 	mux.HandleFunc("GET /settings", serveShell)
 	mux.HandleFunc("GET /api/archive", a.archiveList)
 	mux.HandleFunc("POST /api/archives", a.archiveCreate)
@@ -145,7 +146,7 @@ func (a *App) Handler() http.Handler {
 				return
 			}
 		}
-		if strings.HasPrefix(r.URL.Path, "/api/") && r.URL.Path != "/api/login" && r.URL.Path != "/api/logout" && r.URL.Path != "/api/status" && !a.serviceAvailable(w, r) {
+		if strings.HasPrefix(r.URL.Path, "/api/") && r.URL.Path != "/api/login" && r.URL.Path != "/api/logout" && r.URL.Path != "/api/status" && r.URL.Path != "/api/version" && !a.serviceAvailable(w, r) {
 			return
 		}
 		mux.ServeHTTP(w, r)

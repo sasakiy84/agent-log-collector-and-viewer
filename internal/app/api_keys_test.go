@@ -38,7 +38,7 @@ func TestAPIKeysGrantDataReadsWithoutOwnerAccess(t *testing.T) {
 	a := setup(t)
 	save(t, a, recorded(t, "question", "otel", "codex", "root", "gen_ai.user.message", map[string]any{"prompt": "hello"}))
 	key := newTestAPIKey(t, a)
-	for _, path := range []string{"/api/readme", "/api/metrics", "/api/status", "/api/projects", "/api/sessions", "/api/session?id=codex:root", "/api/skills", "/api/export?session=codex:root"} {
+	for _, path := range []string{"/api/version", "/api/readme", "/api/metrics", "/api/status", "/api/projects", "/api/sessions", "/api/session?id=codex:root", "/api/skills", "/api/export?session=codex:root"} {
 		w := keyRequest(a, "GET", path, "", key.Key)
 		if w.Code != 200 {
 			t.Fatal(path, w.Code, w.Body.String())
@@ -174,7 +174,7 @@ func TestAPIKeysKeepReadScopeWhenOwnerAuthenticationIsDisabled(t *testing.T) {
 	a := setup(t)
 	key := newTestAPIKey(t, a)
 	a.token = ""
-	for _, path := range []string{"/api/readme", "/api/metrics", "/api/settings/api-keys"} {
+	for _, path := range []string{"/api/version", "/api/readme", "/api/metrics", "/api/settings/api-keys"} {
 		if w := keyRequest(a, "GET", path, "", ""); w.Code != 200 {
 			t.Fatal("local auth behavior changed", path, w.Code)
 		}

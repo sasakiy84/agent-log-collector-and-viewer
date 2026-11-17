@@ -35,8 +35,9 @@ func serverMain() error {
 	configFile := flag.String("config", "", "JSON configuration file")
 	v := flag.Bool("version", false, "Print version")
 	flag.Parse()
+	buildVersion := binaryVersion()
 	if *v {
-		log.Print(version)
+		log.Print(buildVersion)
 		return nil
 	}
 	watch, interval, e := loadWatchConfig(*configFile)
@@ -45,7 +46,7 @@ func serverMain() error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	log.Printf("AGrahpite %s starting; preparing database %s", version, *db)
+	log.Printf("AGrahpite %s starting; preparing database %s", buildVersion, *db)
 	a, e := app.Start(ctx, *db, os.Getenv("AGENTLOG_TOKEN"))
 	if e != nil {
 		if ctx.Err() != nil {
@@ -54,7 +55,7 @@ func serverMain() error {
 		return e
 	}
 	defer a.Close()
-	a.Version = version
+	a.Version = buildVersion
 	srv := &http.Server{Addr: *addr, Handler: a.Handler(), BaseContext: func(net.Listener) context.Context { return ctx }, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	var workers sync.WaitGroup
 	if len(watch) > 0 {
@@ -82,7 +83,7 @@ func serverMain() error {
 			srv.Close()
 		}
 	}()
-	log.Printf("AGrahpite %s listening on %s", version, *addr)
+	log.Printf("AGrahpite %s listening on %s", buildVersion, *addr)
 	e = srv.ListenAndServe()
 	stop()
 	workers.Wait()

@@ -1710,6 +1710,8 @@ html {
 /* Settings share the compact navigation and single-accent palette. */
 #settingspage {max-width:1200px;margin:0 auto;padding:24px 28px;}
 #settingspage h1 {font-size:22px;}
+#settingspage>.pageheading {flex-wrap:wrap;align-items:baseline;}
+#serverversion {margin-left:auto;min-width:0;overflow-wrap:anywhere;}
 .ingestion-panel {padding:4px 0 24px;margin-bottom:24px;border-bottom:1px solid var(--line);}
 .ingestion-metrics {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:16px 0;}
 .ingestion-metrics dt {font-size:12px;color:var(--muted);margin-bottom:6px;}

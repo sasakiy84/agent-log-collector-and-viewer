@@ -2,10 +2,29 @@ package app
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestVersionDoesNotWaitForDatabaseInitialization(t *testing.T) {
+	a := &App{Version: "v-version-test", token: token, initialized: make(chan struct{})}
+	for _, failed := range []bool{false, true} {
+		if failed {
+			a.startupErr = errors.New("database unavailable")
+			close(a.initialized)
+		}
+		w := keyRequest(a, "GET", "/api/version", "", token)
+		var data map[string]string
+		if err := json.Unmarshal(w.Body.Bytes(), &data); err != nil || w.Code != 200 || data["version"] != a.Version {
+			t.Fatal("version unavailable without a database", w.Code, w.Body.String(), err)
+		}
+		if w := keyRequest(a, "GET", "/api/version", "", ""); w.Code != 401 {
+			t.Fatal("version bypassed authentication", w.Code)
+		}
+	}
+}
 
 func TestServerMetricsUseOriginalAndLogicalCounters(t *testing.T) {
 	a := setup(t)
@@ -27,6 +46,11 @@ func TestServerMetricsUseOriginalAndLogicalCounters(t *testing.T) {
 		}
 	}
 	fetch()
+	var build map[string]string
+	getJSON(t, a, "/api/version", &build)
+	if build["version"] != metrics.Version {
+		t.Fatal("version differs across APIs", build, metrics.Version)
+	}
 	if metrics.Version != "v-metrics-test" || !metrics.CountsReady || *metrics.Events != 3 || *metrics.LogicalEvents != 2 || *metrics.Sessions != 2 || *metrics.RawBytes != int64(len(imported.Raw)+len(native.Raw)+len(other.Raw)) {
 		t.Fatal(metrics)
 	}
