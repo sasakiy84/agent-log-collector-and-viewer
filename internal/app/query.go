@@ -69,7 +69,11 @@ func (a *App) sessionList(w http.ResponseWriter, r *http.Request, forExport bool
 	if forExport {
 		err = tx.QueryRowContext(r.Context(), "SELECT COUNT(*),COALESCE(SUM(s.import_count+s.otel_count),0)"+query, args...).Scan(&total, &records)
 	} else {
-		err = tx.QueryRowContext(r.Context(), "SELECT COUNT(*)"+query, args...).Scan(&total)
+		var cached bool
+		total, cached, err = cachedRootSessionCount(r.Context(), tx, filter)
+		if err == nil && !cached {
+			err = tx.QueryRowContext(r.Context(), "SELECT COUNT(*)"+query, args...).Scan(&total)
+		}
 	}
 	if err != nil {
 		databaseError(w, r, err)

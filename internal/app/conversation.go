@@ -196,6 +196,10 @@ func conversationGroups(ctx context.Context, tx *sql.Tx, page SessionPage, origi
 		}
 		return stmt.QueryRowContext(ctx, args...).Scan(values...)
 	}
+	ready, err := processingSummaryReady(ctx, tx, origin)
+	if err != nil {
+		return nil, err
+	}
 	var after *timelinePosition
 	if len(page.Events) > 0 {
 		first := positions[page.Events[0].ID]
@@ -223,7 +227,8 @@ func conversationGroups(ctx context.Context, tx *sql.Tx, page SessionPage, origi
 			query, args = positionBound(query, args, "<", *before)
 		}
 		from := " FROM " + timelineTable(origin) + " WHERE " + query
-		err := count("SELECT COUNT(*),COALESCE(SUM(activity),0),COALESCE(SUM(is_error),0)"+from, args, &group.Count, &group.Activity, &group.Errors)
+		countSQL, countArgs := processingCountSQL(page.ID, origin, after, before, ready)
+		err := count(countSQL, countArgs, &group.Count, &group.Activity, &group.Errors)
 		if err == nil && matchPredicate != "" && group.Count > 0 {
 			err = count("SELECT COUNT(*)"+from+matchPredicate, append(args, matchArgs...), &group.Matches)
 		}

@@ -40,6 +40,9 @@ func Start(ctx context.Context, path, token string) (*App, error) {
 		if err == nil {
 			err = a.startSkillIndexer()
 		}
+		if err == nil {
+			err = a.startProcessingIndexer()
+		}
 		a.maintenanceErr = err
 		close(a.maintained)
 		if err != nil {

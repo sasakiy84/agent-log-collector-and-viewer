@@ -64,6 +64,7 @@ func setup(t *testing.T) *App {
 		func() error { return a.initReaders(path) },
 		func() error { return a.initArchives(path) },
 		a.startSkillIndexer,
+		a.startProcessingIndexer,
 	} {
 		if e = step(); e != nil {
 			a.Close()
