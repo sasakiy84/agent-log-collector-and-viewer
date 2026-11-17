@@ -63,15 +63,4 @@ span does not prove that output was recorded. Timing-only spans cannot pair with
 real tool input/output records. Spans containing actual tool content stay visible;
 failures remain accessible with diagnostics disabled.
 
-Existing databases receive versioned migrations and a resumable presentation
-backfill after HTTP startup. Original event IDs and OTLP payloads are preserved.
-The conversation/Guardian repair visits bounded cached presentations and reparses
-only candidate Guardian/tool spans, empty-title Codex user records and old Copilot
-agent envelopes. Completed jobs do
-not run again. Ordinary timeline requests use indexed cards; initial conversation
-requests read only conversation bodies and processing counters.
-
-Collapsed processing counts use minute summaries with exact chronological
-boundary scans. After an upgrade, historical summaries build in the background;
-counts use the existing indexed path until that scope is ready. Normal receiving
-and browsing remain available, and completed builds are retained on restart.
+Existing v0.23 databases are converted offline with the [Python migration tool](storage-migration.md). Prepared presentations and minute summaries are copied and verified; the server resumes only persisted invalidations on restart. Conversation pages read conversation bodies and indexed processing counters.

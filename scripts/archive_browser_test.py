@@ -8,8 +8,6 @@ token='synthetic-archive-test-token'
 with tempfile.TemporaryDirectory() as folder:
  with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
  base=f'http://127.0.0.1:{port}'
- if os.getenv('AGENTLOG_TEST_LEGACY'):
-  with sqlite3.connect(folder+'/test.db') as database:database.execute('CREATE TABLE legacy_fixture(id INTEGER)')
  server=subprocess.Popen([binary,'--listen',f'127.0.0.1:{port}','--db',folder+'/test.db'],env={**os.environ,'AGENTLOG_TOKEN':token},stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
  try:
   def api(path,body=None):
@@ -57,10 +55,6 @@ with tempfile.TemporaryDirectory() as folder:
    if os.getenv('AGENTLOG_SCREENSHOT'):page.screenshot(path=str(pathlib.Path(os.environ['AGENTLOG_SCREENSHOT']).with_name('ui-archive-mobile.png')))
    page.locator('#archivedelete').click();expect(page.locator('#archivejob h2')).to_have_text('Archive complete',timeout=30000)
    expect(page.locator('.archive-row')).to_have_count(2);assert api('/api/stats')['events']==3
-   if os.getenv('AGENTLOG_TEST_LEGACY'):
-    assert api('/api/archive')['job']['rebuild_required'];page.locator('#archivecompact').click()
-    expect(page.locator('#archivecompact')).to_have_count(0);expect(page.locator('#archivejob h2')).to_have_text('Archive complete',timeout=30000)
-    assert not api('/api/archive')['job']['rebuild_required']
    page.locator('[data-archive-folder="/work/beta"]').check();page.locator('[data-archive-folder=""]').check();expect(page.locator('#archiveselected')).to_have_text('2 folders selected');page.locator('#archivecreate').click()
    expect(page.locator('#archivedownload')).to_be_visible(timeout=30000)
    with page.expect_download() as capture:page.locator('#archivedownload').click()

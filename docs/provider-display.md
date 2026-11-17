@@ -35,7 +35,7 @@ Unassigned/trace-only telemetry from Claude and Copilot is hidden from normal pr
 
 ## Existing databases
 
-Migration 0016 preserves invocation groups within a skill's source event. A versioned `providers.v1` job repairs Claude/Copilot cards, titles, skills, correlations and usage in bounded transactions after HTTP startup. It checkpoints progress and skips completed work on restart. Codex originals are not reparsed by this job; no original event IDs, payloads or revisions are changed. The normal source-file watcher does not need a forced reimport.
+Prepared provider presentations and invocation groups are preserved by the [offline migration](storage-migration.md). Normal ingestion updates them transactionally; startup does not reparse historical originals.
 
 ## Reproduce
 
@@ -45,7 +45,7 @@ The normal regression test uses the recorded synthetic fixture and requires no C
 AGENTLOG_BIN=./agentlog python3 scripts/provider_display_test.py
 ```
 
-Set `AGENTLOG_BASELINE_BIN` to v0.17.1 to also reproduce the old 600-token total and verify migration, raw-record preservation and checkpoint reuse. `go test ./...` covers provider formats, skill counts/times, token/AIU totals, same-definition subagent isolation and restart behavior.
+`go test ./...` covers provider formats, skill counts/times, token/AIU totals, same-definition subagent isolation and restart behavior.
 
 To recapture telemetry with an installed Copilot CLI:
 

@@ -139,6 +139,14 @@ class OfflineMigrationTests(unittest.TestCase):
         with self.assertRaisesRegex(migration.MigrationError, 'already exists'):
             self.migrate()
 
+    def test_missing_identifier_document_is_not_silently_dropped(self):
+        with closing(sqlite3.connect(self.source)) as db:
+            db.execute("DELETE FROM search_documents")
+            db.commit()
+        with self.assertRaisesRegex(migration.MigrationError, 'no corresponding search document'):
+            self.migrate()
+        self.assertFalse(self.output.exists())
+
     def test_retired_skill_checkpoint_is_covered_by_completed_successor(self):
         with closing(sqlite3.connect(self.source)) as db:
             db.execute("UPDATE maintenance_jobs SET complete=0 WHERE name='skills.v1'")

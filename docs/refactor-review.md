@@ -1,6 +1,6 @@
 # Database lifecycle refactor review
 
-This records the v0.9.1 refactor. The CI-proof release mechanism described here was subsequently removed in favor of local validation; see [the current development workflow](development.md#local-checks-and-releases).
+This records the v0.9.1 refactor. The CI-proof release mechanism described here was subsequently removed in favor of local validation; see [the current development workflow](development.md).
 
 Scope: maintain existing features and UI while making schema updates, resumable data maintenance and delivery checks explicit. Two focused reviewers examined database lifecycle and release verification, followed by an independent final review. P1–P3 findings were requested; P1/P2 fixes were reviewed again and given regression coverage.
 

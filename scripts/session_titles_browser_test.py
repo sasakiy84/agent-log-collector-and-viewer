@@ -15,7 +15,6 @@ from pathlib import Path
 from playwright.sync_api import expect, sync_playwright
 
 BINARY = os.getenv("AGENTLOG_BIN", "./agentlog")
-BASELINE = os.getenv("AGENTLOG_BASELINE_BIN", BINARY)
 TOKEN = "synthetic-first-user-title-token"
 
 
@@ -54,7 +53,7 @@ def message(session, order, text):
 
 with tempfile.TemporaryDirectory() as folder:
     database = folder + "/history.db"
-    proc, base = start(BASELINE, database)
+    proc, base = start(BINARY, database)
     try:
         context = "<recommended_plugins>\n" + "Shared plugin context\n" * 1000 + "</recommended_plugins>"
         rows = [message("first", 0, context), message("first", 1, "一覧のタイトルを修正して\n追加の説明"),

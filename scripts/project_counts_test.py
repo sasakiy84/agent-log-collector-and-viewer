@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Visible sidebar counts, including upgrade from the old 41-vs-2 mismatch."""
+"""Visible sidebar counts, excluding internal/child sessions and preserving restart state."""
 import hashlib
 import json
 import os
@@ -16,7 +16,6 @@ from test_support import settled_urlopen, wait_for_ingestion
 
 TOKEN = 'synthetic-visible-project-count-token'
 BINARY = os.getenv('AGENTLOG_BIN', './agentlog')
-BASELINE = os.getenv('AGENTLOG_BASELINE_BIN')
 
 
 def attrs(values):
@@ -58,7 +57,7 @@ with tempfile.TemporaryDirectory() as root:
                     h.update(value if isinstance(value, bytes) else value.encode())
         return h.hexdigest()
 
-    old = start(BASELINE or BINARY)
+    old = start(BINARY)
     try:
         records = []
         for i in range(41):
@@ -72,8 +71,6 @@ with tempfile.TemporaryDirectory() as root:
         api('/v1/logs', {'resourceLogs': [{'resource': {'attributes': attrs({'service.name': 'codex', 'service.namespace': 'shop'})},
             'scopeLogs': [{'logRecords': records}]}]})
         assert len(api('/api/sessions?project=name:shop')) == 2
-        if BASELINE:
-            assert api('/api/projects')['projects'][0]['count'] == 41
         original = fingerprint()
     finally:
         old.terminate()
@@ -125,4 +122,4 @@ with tempfile.TemporaryDirectory() as root:
     finally:
         restarted.terminate()
         restarted.wait(timeout=20)
-print('PASS: old 41-vs-2 mismatch repaired, internal/child exclusion, visible recency, browser toggles, full export, original data and migration restart verified')
+print('PASS: 41-session fixture filtered, internal/child exclusion, visible recency, browser toggles, full export, original data and migration restart verified')

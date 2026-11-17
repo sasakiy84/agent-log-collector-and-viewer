@@ -15,7 +15,7 @@ all children and internal sessions of the selected projects.
 
 Projects are grouped by name. Agentlog uses an explicit `service.namespace` / `project.name` label when present; otherwise it uses the final directory name from the exported working directory. For example, the label `shop`, `/workspaces/shop` and `/home/user/shop` all belong to the same project. Windows and POSIX directory separators are supported. Names match exactly, including case. Sessions with neither a label nor a working directory appear under **Unassigned**. Paths mentioned in prompts or tool arguments are never used to guess a project.
 
-The same name groups session search, project counts, skills and exports. The original working directory remains available in session details and folder-based archives. Existing cached project groups are merged once by a versioned migration without re-reading raw event histories. Older `project=path:…` selections resolve to the new name group, so open pages and saved links do not recreate duplicate entries.
+The same name groups session search, project counts, skills and exports. The original working directory remains available in session details and folder-based archives. The offline migration preserves prepared project groups without re-reading raw event histories. Older `project=path:…` selections resolve to the new name group, so open pages and saved links do not recreate duplicate entries.
 
 Resource attributes appear in the session header and inspector. Project names and tags are included in session search.
 
