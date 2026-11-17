@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/url"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -85,7 +84,7 @@ func TestIdentifierFilterUpdatesMovesDeletesAndCombinesWithText(t *testing.T) {
 		t.Fatal("identifier did not follow moved event", rows)
 	}
 	if err := inTransaction(context.Background(), a.DB, func(tx *sql.Tx) error {
-		if _, err := tx.Exec("DELETE FROM events WHERE id=?", e.ID); err != nil {
+		if _, err := tx.Exec("DELETE FROM records WHERE id=?", e.ID); err != nil {
 			return err
 		}
 		return refreshProjections(context.Background(), tx)
@@ -94,47 +93,5 @@ func TestIdentifierFilterUpdatesMovesDeletesAndCombinesWithText(t *testing.T) {
 	}
 	if len(identifierSessions(t, a, "call.id", "new-id")) != 0 {
 		t.Fatal("identifier survived event deletion")
-	}
-}
-
-func TestStringSearchUpgradeRemovesOldNumericAndIDPostingsOnce(t *testing.T) {
-	ctx := context.Background()
-	db := migrationDB(t, filepath.Join(t.TempDir(), "old-search.db"))
-	plan, err := migrations()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = migrate(ctx, db, plan[:12]); err != nil {
-		t.Fatal(err)
-	}
-	e := recorded(t, "old", "import", "codex", "old", "user_prompt", map[string]any{"prompt": "認証の確認", "request_id": "Old-Request", "counter": 987654321})
-	if _, err = db.Exec("INSERT INTO events("+eventColumns+",kind,tool_name) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'user','')", e.ID, e.Session, e.Parent, e.Source, e.Signal, e.Time, e.Name, e.Trace, e.Span, e.ParentSpan, e.Raw, e.Sequence, "import"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = db.Exec("INSERT INTO search_documents(rowid,event_id,session) VALUES(1,?,?)", e.ID, e.Session); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = db.Exec("INSERT INTO event_search(rowid,text) VALUES(1,'987654321 old request')"); err != nil {
-		t.Fatal(err)
-	}
-	if err = migrate(ctx, db, plan); err != nil {
-		t.Fatal(err)
-	}
-	a := &App{DB: db}
-	if err = a.runMaintenance(ctx, "search_strings.v1", backfillSearchStrings, 0); err != nil {
-		t.Fatal(err)
-	}
-	var count int
-	if err = db.QueryRow("SELECT COUNT(*) FROM event_search WHERE event_search MATCH '987654321 OR request'").Scan(&count); err != nil || count != 0 {
-		t.Fatal("old full-text terms survived rebuild", count, err)
-	}
-	if err = db.QueryRow("SELECT COUNT(*) FROM search_identifiers WHERE key='request_id' AND value='Old-Request'").Scan(&count); err != nil || count != 1 {
-		t.Fatal("existing ID not indexed", count, err)
-	}
-	if err = a.runMaintenance(ctx, "search_strings.v1", func(context.Context, *sql.Tx, string) (string, int, error) {
-		t.Fatal("completed rebuild repeated on restart")
-		return "", 0, nil
-	}, 0); err != nil {
-		t.Fatal(err)
 	}
 }

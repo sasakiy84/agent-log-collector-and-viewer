@@ -1,8 +1,10 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -95,36 +97,6 @@ func TestConcurrentMigrationApplication(t *testing.T) {
 	}
 }
 
-func TestLegacyCheckpointAdoption(t *testing.T) {
-	db := migrationDB(t, filepath.Join(t.TempDir(), "legacy.db"))
-	plan, err := migrations()
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Released databases had feature DDL and three independent checkpoints,
-	// with user_version reserved only for the folder backfill.
-	if _, err := db.Exec(plan[0].sql + `
- UPDATE usage_backfill SET cursor='usage-cursor',complete=0;
- UPDATE agent_index_progress SET cursor='agent-cursor',complete=1;
- UPDATE skill_index_progress SET cursor='skill-cursor',complete=0;
- PRAGMA user_version=1;`); err != nil {
-		t.Fatal(err)
-	}
-	if err := migrate(context.Background(), db, plan); err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []struct {
-		name, cursor string
-		complete     bool
-	}{{usageJob, "usage-cursor", false}, {agentsJob, "agent-cursor", true}, {"skills.v1", "skill-cursor", false}, {skillsJob, "", false}, {directoriesJob, "", true}} {
-		var cursor string
-		var complete bool
-		if err := db.QueryRow("SELECT cursor,complete FROM maintenance_jobs WHERE name=?", want.name).Scan(&cursor, &complete); err != nil || cursor != want.cursor || complete != want.complete {
-			t.Fatal(want.name, cursor, complete, err)
-		}
-	}
-}
-
 func TestDatabaseConnectionSettingsSurviveReplacement(t *testing.T) {
 	// URI punctuation in filenames must not become connection parameters.
 	a, err := Open(context.Background(), filepath.Join(t.TempDir(), "db?query#fragment.sqlite"), token)
@@ -140,7 +112,54 @@ func TestDatabaseConnectionSettingsSurviveReplacement(t *testing.T) {
 	if err := a.DB.QueryRow("PRAGMA busy_timeout").Scan(&timeout); err != nil || timeout != 5000 {
 		t.Fatal("replacement connection lost timeout", timeout, err)
 	}
-	if _, err := a.DB.Exec("INSERT INTO event_keys(event_id,namespace,key) VALUES('absent','test','test')"); err == nil {
+	if _, err := a.DB.Exec("INSERT INTO record_keys(event_id,namespace,key) VALUES('absent','test','test')"); err == nil {
 		t.Fatal("orphan allowed on replacement connection")
+	}
+}
+
+func TestStorageGenerationRejectsOldDatabaseWithoutChangingIt(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "old.db")
+	db := migrationDB(t, path)
+	if _, err := db.Exec("CREATE TABLE old_records(raw BLOB); INSERT INTO old_records VALUES(X'0020ff')"); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if app, err := Open(context.Background(), path, token); err == nil {
+		app.Close()
+		t.Fatal("old database was silently adopted")
+	} else if !strings.Contains(err.Error(), "uv run scripts/migrate_db.py") {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("rejected source database changed")
+	}
+}
+
+func TestStorageGenerationAndMigrationHistory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "current.db")
+	a, err := Open(context.Background(), path, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var id, version, history int
+	a.DB.QueryRow("PRAGMA application_id").Scan(&id)
+	a.DB.QueryRow("PRAGMA user_version").Scan(&version)
+	a.DB.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&history)
+	if id != storageApplicationID || version != 1 || history != 1 {
+		t.Fatal(id, version, history)
+	}
+	a.DB.Exec("PRAGMA user_version=99")
+	a.Close()
+	if app, err := Open(context.Background(), path, token); err == nil {
+		app.Close()
+		t.Fatal("future storage generation accepted")
 	}
 }

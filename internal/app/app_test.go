@@ -63,8 +63,6 @@ func setup(t *testing.T) *App {
 		func() error { return a.openDatabase(a.ctx, path) },
 		func() error { return a.initReaders(path) },
 		func() error { return a.initArchives(path) },
-		a.startSkillIndexer,
-		a.startProcessingIndexer,
 	} {
 		if e = step(); e != nil {
 			a.Close()
@@ -78,7 +76,7 @@ func setup(t *testing.T) *App {
 // Tests inspect stored originals in small fixtures. Production downloads stream
 // rows and do not expose an unbounded materializing read API.
 func (a *App) readRecords(ctx context.Context, session, origin string, limit, off int) ([]Event, error) {
-	rows, err := a.readers.QueryContext(ctx, "SELECT "+eventColumns+" FROM events WHERE session=? AND (?='' OR origin=?) ORDER BY time,sequence,id LIMIT ? OFFSET ?", session, origin, origin, limit, off)
+	rows, err := a.readers.QueryContext(ctx, "SELECT "+eventColumns+" FROM records WHERE session=? AND (?='' OR origin=?) ORDER BY time,sequence,id LIMIT ? OFFSET ?", session, origin, origin, limit, off)
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +172,7 @@ func TestGzipProtobufDedup(t *testing.T) {
 		}
 	}
 	var n int
-	a.DB.QueryRow("SELECT COUNT(*) FROM events").Scan(&n)
+	a.DB.QueryRow("SELECT COUNT(*) FROM records").Scan(&n)
 	if n != 1 {
 		t.Fatal(n)
 	}
@@ -280,7 +278,7 @@ func TestSubsecondOrderingAndAtomicRejection(t *testing.T) {
 		t.Fatal("oversized batch accepted")
 	}
 	var n int
-	a.DB.QueryRow("SELECT COUNT(*) FROM events").Scan(&n)
+	a.DB.QueryRow("SELECT COUNT(*) FROM records").Scan(&n)
 	if n != 2 {
 		t.Fatal("partial batch stored", n)
 	}
@@ -352,7 +350,7 @@ func TestProjectQueryAllSignals(t *testing.T) {
 			t.Fatal(signal, w.Body.String())
 		}
 	}
-	rows, e := a.DB.Query("SELECT raw FROM events")
+	rows, e := a.DB.Query("SELECT raw FROM records")
 	if e != nil {
 		t.Fatal(e)
 	}

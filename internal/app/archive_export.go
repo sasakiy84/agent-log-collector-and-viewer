@@ -106,7 +106,7 @@ func (a *App) buildArchive(ctx context.Context, job ArchiveJob) (err error) {
 			return e
 		}
 		var actual int64
-		e = tx.QueryRowContext(ctx, "SELECT COALESCE((SELECT revision FROM session_revisions WHERE session=?),0)", session).Scan(&actual)
+		e = tx.QueryRowContext(ctx, "SELECT COALESCE((SELECT revision FROM session_versions WHERE session=?),0)", session).Scan(&actual)
 		if e != nil || actual != revision {
 			tx.Rollback()
 			if e != nil {
@@ -119,7 +119,7 @@ func (a *App) buildArchive(ctx context.Context, job ArchiveJob) (err error) {
 			tx.Rollback()
 			return e
 		}
-		records, e := tx.QueryContext(ctx, "SELECT "+eventColumns+" FROM events WHERE session=? ORDER BY origin,time", session)
+		records, e := tx.QueryContext(ctx, "SELECT "+eventColumns+" FROM records WHERE session=? ORDER BY origin,time", session)
 		if e != nil {
 			tx.Rollback()
 			return e
@@ -139,7 +139,7 @@ func (a *App) buildArchive(ctx context.Context, job ArchiveJob) (err error) {
 			count++
 			processed++
 			if processed%200 == 0 || time.Since(lastProgress) > time.Second {
-				result, e := a.DB.ExecContext(ctx, "UPDATE archives SET processed_records=?,archive_bytes=? WHERE id=? AND status='preparing'", processed, counter.n, job.ID)
+				result, e := a.DB.ExecContext(ctx, "UPDATE archive_jobs SET processed_records=?,archive_bytes=? WHERE id=? AND status='preparing'", processed, counter.n, job.ID)
 				if e != nil {
 					err = e
 					break
@@ -195,7 +195,7 @@ func (a *App) buildArchive(ctx context.Context, job ArchiveJob) (err error) {
 	if !valid {
 		return errArchiveStale
 	}
-	result, err := tx.ExecContext(ctx, "UPDATE archives SET status='ready',processed_records=?,archive_bytes=?,sha256=? WHERE id=? AND status='preparing'", processed, counter.n, hex.EncodeToString(digest.Sum(nil)), job.ID)
+	result, err := tx.ExecContext(ctx, "UPDATE archive_jobs SET status='ready',processed_records=?,archive_bytes=?,sha256=? WHERE id=? AND status='preparing'", processed, counter.n, hex.EncodeToString(digest.Sum(nil)), job.ID)
 	if err != nil {
 		return err
 	}

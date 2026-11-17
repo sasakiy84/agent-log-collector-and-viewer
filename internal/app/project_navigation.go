@@ -34,21 +34,34 @@ func canonicalProjectID(id string) string {
 	return "name:" + name
 }
 
+// Project identity is domain metadata, stored independently of the UI preview.
+func sessionProject(d Detail) (string, string) {
+	cwd, _ := d.Cwd.(string)
+	directory := strings.ReplaceAll(strings.TrimRight(cwd, "/\\"), "\\", "/")
+	if project, ok := d.Project.(string); ok && project != "" {
+		return directory, "name:" + project
+	}
+	if cwd != "" {
+		return directory, canonicalProjectID("path:" + cwd)
+	}
+	return directory, ""
+}
+
 type projectDelta struct{ Count, Roots int }
 
 func updateProjectTotals(ctx context.Context, tx *sql.Tx, changes map[folderKey]projectDelta) error {
 	for key, delta := range changes {
 		if delta.Count != 0 || delta.Roots != 0 {
-			_, err := tx.ExecContext(ctx, `INSERT INTO project_totals(project,source,diagnostic,count,end,root_count,root_end) VALUES(?,?,?,?, '',?,'') ON CONFLICT(project,source,diagnostic) DO UPDATE SET count=count+excluded.count,root_count=root_count+excluded.root_count`, key.Path, key.Source, key.Diagnostic, delta.Count, delta.Roots)
+			_, err := tx.ExecContext(ctx, `INSERT INTO project_summaries(project,source,diagnostic,count,end,root_count,root_end) VALUES(?,?,?,?, '',?,'') ON CONFLICT(project,source,diagnostic) DO UPDATE SET count=count+excluded.count,root_count=root_count+excluded.root_count`, key.Path, key.Source, key.Diagnostic, delta.Count, delta.Roots)
 			if err != nil {
 				return err
 			}
 		}
-		if _, err := tx.ExecContext(ctx, "DELETE FROM project_totals WHERE project=? AND source=? AND diagnostic=? AND count=0", key.Path, key.Source, key.Diagnostic); err != nil {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM project_summaries WHERE project=? AND source=? AND diagnostic=? AND count=0", key.Path, key.Source, key.Diagnostic); err != nil {
 			return err
 		}
-		_, err := tx.ExecContext(ctx, `UPDATE project_totals SET end=(SELECT end FROM folder_members WHERE project=? AND source=? AND diagnostic=? ORDER BY end DESC,session LIMIT 1),
- root_end=COALESCE((SELECT end FROM folder_members WHERE project=? AND source=? AND diagnostic=? AND child=0 ORDER BY end DESC,session LIMIT 1),'')
+		_, err := tx.ExecContext(ctx, `UPDATE project_summaries SET end=(SELECT end FROM session_membership WHERE project=? AND source=? AND diagnostic=? ORDER BY end DESC,session LIMIT 1),
+ root_end=COALESCE((SELECT end FROM session_membership WHERE project=? AND source=? AND diagnostic=? AND child=0 ORDER BY end DESC,session LIMIT 1),'')
  WHERE project=? AND source=? AND diagnostic=?`, key.Path, key.Source, key.Diagnostic, key.Path, key.Source, key.Diagnostic, key.Path, key.Source, key.Diagnostic)
 		if err != nil {
 			return err
@@ -68,7 +81,7 @@ func (a *App) projects(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("include_children") == "1" {
 		countColumn, endColumn = "count", "end"
 	}
-	filter, args := " FROM project_totals WHERE "+countColumn+">0", []any{}
+	filter, args := " FROM project_summaries WHERE "+countColumn+">0", []any{}
 	if source := r.URL.Query().Get("source"); source != "" {
 		filter += " AND source=?"
 		args = append(args, source)

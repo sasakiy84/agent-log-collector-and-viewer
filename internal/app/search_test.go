@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -93,7 +92,7 @@ func TestSearchUpdatesMovesAndDeletesAtomically(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = tx.Exec("DELETE FROM events WHERE id=?", event.ID); err != nil {
+	if _, err = tx.Exec("DELETE FROM records WHERE id=?", event.ID); err != nil {
 		t.Fatal(err)
 	}
 	tx.Rollback()
@@ -104,7 +103,7 @@ func TestSearchUpdatesMovesAndDeletesAtomically(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = tx.Exec("DELETE FROM events WHERE id=?", event.ID); err == nil {
+	if _, err = tx.Exec("DELETE FROM records WHERE id=?", event.ID); err == nil {
 		err = refreshTimelines(context.Background(), tx)
 	}
 	if err != nil {
@@ -121,48 +120,6 @@ func TestSearchUpdatesMovesAndDeletesAtomically(t *testing.T) {
 	a.DB.QueryRow("SELECT COUNT(*) FROM event_search").Scan(&count)
 	if count != 0 {
 		t.Fatal("orphan search document", count)
-	}
-}
-func TestSearchUpgradeAndRestart(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "upgrade.db")
-	db := migrationDB(t, path)
-	plan, err := migrations()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(plan[0].sql); err != nil {
-		t.Fatal(err)
-	}
-	event := recorded(t, "existing", "import", "codex", "existing", "gen_ai.user.message", map[string]any{"prompt": "既存データを検索"})
-	if _, err := db.Exec("INSERT INTO events(id,session,parent,source,signal,time,name,trace,span,parent_span,raw,sequence,origin,kind,tool_name) VALUES(?,?,'','codex','logs',?,?,'','','',?,0,'import','user','')", event.ID, event.Session, event.Time, event.Name, []byte(event.Raw)); err != nil {
-		t.Fatal(err)
-	}
-	// A frozen pre-migration schema, rather than removing history from a newer
-	// schema whose added columns would survive and be applied twice.
-	if _, err := db.Exec(`DROP TRIGGER search_document_delete;DROP TRIGGER search_event_insert;DROP TRIGGER search_event_update;DROP TABLE search_dirty;DROP TABLE search_documents;DROP TABLE event_search`); err != nil {
-		t.Fatal(err)
-	}
-	db.Close()
-	a, err := Open(context.Background(), path, token)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer a.Close()
-	if len(searchSessions(t, a, "既存")) != 1 {
-		t.Fatal("existing records were not backfilled")
-	}
-	var rowid int64
-	a.DB.QueryRow("SELECT rowid FROM search_documents WHERE event_id=?", event.ID).Scan(&rowid)
-	a.DB.Exec("DELETE FROM search_documents WHERE event_id=?", event.ID)
-	a.DB.Exec("INSERT INTO search_dirty VALUES(?)", event.ID)
-	a.Close()
-	b, err := Open(context.Background(), path, token)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer b.Close()
-	if len(searchSessions(t, b, "検索")) != 1 {
-		t.Fatal("interrupted index build did not resume")
 	}
 }
 func TestSearchArchiveAndReplay(t *testing.T) {
@@ -291,7 +248,7 @@ func TestSearchMergeReclaimsDeletedPostings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = tx.Exec("DELETE FROM events"); err == nil {
+	if _, err = tx.Exec("DELETE FROM records"); err == nil {
 		err = refreshTimelines(context.Background(), tx)
 	}
 	if err != nil {

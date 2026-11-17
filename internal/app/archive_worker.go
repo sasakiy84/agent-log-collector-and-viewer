@@ -17,7 +17,7 @@ func (a *App) archiveWorker() {
 		case <-a.archiveWake:
 		}
 		for a.ctx.Err() == nil {
-			job, err := scanArchive(a.DB.QueryRowContext(a.ctx, "SELECT "+archiveColumns+" FROM archives WHERE status IN ('preparing','deleting','compacting') ORDER BY created_at LIMIT 1"))
+			job, err := scanArchive(a.DB.QueryRowContext(a.ctx, "SELECT "+archiveColumns+" FROM archive_jobs WHERE status IN ('preparing','deleting','compacting') ORDER BY created_at LIMIT 1"))
 			if errors.Is(err, sql.ErrNoRows) {
 				break
 			}
@@ -51,7 +51,7 @@ func (a *App) archiveWorker() {
 					if _, err := tx.ExecContext(a.ctx, "DELETE FROM archive_locks WHERE archive_id=?", job.ID); err != nil {
 						return err
 					}
-					if _, err := tx.ExecContext(a.ctx, "UPDATE archives SET status='failed',error=? WHERE id=? AND status IN ('preparing','deleting','compacting')", archiveFailure(err), job.ID); err != nil {
+					if _, err := tx.ExecContext(a.ctx, "UPDATE archive_jobs SET status='failed',error=? WHERE id=? AND status IN ('preparing','deleting','compacting')", archiveFailure(err), job.ID); err != nil {
 						return err
 					}
 					return refreshProjections(a.ctx, tx)

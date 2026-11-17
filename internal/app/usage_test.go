@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -100,7 +99,7 @@ func TestUsageDeltaIntervalsReplayAndOverlapRecovery(t *testing.T) {
 	if _, known := u.Values["output_tokens"]; known || u.Excluded != 3 {
 		t.Fatal("overlapping ranges were added", u)
 	}
-	if _, err := a.DB.Exec("DELETE FROM events WHERE id=?", overlap.ID); err != nil {
+	if _, err := a.DB.Exec("DELETE FROM records WHERE id=?", overlap.ID); err != nil {
 		t.Fatal(err)
 	}
 	save(t, a)
@@ -132,16 +131,16 @@ func TestUsageErrorsFollowLogicalTimelineAndDeletion(t *testing.T) {
 	changed := recorded(t, "call", "import", "codex", "one", "gen_ai.tool.result", map[string]any{"gen_ai.tool.call.id": "call", "success": true})
 	save(t, a, changed)
 	usageWant(t, sessionUsage(t, a, "codex:one", ""), "errors", "1")
-	if _, err := a.DB.Exec("DELETE FROM events WHERE id=?", native.ID); err != nil {
+	if _, err := a.DB.Exec("DELETE FROM records WHERE id=?", native.ID); err != nil {
 		t.Fatal(err)
 	}
 	save(t, a)
 	usageWant(t, sessionUsage(t, a, "codex:one", ""), "errors", "0")
-	if _, err := a.DB.Exec("DELETE FROM events"); err != nil {
+	if _, err := a.DB.Exec("DELETE FROM records"); err != nil {
 		t.Fatal(err)
 	}
 	save(t, a)
-	for _, table := range []string{"usage_points", "usage_groups", "usage_totals", "usage_summary", "timeline_errors", "event_errors"} {
+	for _, table := range []string{"usage_samples", "usage_groups", "usage_totals", "session_usage", "timeline_errors", "event_errors"} {
 		var n int
 		if err := a.DB.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&n); err != nil || n != 0 {
 			t.Fatal(table, n, err)
@@ -181,7 +180,7 @@ func TestUsageFolderTotalsRespectSearchAndCoverage(t *testing.T) {
 	}
 }
 
-func TestUsageDecimalPrecisionAndUSDBackfill(t *testing.T) {
+func TestUsageDecimalPrecisionAndUSD(t *testing.T) {
 	a := setup(t)
 	for i, value := range []string{"0.0000000000000000005", "0.00000000000000000025"} {
 		e := recorded(t, fmt.Sprint(i), "otel", "codex", "precision", "api_request", map[string]any{"cost_usd": value})
@@ -194,19 +193,8 @@ func TestUsageDecimalPrecisionAndUSDBackfill(t *testing.T) {
 	e := recorded(t, "alias", "otel", "codex", "alias", "custom_event", map[string]any{"cost_usd": "0.000000000000000001"})
 	save(t, a, e)
 	usageWant(t, sessionUsage(t, a, "codex:alias", ""), "cost_usd", "0.000000000000000001")
-	// Rebuild derived usage as an older database would, including usage on ordinary logs.
-	if _, err := a.DB.Exec("DELETE FROM usage_points; DELETE FROM usage_groups; DELETE FROM usage_totals; DELETE FROM usage_summary; UPDATE maintenance_jobs SET cursor='',complete=0 WHERE name='usage.v1'"); err != nil {
-		t.Fatal(err)
-	}
-	path := a.dbPath
-	a.Close()
-	b, err := Open(context.Background(), path, token)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer b.Close()
-	usageWant(t, sessionUsage(t, b, "codex:alias", ""), "cost_usd", "0.000000000000000001")
 }
+
 func TestUsageNanosecondIntervalsAcrossDayBoundaries(t *testing.T) {
 	a := setup(t)
 	base := time.Date(2026, 11, 15, 23, 59, 59, 0, time.UTC).UnixNano()
@@ -218,7 +206,7 @@ func TestUsageNanosecondIntervalsAcrossDayBoundaries(t *testing.T) {
 	if err := a.DB.QueryRow("SELECT COUNT(*) FROM usage_interval_index").Scan(&count); err != nil || count != 4 {
 		t.Fatal(count, err)
 	}
-	if _, err := a.DB.Exec("DELETE FROM events"); err != nil {
+	if _, err := a.DB.Exec("DELETE FROM records"); err != nil {
 		t.Fatal(err)
 	}
 	save(t, a)
@@ -243,33 +231,6 @@ func TestUsageConflictingUnorderedReportsAreUnknown(t *testing.T) {
 	if _, known := u.Values["duration_ms"]; known {
 		t.Fatal(u)
 	}
-}
-
-func TestUsageUpgradeResumesWithoutCountingCompletedPointsTwice(t *testing.T) {
-	a := setup(t)
-	save(t, a, recorded(t, "a", "otel", "claude", "resume", "api_request", map[string]any{"gen_ai.usage.input_tokens": "100"}), recorded(t, "z", "otel", "claude", "resume", "api_request", map[string]any{"gen_ai.usage.input_tokens": "200"}))
-	tx, err := a.DB.Begin()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = tx.Exec("DELETE FROM usage_points WHERE id='z'; UPDATE maintenance_jobs SET cursor='a',complete=0 WHERE name='usage.v1'"); err == nil {
-		err = refreshUsage(context.Background(), tx)
-	}
-	if err != nil {
-		tx.Rollback()
-		t.Fatal(err)
-	}
-	if err = tx.Commit(); err != nil {
-		t.Fatal(err)
-	}
-	path := a.dbPath
-	a.Close()
-	b, err := Open(context.Background(), path, token)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer b.Close()
-	usageWant(t, sessionUsage(t, b, "claude:resume", ""), "input_tokens", "300")
 }
 
 func TestUsageUSDCumulativeCounterIsAlternativeToEventCost(t *testing.T) {

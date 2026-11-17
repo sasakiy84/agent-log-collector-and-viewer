@@ -29,9 +29,9 @@ func (a *App) searchSummary(w http.ResponseWriter, r *http.Request) {
 	if filter.Search == "" {
 		// With no FTS posting list, project/source catalog rows drive indexed
 		// session/origin/time probes instead of a scan of all cached card payloads.
-		cards.from = " FROM session_catalog s CROSS JOIN event_cards c ON c.session=s.session"
+		cards.from = " FROM sessions s CROSS JOIN record_facts c ON c.session=s.session"
 	} else {
-		cards.from += " JOIN session_catalog s ON s.session=c.session"
+		cards.from += " JOIN sessions s ON s.session=c.session"
 	}
 	cards.where += metadata.where + " AND length(s.parent)=0"
 	cards.args = append(cards.args, metadata.args...)

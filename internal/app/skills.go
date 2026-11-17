@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -54,10 +53,10 @@ func skillRollup() string {
 type skillUsageTotals struct{ Uses, Reads int }
 
 func scanSkills(rows *sql.Rows) ([]SkillSummary, error) {
-	return scanSkillRows(rows, nil)
+	return scanSkillRows(rows, nil, false)
 }
 
-func scanSkillRows(rows *sql.Rows, totals *skillUsageTotals) ([]SkillSummary, error) {
+func scanSkillRows(rows *sql.Rows, totals *skillUsageTotals, includeEvent bool) ([]SkillSummary, error) {
 	defer rows.Close()
 	out := []SkillSummary{}
 	for rows.Next() {
@@ -66,6 +65,9 @@ func scanSkillRows(rows *sql.Rows, totals *skillUsageTotals) ([]SkillSummary, er
 		args := []any{&s.Name, &s.Plugin, &s.Sessions, &s.Uses, &s.Reads, &s.Pending, &s.Failed, &s.Injections, &s.Last, &scopes}
 		if totals != nil {
 			args = append(args, &totals.Uses, &totals.Reads)
+		}
+		if includeEvent {
+			args = append(args, &s.Event)
 		}
 		if err := rows.Scan(args...); err != nil {
 			return nil, err
@@ -116,7 +118,7 @@ func (a *App) skills(w http.ResponseWriter, r *http.Request) {
 	}
 	evidence, evidenceArgs := scope.evidenceSQL("e")
 	cte := `WITH skill_events AS NOT MATERIALIZED (SELECT e.* FROM main.skill_events e WHERE 1` + evidence + `) `
-	from := ` FROM skill_events k JOIN session_catalog s ON s.session=k.session WHERE NOT EXISTS(SELECT 1 FROM archive_locks l WHERE l.session=k.session)`
+	from := ` FROM skill_events k JOIN sessions s ON s.session=k.session WHERE NOT EXISTS(SELECT 1 FROM archive_locks l WHERE l.session=k.session)`
 	sessionScope, args := scope.sessionSQL()
 	from += sessionScope
 	searchCondition := func(alias, text string, anyWord bool) (string, []any) {
@@ -151,7 +153,7 @@ func (a *App) skills(w http.ResponseWriter, r *http.Request) {
 		if field == "exclude" {
 			operator = " NOT IN"
 		}
-		from += ` AND (k.name,k.plugin)` + operator + `(SELECT matched.name,matched.plugin FROM skill_events matched JOIN session_catalog s ON s.session=matched.session WHERE NOT EXISTS(SELECT 1 FROM archive_locks l WHERE l.session=matched.session) AND ` + condition
+		from += ` AND (k.name,k.plugin)` + operator + `(SELECT matched.name,matched.plugin FROM skill_events matched JOIN sessions s ON s.session=matched.session WHERE NOT EXISTS(SELECT 1 FROM archive_locks l WHERE l.session=matched.session) AND ` + condition
 		args = append(args, terms...)
 		from += sessionScope
 		args = append(args, scopeArgs(scope)...)
@@ -172,11 +174,7 @@ func (a *App) skills(w http.ResponseWriter, r *http.Request) {
 	var out []SkillSummary
 	var totals skillUsageTotals
 	if err == nil {
-		out, err = scanSkillRows(rows, &totals)
-	}
-	var ready bool
-	if err == nil {
-		err = tx.QueryRowContext(r.Context(), "SELECT complete FROM maintenance_jobs WHERE name=?", skillsJob).Scan(&ready)
+		out, err = scanSkillRows(rows, &totals, false)
 	}
 	if err == nil {
 		err = tx.Commit()
@@ -185,7 +183,7 @@ func (a *App) skills(w http.ResponseWriter, r *http.Request) {
 		databaseError(w, r, err)
 		return
 	}
-	write(w, map[string]any{"skills": out, "total": total, "uses": totals.Uses, "reads": totals.Reads, "sort": sort, "offset": off, "ready": ready})
+	write(w, map[string]any{"skills": out, "total": total, "uses": totals.Uses, "reads": totals.Reads, "sort": sort, "offset": off, "ready": true})
 }
 func sessionSkills(ctx context.Context, tx *sql.Tx, session, origin string) ([]SkillSummary, error) {
 	cte := `WITH skill_events AS NOT MATERIALIZED (SELECT * FROM main.skill_events WHERE session=?`
@@ -195,37 +193,25 @@ func sessionSkills(ctx context.Context, tx *sql.Tx, session, origin string) ([]S
 		args = append(args, origin)
 	}
 	cte += ") "
-	rows, err := tx.QueryContext(ctx, cte+skillRollup()+" FROM skill_events k GROUP BY k.name,k.plugin ORDER BY MAX(k.time) DESC,k.name,k.plugin", args...)
+	// Rank the preferred evidence for every skill in one pass. Correlated
+	// point lookups below preserve current logical IDs after import/OTEL merge,
+	// without one or two extra round trips for every distinct skill.
+	cte += ", summaries AS (" + skillRollup() + ` FROM skill_events k GROUP BY k.name,k.plugin),
+ ranked AS (SELECT name,plugin,event_id,ROW_NUMBER() OVER (
+ PARTITION BY name,plugin ORDER BY CASE WHEN evidence='reported' THEN 0 ELSE 1 END,time DESC,event_id) AS position FROM skill_events)
+ SELECT s.name,s.plugin,s.sessions,s.uses,s.reads,s.pending,s.failed,s.injections,s.last,s.scopes,`
+	event := "r.event_id"
+	if origin == "" {
+		event = `COALESCE((SELECT id FROM logical_events WHERE id=r.event_id AND session=?
+ UNION ALL SELECT id FROM logical_events WHERE otel_id=r.event_id AND import_id<>'' AND otel_id<>'' AND session=? LIMIT 1),r.event_id)`
+		args = append(args, session, session)
+	}
+	rows, err := tx.QueryContext(ctx, cte+event+` FROM summaries s JOIN ranked r ON r.name=s.name AND r.plugin=s.plugin AND r.position=1
+ ORDER BY s.last DESC,s.name,s.plugin`, args...)
 	if err != nil {
 		return nil, err
 	}
-	out, err := scanSkills(rows)
-	if err != nil {
-		return nil, err
-	}
-	for i := range out {
-		s := &out[i]
-		query := `SELECT event_id FROM skill_events WHERE session=? AND name=? AND plugin=?`
-		args := []any{session, s.Name, s.Plugin}
-		if origin != "" {
-			query += " AND origin=?"
-			args = append(args, origin)
-		}
-		err = tx.QueryRowContext(ctx, query+" ORDER BY CASE WHEN evidence='reported' THEN 0 ELSE 1 END,time DESC,event_id LIMIT 1", args...).Scan(&s.Event)
-		if err != nil {
-			return nil, err
-		}
-		if origin == "" {
-			var logical string
-			err = tx.QueryRowContext(ctx, `SELECT id FROM timeline_entries WHERE id=? AND session=? UNION ALL SELECT id FROM timeline_entries WHERE otel_id=? AND import_id<>'' AND otel_id<>'' AND session=? LIMIT 1`, s.Event, session, s.Event, session).Scan(&logical)
-			if err == nil {
-				s.Event = logical
-			} else if !errors.Is(err, sql.ErrNoRows) {
-				return nil, err
-			}
-		}
-	}
-	return out, nil
+	return scanSkillRows(rows, nil, true)
 }
 func attachSkills(ctx context.Context, tx *sql.Tx, events []TimelineEvent) error {
 	ids := []string{}

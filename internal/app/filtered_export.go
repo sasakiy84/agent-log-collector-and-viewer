@@ -133,7 +133,7 @@ func writeFilteredExport(ctx context.Context, tx *sql.Tx, sessions *sql.Rows, ar
 
 func writeExportSession(ctx context.Context, tx *sql.Tx, encoder *json.Encoder, session string) (int64, error) {
 	// events_session supplies this order without sorting/buffering raw logs.
-	rows, err := tx.QueryContext(ctx, "SELECT "+eventColumns+" FROM events WHERE session=? ORDER BY origin,time", session)
+	rows, err := tx.QueryContext(ctx, "SELECT "+eventColumns+" FROM records WHERE session=? ORDER BY origin,time", session)
 	if err != nil {
 		return 0, err
 	}

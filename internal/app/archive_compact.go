@@ -26,10 +26,10 @@ func (a *App) compactArchive(ctx context.Context, job ArchiveJob) error {
 	}
 	var requested bool
 	if err == nil {
-		err = a.DB.QueryRowContext(ctx, "SELECT rebuild_requested FROM archives WHERE id=?", job.ID).Scan(&requested)
+		err = a.DB.QueryRowContext(ctx, "SELECT rebuild_requested FROM archive_jobs WHERE id=?", job.ID).Scan(&requested)
 	}
 	if err == nil && mode != 2 && !requested {
-		_, err = a.DB.ExecContext(ctx, "UPDATE archives SET status='deleted',rebuild_required=1,compaction_error=? WHERE id=?", "Records deleted; freed pages are reusable. Rebuilding this existing database releases disk space, pauses ingestion, and can require up to twice the database size in free space.", job.ID)
+		_, err = a.DB.ExecContext(ctx, "UPDATE archive_jobs SET status='deleted',rebuild_required=1,compaction_error=? WHERE id=?", "Records deleted; freed pages are reusable. Rebuilding this existing database releases disk space, pauses ingestion, and can require up to twice the database size in free space.", job.ID)
 		return err
 	}
 	if err == nil && mode != 2 {
@@ -61,13 +61,13 @@ func (a *App) compactArchive(ctx context.Context, job ArchiveJob) error {
 		warning = "Records were deleted, but database compaction failed. Free disk space and retry compaction."
 	}
 	var before int64
-	if e := a.DB.QueryRowContext(ctx, "SELECT database_bytes_before FROM archives WHERE id=?", job.ID).Scan(&before); e != nil {
+	if e := a.DB.QueryRowContext(ctx, "SELECT database_bytes_before FROM archive_jobs WHERE id=?", job.ID).Scan(&before); e != nil {
 		return e
 	}
 	if e := a.DB.QueryRowContext(ctx, "PRAGMA auto_vacuum").Scan(&mode); e != nil {
 		return e
 	}
-	_, err = a.DB.ExecContext(ctx, "UPDATE archives SET status='deleted',reclaimed_bytes=?,compaction_error=?,rebuild_required=? WHERE id=?", max(int64(0), before-a.diskBytes()), warning, mode != 2, job.ID)
+	_, err = a.DB.ExecContext(ctx, "UPDATE archive_jobs SET status='deleted',reclaimed_bytes=?,compaction_error=?,rebuild_required=? WHERE id=?", max(int64(0), before-a.diskBytes()), warning, mode != 2, job.ID)
 	return err
 }
 

@@ -22,7 +22,7 @@ func TestJSONReceiverPreservesNumericInt64(t *testing.T) {
 				t.Fatalf("HTTP %d: %s", w.Code, w.Body.String())
 			}
 			var raw []byte
-			if err := a.DB.QueryRowContext(context.Background(), "SELECT raw FROM events WHERE signal=?", tc.signal).Scan(&raw); err != nil {
+			if err := a.DB.QueryRowContext(context.Background(), "SELECT raw FROM records WHERE signal=?", tc.signal).Scan(&raw); err != nil {
 				t.Fatal(err)
 			}
 			for _, value := range []string{"1790000000000000001", "9007199254740993"} {

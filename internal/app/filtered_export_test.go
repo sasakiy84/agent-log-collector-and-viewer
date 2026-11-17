@@ -107,7 +107,7 @@ func TestProjectExportIncludesWholeSessionsAndHiddenData(t *testing.T) {
 		}
 	}
 	// Export is read-only; archive locks must not silently omit still-stored data.
-	if _, err := a.DB.Exec("INSERT INTO archives(id,status,created_at,cutoff) VALUES('export-test','ready','','');INSERT INTO archive_locks VALUES('codex:root','export-test')"); err != nil {
+	if _, err := a.DB.Exec("INSERT INTO archive_jobs(id,status,created_at,cutoff) VALUES('export-test','ready','','');INSERT INTO archive_locks VALUES('codex:root','export-test')"); err != nil {
 		t.Fatal(err)
 	}
 	response := archiveReq(a, "GET", "/api/export/download?"+base.Encode(), "")
@@ -208,7 +208,7 @@ func TestExportUsesOneSnapshotWhileIngestionContinues(t *testing.T) {
 		t.Fatal("concurrent arrival leaked into export snapshot", manifest, events)
 	}
 	var count int
-	if err := a.DB.QueryRow("SELECT COUNT(*) FROM events").Scan(&count); err != nil || count != 2 {
+	if err := a.DB.QueryRow("SELECT COUNT(*) FROM records").Scan(&count); err != nil || count != 2 {
 		t.Fatal("arrival was lost", count, err)
 	}
 }

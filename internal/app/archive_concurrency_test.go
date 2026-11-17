@@ -11,22 +11,15 @@ import (
 
 func TestArchiveDeletionMakesProgressWithLongRunningReader(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "legacy.db")
-	seed, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Keep compaction an explicit follow-up so this test isolates deletion,
-	// rather than the final space-reclamation checkpoint.
-	_, err = seed.Exec("CREATE TABLE existing_database(id INTEGER)")
-	seed.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
 	a, err := Open(context.Background(), path, token)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer a.Close()
+	// Isolate deletion from the final truncating checkpoint held by our reader.
+	if _, err = a.DB.Exec("PRAGMA auto_vacuum=NONE; VACUUM"); err != nil {
+		t.Fatal(err)
+	}
 	events := make([]Event, 401)
 	for i := range events {
 		events[i] = oldEvent(t, fmt.Sprint(i), "archived")
@@ -39,7 +32,7 @@ func TestArchiveDeletionMakesProgressWithLongRunningReader(t *testing.T) {
 	// Run the deletion directly after the ordinary archive worker has stopped.
 	a.cancel()
 	a.workers.Wait()
-	if _, err = a.DB.Exec("INSERT INTO archive_locks VALUES(?,?); UPDATE archives SET status='deleting' WHERE id=?", events[0].Session, job.ID, job.ID); err != nil {
+	if _, err = a.DB.Exec("INSERT INTO archive_locks VALUES(?,?); UPDATE archive_jobs SET status='deleting' WHERE id=?", events[0].Session, job.ID, job.ID); err != nil {
 		t.Fatal(err)
 	}
 	reader, err := a.readers.BeginTx(context.Background(), &sql.TxOptions{ReadOnly: true})
@@ -48,7 +41,7 @@ func TestArchiveDeletionMakesProgressWithLongRunningReader(t *testing.T) {
 	}
 	defer reader.Rollback()
 	var retained int
-	if err = reader.QueryRow("SELECT COUNT(*) FROM events").Scan(&retained); err != nil || retained != len(events) {
+	if err = reader.QueryRow("SELECT COUNT(*) FROM records").Scan(&retained); err != nil || retained != len(events) {
 		t.Fatal(retained, err)
 	}
 	// Keep the busy timeout longer than the test deadline. A blocking TRUNCATE
@@ -64,7 +57,7 @@ func TestArchiveDeletionMakesProgressWithLongRunningReader(t *testing.T) {
 	if countEvents(t, a) != 0 {
 		t.Fatal("deletion did not finish every batch")
 	}
-	if err = reader.QueryRow("SELECT COUNT(*) FROM events").Scan(&retained); err != nil || retained != len(events) {
+	if err = reader.QueryRow("SELECT COUNT(*) FROM records").Scan(&retained); err != nil || retained != len(events) {
 		t.Fatal("concurrent reader lost its original snapshot", retained, err)
 	}
 }

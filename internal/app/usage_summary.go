@@ -27,7 +27,7 @@ func emptyUsage() UsageSummary {
 	return UsageSummary{Values: map[string]string{"errors": "0"}, Coverage: map[string]int{"errors": 1}, Sessions: 1}
 }
 
-const usageColumn = "COALESCE((SELECT summary FROM usage_summary u WHERE u.session=s.session AND u.origin=''),'{}')"
+const usageColumn = "COALESCE((SELECT summary FROM session_usage u WHERE u.session=s.session AND u.origin=''),'{}')"
 
 func decodeUsage(encoded string) (UsageSummary, error) {
 	s := emptyUsage()
@@ -175,7 +175,7 @@ func combinedUsage(imported, native UsageSummary, errors string) UsageSummary {
 	return s
 }
 func refreshUsageSummaries(ctx context.Context, tx *sql.Tx) error {
-	rows, err := tx.QueryContext(ctx, "SELECT session FROM usage_sessions_dirty")
+	rows, err := tx.QueryContext(ctx, "SELECT session FROM pending_usage_sessions")
 	if err != nil {
 		return err
 	}
@@ -194,7 +194,7 @@ func refreshUsageSummaries(ctx context.Context, tx *sql.Tx) error {
 	}
 	for _, session := range sessions {
 		var exists bool
-		if err = tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM session_catalog WHERE session=?)", session).Scan(&exists); err != nil {
+		if err = tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM sessions WHERE session=?)", session).Scan(&exists); err != nil {
 			return err
 		}
 		if !exists {
@@ -233,11 +233,11 @@ func refreshUsageSummaries(ctx context.Context, tx *sql.Tx) error {
 			if e != nil {
 				return e
 			}
-			if _, err = tx.ExecContext(ctx, "INSERT INTO usage_summary VALUES(?,?,?) ON CONFLICT(session,origin) DO UPDATE SET summary=excluded.summary", session, origin, string(encoded)); err != nil {
+			if _, err = tx.ExecContext(ctx, "INSERT INTO session_usage VALUES(?,?,?) ON CONFLICT(session,origin) DO UPDATE SET summary=excluded.summary", session, origin, string(encoded)); err != nil {
 				return err
 			}
 		}
 	}
-	_, err = tx.ExecContext(ctx, "DELETE FROM usage_sessions_dirty")
+	_, err = tx.ExecContext(ctx, "DELETE FROM work_items WHERE kind='usage_sessions'")
 	return err
 }

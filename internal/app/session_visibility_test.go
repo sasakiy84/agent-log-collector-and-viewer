@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 )
 
@@ -116,7 +115,7 @@ func TestInternalSessionClassificationTracksLateChangedAndRemovedEvidence(t *tes
 	save(t, a, persistent)
 	check(false)
 	if err := inTransaction(ctx, a.DB, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, "DELETE FROM events WHERE id='import:rpc'"); err != nil {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM records WHERE id='import:rpc'"); err != nil {
 			return err
 		}
 		return refreshProjections(ctx, tx)
@@ -139,7 +138,7 @@ func TestInternalSessionVisibilityFollowsReconciledTraceOwner(t *testing.T) {
 	owner := modelSpan(t, "owner", "automatic", "root", "", "user_prompt", map[string]any{"prompt": "Synthetic title generation"})
 	save(t, a, owner)
 	var session string
-	if err := a.DB.QueryRow("SELECT session FROM codex_session_facts WHERE event_id='marker'").Scan(&session); err != nil || session != owner.Session {
+	if err := a.DB.QueryRow("SELECT session FROM session_evidence WHERE event_id='marker'").Scan(&session); err != nil || session != owner.Session {
 		t.Fatal("visibility evidence did not follow trace ownership", session, err)
 	}
 	var sessions []SessionSummary
@@ -150,54 +149,5 @@ func TestInternalSessionVisibilityFollowsReconciledTraceOwner(t *testing.T) {
 	getJSON(t, a, "/api/sessions?diagnostics=1", &sessions)
 	if len(sessions) != 1 || sessions[0].ID != owner.Session {
 		t.Fatal("trace ownership split the session", sessions)
-	}
-}
-
-func TestCodexVisibilityUpgradeBackfillsOnceOutsideSchemaMigration(t *testing.T) {
-	ctx := context.Background()
-	db := migrationDB(t, filepath.Join(t.TempDir(), "before-visibility.db"))
-	plan, err := migrations()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = migrate(ctx, db, plan[:9]); err != nil {
-		t.Fatal(err)
-	}
-	for i := 0; i < 203; i++ {
-		attrs := map[string]any{}
-		if i == 0 {
-			attrs["session_init.ephemeral"] = true
-		}
-		if i == 202 {
-			attrs["rpc.request_id"] = "temporary-structured-test"
-		}
-		e := recorded(t, fmt.Sprintf("%03d", i), "otel", "codex", "existing", "thread/start", attrs)
-		if _, err = db.Exec(`INSERT INTO events(`+eventColumns+`,kind,tool_name) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'','')`, e.ID, e.Session, e.Parent, e.Source, e.Signal, e.Time, e.Name, e.Trace, e.Span, e.ParentSpan, e.Raw, e.Sequence, "otel"); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if _, err = db.Exec(`INSERT INTO session_catalog(session,source,parent,count,start,end,import_count,import_start,import_end,otel_count,otel_start,otel_end,preview)
- VALUES('codex:existing','codex','',203,'','',0,'','',203,'','','{}')`); err != nil {
-		t.Fatal(err)
-	}
-	if err = migrate(ctx, db, plan); err != nil {
-		t.Fatal(err)
-	}
-	var facts, internal int
-	if err = db.QueryRow("SELECT COUNT(*) FROM codex_session_facts").Scan(&facts); err != nil || facts != 0 {
-		t.Fatal("schema migration scanned historical payloads", facts, err)
-	}
-	a := &App{DB: db}
-	if err = a.runMaintenance(ctx, codexVisibilityJob, backfillSessionVisibility, 0); err != nil {
-		t.Fatal(err)
-	}
-	if err = db.QueryRow("SELECT internal FROM session_catalog WHERE session='codex:existing'").Scan(&internal); err != nil || internal != 1 {
-		t.Fatal("existing automatic session not classified", internal, err)
-	}
-	if err = a.runMaintenance(ctx, codexVisibilityJob, func(context.Context, *sql.Tx, string) (string, int, error) {
-		t.Fatal("completed visibility job repeated on restart")
-		return "", 0, nil
-	}, 0); err != nil {
-		t.Fatal(err)
 	}
 }

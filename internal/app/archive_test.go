@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -67,7 +66,7 @@ func newArchive(t *testing.T, a *App) ArchiveJob {
 func countEvents(t *testing.T, a *App) int {
 	t.Helper()
 	var n int
-	if err := a.DB.QueryRow("SELECT COUNT(*) FROM events").Scan(&n); err != nil {
+	if err := a.DB.QueryRow("SELECT COUNT(*) FROM records").Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	return n
@@ -247,7 +246,7 @@ func TestArchiveLocksAndRestart(t *testing.T) {
 	if err = a.Save(context.Background(), []Event{oldEvent(t, "new", "old")}); err == nil {
 		t.Fatal("locked session accepted new event")
 	}
-	if _, err = a.DB.Exec("UPDATE archives SET status='deleting',confirmed_at=?,database_bytes_before=? WHERE id=?", timestamp(time.Now()), a.diskBytes(), j.ID); err != nil {
+	if _, err = a.DB.Exec("UPDATE archive_jobs SET status='deleting',confirmed_at=?,database_bytes_before=? WHERE id=?", timestamp(time.Now()), a.diskBytes(), j.ID); err != nil {
 		t.Fatal(err)
 	}
 	a.Close()
@@ -268,25 +267,11 @@ func TestArchiveLocksAndRestart(t *testing.T) {
 func TestArchiveReclaimsDatabase(t *testing.T) {
 	for _, legacy := range []bool{false, true} {
 		t.Run(fmt.Sprint("legacy=", legacy), func(t *testing.T) {
-			var a *App
+			a := setup(t)
 			if legacy {
-				path := filepath.Join(t.TempDir(), "legacy.db")
-				db, err := sql.Open("sqlite", path)
-				if err != nil {
+				if _, err := a.DB.Exec("PRAGMA auto_vacuum=NONE; VACUUM"); err != nil {
 					t.Fatal(err)
 				}
-				_, err = db.Exec("CREATE TABLE legacy_fixture(id INTEGER)")
-				db.Close()
-				if err != nil {
-					t.Fatal(err)
-				}
-				a, err = Open(context.Background(), path, token)
-				if err != nil {
-					t.Fatal(err)
-				}
-				defer a.Close()
-			} else {
-				a = setup(t)
 			}
 			events := []Event{}
 			for i := 0; i < 25; i++ {
@@ -419,7 +404,7 @@ func TestArchiveRestartMissingVerification(t *testing.T) {
 			if _, err = a.DB.Exec("INSERT INTO archive_locks VALUES(?,?)", e.Session, j.ID); err != nil {
 				t.Fatal(err)
 			}
-			if _, err = a.DB.Exec("UPDATE archives SET status='deleting',confirmed_at=?,verified_at=? WHERE id=?", timestamp(time.Now()), verifiedAt, j.ID); err != nil {
+			if _, err = a.DB.Exec("UPDATE archive_jobs SET status='deleting',confirmed_at=?,verified_at=? WHERE id=?", timestamp(time.Now()), verifiedAt, j.ID); err != nil {
 				t.Fatal(err)
 			}
 			os.Remove(a.archivePath(j.ID, false))

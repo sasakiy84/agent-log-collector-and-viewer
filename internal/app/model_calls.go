@@ -74,7 +74,7 @@ func storeModelFact(ctx context.Context, tx *sql.Tx, e Event, doc document, p De
 func modelRoot(ctx context.Context, tx *sql.Tx, id, session, origin, source, trace, span string) (string, error) {
 	rows, err := tx.QueryContext(ctx, `WITH RECURSIVE ancestors(span,depth) AS (
  SELECT ?,0 UNION
- SELECT e.parent_span,a.depth+1 FROM ancestors a CROSS JOIN events e ON e.source=? AND e.trace=? AND e.span=a.span
+ SELECT e.parent_span,a.depth+1 FROM ancestors a CROSS JOIN records e ON e.source=? AND e.trace=? AND e.span=a.span
  WHERE e.signal='traces' AND e.session=? AND e.origin=? AND e.parent_span<>'' AND a.depth<128
  ) SELECT DISTINCT f.id,a.depth FROM ancestors a JOIN model_facts f ON f.source=? AND f.trace=? AND f.span=a.span
  WHERE f.role='request' AND f.session=? AND f.origin=? AND f.id<>? ORDER BY a.depth,f.id LIMIT 2`, span, source, trace, session, origin, source, trace, session, origin, id)
@@ -159,7 +159,7 @@ func refreshModelCalls(ctx context.Context, tx *sql.Tx) error {
 		return err
 	}
 	for {
-		rows, err := tx.QueryContext(ctx, "SELECT id FROM model_dirty LIMIT 200")
+		rows, err := tx.QueryContext(ctx, "SELECT id FROM pending_models LIMIT 200")
 		if err != nil {
 			return err
 		}
@@ -201,7 +201,7 @@ func refreshModelCalls(ctx context.Context, tx *sql.Tx) error {
 					requests[old] = true
 				}
 			}
-			if _, err = tx.ExecContext(ctx, "DELETE FROM model_dirty WHERE id=?", id); err != nil {
+			if _, err = tx.ExecContext(ctx, "DELETE FROM work_items WHERE kind='models' AND (scope,key) IN(SELECT id,'' FROM pending_models WHERE id=?)", id); err != nil {
 				return err
 			}
 		}
@@ -240,7 +240,7 @@ func attachModelCalls(ctx context.Context, tx *sql.Tx, events []TimelineEvent, o
 		}
 		if !invocation {
 			var latest string
-			err := tx.QueryRowContext(ctx, "SELECT id FROM event_cards WHERE session=? AND turn=? AND kind='assistant' AND (?='' OR origin=?) ORDER BY time DESC,sequence DESC,id DESC LIMIT 1", e.Session, e.Detail.Turn, origin, origin).Scan(&latest)
+			err := tx.QueryRowContext(ctx, "SELECT id FROM record_facts WHERE session=? AND turn=? AND kind='assistant' AND (?='' OR origin=?) ORDER BY time DESC,sequence DESC,id DESC LIMIT 1", e.Session, e.Detail.Turn, origin, origin).Scan(&latest)
 			if err != nil {
 				return err
 			}
@@ -255,7 +255,7 @@ func attachModelCalls(ctx context.Context, tx *sql.Tx, events []TimelineEvent, o
 		query := "SELECT m.info FROM model_calls m WHERE m.session=? AND m.turn=? AND (?='' OR m.origin=?)"
 		args := []any{e.Session, e.Detail.Turn, origin, origin}
 		if invocation {
-			query += " AND EXISTS(SELECT 1 FROM events request WHERE request.id=m.id AND request.trace=? AND request.parent_span=?)"
+			query += " AND EXISTS(SELECT 1 FROM records request WHERE request.id=m.id AND request.trace=? AND request.parent_span=?)"
 			args = append(args, e.Trace, e.Span)
 		}
 		rows, err := tx.QueryContext(ctx, query+" ORDER BY m.time,m.id LIMIT 101", args...)

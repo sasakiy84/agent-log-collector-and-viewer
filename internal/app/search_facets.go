@@ -104,7 +104,7 @@ func (f sessionFilter) matchingCards(ctx context.Context) (sqlSelection, error) 
 	if f.TextMode != "" && f.TextMode != "all" && f.TextMode != "any" {
 		return sqlSelection{}, fmt.Errorf("Invalid text match mode")
 	}
-	from := " FROM event_cards c"
+	from := " FROM record_facts c"
 	scope := f.Facets
 	if f.Skill != "" {
 		scope.From = ""
@@ -138,7 +138,7 @@ func (f sessionFilter) matchingCards(ctx context.Context) (sqlSelection, error) 
 		if match == "" {
 			query += " AND 0"
 		} else {
-			from = ` FROM event_search CROSS JOIN search_documents d ON d.rowid=event_search.rowid JOIN event_cards c ON c.id=d.event_id`
+			from = ` FROM event_search CROSS JOIN search_documents d ON d.rowid=event_search.rowid JOIN record_facts c ON c.id=d.event_id`
 			query += " AND event_search MATCH ?"
 			args = append(args, match)
 		}

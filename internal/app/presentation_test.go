@@ -57,30 +57,6 @@ func TestActivityKeepsEmbeddedConversationsAndSkillReferences(t *testing.T) {
 	}
 }
 
-func TestPresentationUpgradeDoesNotReprocessCurrentCards(t *testing.T) {
-	a := setup(t)
-	save(t, a, recorded(t, "current", "otel", "codex", "s", "codex.user_prompt", map[string]any{"prompt": "question"}), recorded(t, "legacy", "otel", "codex", "s", "codex.agent_response", map[string]any{"response": "answer"}))
-	// Simulate the one old card left by an interrupted upgrade. Newly generated
-	// cards already use the current parser and must not be parsed a second time.
-	if _, err := a.DB.Exec("UPDATE event_cards SET presentation_ready=0,kind='model' WHERE id='legacy'"); err != nil {
-		t.Fatal(err)
-	}
-	if err := inTransaction(context.Background(), a.DB, func(tx *sql.Tx) error {
-		_, n, err := backfillPresentation(context.Background(), tx, "")
-		if err == nil && n != 1 {
-			return fmt.Errorf("reprocessed current cards: %d", n)
-		}
-		return err
-	}); err != nil {
-		t.Fatal(err)
-	}
-	var p SessionPage
-	getJSON(t, a, "/api/session?id=codex:s&view=activity&kind=conversation", &p)
-	if p.Count != 2 {
-		t.Fatal(p)
-	}
-}
-
 func modelSpan(t *testing.T, id, session, span, parent, name string, values map[string]any) Event {
 	t.Helper()
 	e := recorded(t, id, "otel", "codex", session, name, values)
@@ -148,7 +124,7 @@ func TestModelCallsUseExplicitAncestryAndLatestAnswer(t *testing.T) {
 	}
 	usageWant(t, sessionUsage(t, a, "codex:calls", ""), "duration_samples", "1")
 	if err := inTransaction(context.Background(), a.DB, func(tx *sql.Tx) error {
-		if _, err := tx.Exec("DELETE FROM events WHERE id='usage'"); err != nil {
+		if _, err := tx.Exec("DELETE FROM records WHERE id='usage'"); err != nil {
 			return err
 		}
 		return refreshProjections(context.Background(), tx)
@@ -191,7 +167,7 @@ func TestProjectsNavigationAndSessionFiltering(t *testing.T) {
 		t.Fatal(projects)
 	}
 	if err := inTransaction(context.Background(), a.DB, func(tx *sql.Tx) error {
-		if _, err := tx.Exec("DELETE FROM events WHERE id='a'"); err != nil {
+		if _, err := tx.Exec("DELETE FROM records WHERE id='a'"); err != nil {
 			return err
 		}
 		return refreshProjections(context.Background(), tx)

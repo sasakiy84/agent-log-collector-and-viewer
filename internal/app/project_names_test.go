@@ -25,7 +25,7 @@ func TestProjectNamesMergeExplicitLabelsAndDirectoryNames(t *testing.T) {
 		e := recorded(t, fmt.Sprint(i), "otel", "codex", fmt.Sprint(i), "user_prompt", map[string]any{"prompt": "hello", "cwd": test.directory, "service.namespace": test.label})
 		save(t, a, e)
 		var key string
-		if err := a.DB.QueryRow("SELECT project_key FROM session_catalog WHERE session=?", e.Session).Scan(&key); err != nil || key != test.key {
+		if err := a.DB.QueryRow("SELECT project_key FROM sessions WHERE session=?", e.Session).Scan(&key); err != nil || key != test.key {
 			t.Fatal(test, key, err)
 		}
 		if test.directory != "" && test.label == "" && canonicalProjectID("path:"+test.directory) != key {
@@ -99,7 +99,7 @@ func TestMergedProjectCountsSkillsExportsAndSubsequentChanges(t *testing.T) {
 	save(t, a, recorded(t, "46", "import", "codex", "46", "user_prompt", map[string]any{"prompt": "hello", "cwd": "/elsewhere/renamed"}))
 	check(46)
 	if err := inTransaction(context.Background(), a.DB, func(tx *sql.Tx) error {
-		if _, err := tx.Exec("DELETE FROM events WHERE id='2'"); err != nil {
+		if _, err := tx.Exec("DELETE FROM records WHERE id='2'"); err != nil {
 			return err
 		}
 		return refreshProjections(context.Background(), tx)

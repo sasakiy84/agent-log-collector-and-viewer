@@ -79,7 +79,7 @@ func (a *folderAggregate) apply(encoded string, sign int) error {
 }
 
 func refreshFolderBatch(ctx context.Context, tx *sql.Tx) (int, error) {
-	rows, err := tx.QueryContext(ctx, "SELECT session FROM folder_dirty LIMIT 200")
+	rows, err := tx.QueryContext(ctx, "SELECT session FROM pending_projects LIMIT 200")
 	if err != nil {
 		return 0, err
 	}
@@ -113,7 +113,7 @@ func refreshFolderBatch(ctx context.Context, tx *sql.Tx) (int, error) {
 		if aggregate == nil {
 			aggregate = &folderAggregate{}
 			var encoded string
-			err := tx.QueryRowContext(ctx, "SELECT count,totals FROM folder_totals WHERE path=? AND source=? AND diagnostic=?", member.Path, member.Source, member.Diagnostic).Scan(&aggregate.Count, &encoded)
+			err := tx.QueryRowContext(ctx, "SELECT count,totals FROM directory_summaries WHERE path=? AND source=? AND diagnostic=?", member.Path, member.Source, member.Diagnostic).Scan(&aggregate.Count, &encoded)
 			if err != nil && !errors.Is(err, sql.ErrNoRows) {
 				return err
 			}
@@ -128,11 +128,11 @@ func refreshFolderBatch(ctx context.Context, tx *sql.Tx) (int, error) {
 	}
 	for _, session := range sessions {
 		var old, next folderMember
-		oldErr := tx.QueryRowContext(ctx, "SELECT path,source,diagnostic,end,usage,project,child FROM folder_members WHERE session=?", session).Scan(&old.Path, &old.Source, &old.Diagnostic, &old.End, &old.Usage, &old.Project, &old.Child)
+		oldErr := tx.QueryRowContext(ctx, "SELECT path,source,diagnostic,end,usage,project,child FROM session_membership WHERE session=?", session).Scan(&old.Path, &old.Source, &old.Diagnostic, &old.End, &old.Usage, &old.Project, &old.Child)
 		if oldErr != nil && !errors.Is(oldErr, sql.ErrNoRows) {
 			return 0, oldErr
 		}
-		nextErr := tx.QueryRowContext(ctx, "SELECT "+directoryColumn+",source,end,"+usageColumn+",project_key,internal,length(parent)>0 FROM session_catalog s WHERE s.session=? AND NOT EXISTS(SELECT 1 FROM archive_locks WHERE session=s.session)", session).Scan(&next.Path, &next.Source, &next.End, &next.Usage, &next.Project, &next.Diagnostic, &next.Child)
+		nextErr := tx.QueryRowContext(ctx, "SELECT "+directoryColumn+",source,end,"+usageColumn+",project_key,internal,length(parent)>0 FROM sessions s WHERE s.session=? AND NOT EXISTS(SELECT 1 FROM archive_locks WHERE session=s.session)", session).Scan(&next.Path, &next.Source, &next.End, &next.Usage, &next.Project, &next.Diagnostic, &next.Child)
 		if nextErr != nil && !errors.Is(nextErr, sql.ErrNoRows) {
 			return 0, nextErr
 		}
@@ -157,7 +157,7 @@ func refreshFolderBatch(ctx context.Context, tx *sql.Tx) (int, error) {
 			if err = change(old, -1); err != nil {
 				return 0, err
 			}
-			if _, err = tx.ExecContext(ctx, "DELETE FROM folder_members WHERE session=?", session); err != nil {
+			if _, err = tx.ExecContext(ctx, "DELETE FROM session_membership WHERE session=?", session); err != nil {
 				return 0, err
 			}
 		}
@@ -166,20 +166,20 @@ func refreshFolderBatch(ctx context.Context, tx *sql.Tx) (int, error) {
 			if err = change(next, 1); err != nil {
 				return 0, err
 			}
-			if _, err = tx.ExecContext(ctx, "INSERT INTO folder_members(session,path,source,diagnostic,end,usage,project,child) VALUES(?,?,?,?,?,?,?,?)", session, next.Path, next.Source, next.Diagnostic, next.End, next.Usage, next.Project, next.Child); err != nil {
+			if _, err = tx.ExecContext(ctx, "INSERT INTO session_membership(session,path,source,diagnostic,end,usage,project,child) VALUES(?,?,?,?,?,?,?,?)", session, next.Path, next.Source, next.Diagnostic, next.End, next.Usage, next.Project, next.Child); err != nil {
 				return 0, err
 			}
 		}
-		if _, err = tx.ExecContext(ctx, "DELETE FROM folder_dirty WHERE session=?", session); err != nil {
+		if _, err = tx.ExecContext(ctx, "DELETE FROM work_items WHERE kind='projects' AND (scope,key) IN(SELECT session,'' FROM pending_projects WHERE session=?)", session); err != nil {
 			return 0, err
 		}
 	}
 	for key, aggregate := range groups {
 		if aggregate.Count == 0 {
-			_, err = tx.ExecContext(ctx, "DELETE FROM folder_totals WHERE path=? AND source=? AND diagnostic=?", key.Path, key.Source, key.Diagnostic)
+			_, err = tx.ExecContext(ctx, "DELETE FROM directory_summaries WHERE path=? AND source=? AND diagnostic=?", key.Path, key.Source, key.Diagnostic)
 		} else {
 			var end string
-			err = tx.QueryRowContext(ctx, "SELECT end FROM folder_members WHERE path=? AND source=? AND diagnostic=? ORDER BY end DESC,session LIMIT 1", key.Path, key.Source, key.Diagnostic).Scan(&end)
+			err = tx.QueryRowContext(ctx, "SELECT end FROM session_membership WHERE path=? AND source=? AND diagnostic=? ORDER BY end DESC,session LIMIT 1", key.Path, key.Source, key.Diagnostic).Scan(&end)
 			if err != nil {
 				return 0, err
 			}
@@ -187,7 +187,7 @@ func refreshFolderBatch(ctx context.Context, tx *sql.Tx) (int, error) {
 			if e != nil {
 				return 0, e
 			}
-			_, err = tx.ExecContext(ctx, "INSERT INTO folder_totals VALUES(?,?,?,?,?,?) ON CONFLICT(path,source,diagnostic) DO UPDATE SET count=excluded.count,end=excluded.end,totals=excluded.totals", key.Path, key.Source, key.Diagnostic, aggregate.Count, end, string(encoded))
+			_, err = tx.ExecContext(ctx, "INSERT INTO directory_summaries VALUES(?,?,?,?,?,?) ON CONFLICT(path,source,diagnostic) DO UPDATE SET count=excluded.count,end=excluded.end,totals=excluded.totals", key.Path, key.Source, key.Diagnostic, aggregate.Count, end, string(encoded))
 		}
 		if err != nil {
 			return 0, err
@@ -209,7 +209,7 @@ func refreshFolders(ctx context.Context, tx *sql.Tx) error {
 }
 
 func cachedFolders(ctx context.Context, tx *sql.Tx, source string, diagnostics bool, path *string, offset int) ([]FolderSummary, int, int, error) {
-	filter, args := " FROM folder_totals WHERE 1=1", []any{}
+	filter, args := " FROM directory_summaries WHERE 1=1", []any{}
 	if source != "" {
 		filter += " AND source=?"
 		args = append(args, source)
@@ -226,7 +226,7 @@ func cachedFolders(ctx context.Context, tx *sql.Tx, source string, diagnostics b
 		return nil, 0, 0, err
 	}
 	offset = pageOffset(offset, total, 200)
-	query := "WITH page AS (SELECT path" + filter + " GROUP BY path ORDER BY MAX(end) DESC,path LIMIT 200 OFFSET ?) SELECT f.path,f.source,f.count,f.end,f.totals FROM page CROSS JOIN folder_totals f ON f.path=page.path"
+	query := "WITH page AS (SELECT path" + filter + " GROUP BY path ORDER BY MAX(end) DESC,path LIMIT 200 OFFSET ?) SELECT f.path,f.source,f.count,f.end,f.totals FROM page CROSS JOIN directory_summaries f ON f.path=page.path"
 	// Apply the same group constraints when loading summaries for the page.
 	query += " WHERE (?='' OR f.source=?) AND (? OR f.diagnostic=0)"
 	params := append(append([]any{}, args...), offset, source, source, diagnostics)

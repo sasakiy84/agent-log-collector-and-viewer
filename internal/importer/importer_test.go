@@ -66,7 +66,7 @@ func TestThreeFormatsAndReplay(t *testing.T) {
 		t.Fatal(stats)
 	}
 	var count, sessions int
-	if e = db.DB.QueryRow("SELECT COUNT(*),COUNT(DISTINCT session) FROM events").Scan(&count, &sessions); e != nil {
+	if e = db.DB.QueryRow("SELECT COUNT(*),COUNT(DISTINCT session) FROM records").Scan(&count, &sessions); e != nil {
 		t.Fatal(e)
 	}
 	if count != 13 || sessions != 3 {
@@ -76,7 +76,7 @@ func TestThreeFormatsAndReplay(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	db.DB.QueryRow("SELECT COUNT(*) FROM events").Scan(&count)
+	db.DB.QueryRow("SELECT COUNT(*) FROM records").Scan(&count)
 	if count != 13 {
 		t.Fatal("duplicate import", count)
 	}
@@ -87,16 +87,16 @@ func TestThreeFormatsAndReplay(t *testing.T) {
 		t.Fatal(e)
 	}
 	var raw string
-	db.DB.QueryRow("SELECT raw FROM events WHERE session='codex:cx' LIMIT 1").Scan(&raw)
+	db.DB.QueryRow("SELECT raw FROM records WHERE session='codex:cx' LIMIT 1").Scan(&raw)
 	if !strings.Contains(raw, "renamed") || !strings.Contains(raw, "project.tags") {
 		t.Fatal(raw)
 	}
-	db.DB.QueryRow("SELECT COUNT(*) FROM events").Scan(&count)
+	db.DB.QueryRow("SELECT COUNT(*) FROM records").Scan(&count)
 	if count != 13 {
 		t.Fatal(count)
 	}
 	var toolRaw string
-	db.DB.QueryRow("SELECT raw FROM events WHERE session='claude:cl' AND CAST(raw AS TEXT) LIKE '%ENOENT%' LIMIT 1").Scan(&toolRaw)
+	db.DB.QueryRow("SELECT raw FROM records WHERE session='claude:cl' AND CAST(raw AS TEXT) LIKE '%ENOENT%' LIMIT 1").Scan(&toolRaw)
 	if !strings.Contains(toolRaw, `"stringValue":"Read"`) || !strings.Contains(toolRaw, `"boolValue":false`) {
 		t.Fatal(toolRaw)
 	}
@@ -121,7 +121,7 @@ func TestJournalAndSubagent(t *testing.T) {
 		t.Fatal(stats)
 	}
 	var parent string
-	if e = db.DB.QueryRow("SELECT parent FROM events WHERE session='claude:root/agent:review'").Scan(&parent); e != nil || parent != "claude:root" {
+	if e = db.DB.QueryRow("SELECT parent FROM records WHERE session='claude:root/agent:review'").Scan(&parent); e != nil || parent != "claude:root" {
 		t.Fatal(e, parent)
 	}
 }
@@ -190,14 +190,14 @@ func TestWorkingDirectoryAndAttributeTypes(t *testing.T) {
 		t.Fatal(stats, e)
 	}
 	var raw string
-	if e = db.DB.QueryRow("SELECT raw FROM events WHERE CAST(raw AS TEXT) LIKE '%9007199254740993%'").Scan(&raw); e != nil {
+	if e = db.DB.QueryRow("SELECT raw FROM records WHERE CAST(raw AS TEXT) LIKE '%9007199254740993%'").Scan(&raw); e != nil {
 		t.Fatal(e)
 	}
 	if !strings.Contains(raw, `"intValue":"9007199254740993"`) || !strings.Contains(raw, `"intValue":"0"`) {
 		t.Fatal("usage lost integer precision", raw)
 	}
 	var count int
-	db.DB.QueryRow("SELECT COUNT(*) FROM events WHERE session='claude:other'").Scan(&count)
+	db.DB.QueryRow("SELECT COUNT(*) FROM records WHERE session='claude:other'").Scan(&count)
 	if count != 0 {
 		t.Fatal("cwd prefix matched sibling")
 	}
@@ -228,7 +228,7 @@ func TestRepeatedEventIDUsesLatestContent(t *testing.T) {
 	}
 	var n int
 	var raw string
-	db.DB.QueryRow("SELECT COUNT(*),CAST(raw AS TEXT) FROM events").Scan(&n, &raw)
+	db.DB.QueryRow("SELECT COUNT(*),CAST(raw AS TEXT) FROM records").Scan(&n, &raw)
 	if n != 1 || !strings.Contains(raw, "complete") {
 		t.Fatal(n, raw)
 	}

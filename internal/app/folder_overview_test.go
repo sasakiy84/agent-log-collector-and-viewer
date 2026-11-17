@@ -18,7 +18,7 @@ func TestFolderOverviewMatchesFilteredAccountingAfterChanges(t *testing.T) {
 			var cached, original folderPage
 			getJSON(t, a, "/api/folders"+query, &cached)
 			// A durable pending marker selects the original full-session query.
-			if _, err := a.DB.Exec("INSERT INTO folder_dirty VALUES('external-edit')"); err != nil {
+			if _, err := a.DB.Exec("INSERT OR IGNORE INTO work_items(kind,scope,key) VALUES('projects','external-edit','')"); err != nil {
 				t.Fatal(err)
 			}
 			getJSON(t, a, "/api/folders"+query, &original)
@@ -50,7 +50,7 @@ func TestFolderOverviewMatchesFilteredAccountingAfterChanges(t *testing.T) {
 	save(t, a, counter("/work/shared", "9007199254740994", "0"))
 	check()
 	// Exercise the same lock transitions as confirmed archive deletion.
-	if _, err := a.DB.Exec("INSERT INTO archives(id,status,created_at,cutoff,session_count,record_count,raw_bytes) VALUES('folder-test','preparing','','',1,1,1)"); err != nil {
+	if _, err := a.DB.Exec("INSERT INTO archive_jobs(id,status,created_at,cutoff,session_count,record_count,raw_bytes) VALUES('folder-test','preparing','','',1,1,1)"); err != nil {
 		t.Fatal(err)
 	}
 	for _, lock := range []bool{true, false} {
@@ -69,7 +69,7 @@ func TestFolderOverviewMatchesFilteredAccountingAfterChanges(t *testing.T) {
 		check()
 	}
 	if err := inTransaction(ctx, a.DB, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, "DELETE FROM events WHERE id IN('import:overlap-import','overlap-otel')"); err != nil {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM records WHERE id IN('import:overlap-import','overlap-otel')"); err != nil {
 			return err
 		}
 		return refreshProjections(ctx, tx)
@@ -79,7 +79,7 @@ func TestFolderOverviewMatchesFilteredAccountingAfterChanges(t *testing.T) {
 	check()
 	// Removing the last measured member leaves unknown usage, not invented zeroes.
 	if err := inTransaction(ctx, a.DB, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, "DELETE FROM events WHERE id='import:usage'"); err != nil {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM records WHERE id='import:usage'"); err != nil {
 			return err
 		}
 		return refreshProjections(ctx, tx)
@@ -103,7 +103,7 @@ func TestCachedFolderPagesMatchDynamicPages(t *testing.T) {
 	for _, query := range []string{"?offset=200", "?offset=999999", "?source=claude&offset=200"} {
 		var cached, dynamic folderPage
 		getJSON(t, a, "/api/folders"+query, &cached)
-		if _, err := a.DB.Exec("INSERT INTO folder_dirty VALUES('external-edit')"); err != nil {
+		if _, err := a.DB.Exec("INSERT OR IGNORE INTO work_items(kind,scope,key) VALUES('projects','external-edit','')"); err != nil {
 			t.Fatal(err)
 		}
 		getJSON(t, a, "/api/folders"+query, &dynamic)
@@ -129,7 +129,7 @@ func TestFolderProjectionRollbackAndLatestEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = tx.Exec("UPDATE session_catalog SET end='2099-01-01T00:00:00Z' WHERE session='codex:last'"); err == nil {
+	if _, err = tx.Exec("UPDATE sessions SET end='2099-01-01T00:00:00Z' WHERE session='codex:last'"); err == nil {
 		err = refreshFolders(ctx, tx)
 	}
 	if err != nil {
@@ -142,7 +142,7 @@ func TestFolderProjectionRollbackAndLatestEndpoint(t *testing.T) {
 		t.Fatal("rolled-back contribution became visible")
 	}
 	if err = inTransaction(ctx, a.DB, func(tx *sql.Tx) error {
-		if _, err := tx.Exec("UPDATE session_catalog SET end='2099-01-01T00:00:00Z' WHERE session='codex:last'"); err != nil {
+		if _, err := tx.Exec("UPDATE sessions SET end='2099-01-01T00:00:00Z' WHERE session='codex:last'"); err != nil {
 			return err
 		}
 		return refreshFolders(ctx, tx)
@@ -154,7 +154,7 @@ func TestFolderProjectionRollbackAndLatestEndpoint(t *testing.T) {
 		t.Fatal("latest member not reflected")
 	}
 	if err = inTransaction(ctx, a.DB, func(tx *sql.Tx) error {
-		if _, err := tx.Exec("DELETE FROM events WHERE id='last'"); err != nil {
+		if _, err := tx.Exec("DELETE FROM records WHERE id='last'"); err != nil {
 			return err
 		}
 		return refreshProjections(ctx, tx)

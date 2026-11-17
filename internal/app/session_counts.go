@@ -13,7 +13,7 @@ func cachedRootSessionCount(ctx context.Context, tx *sql.Tx, f sessionFilter) (i
 		return 0, false, nil
 	}
 	var pending bool
-	if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM folder_dirty)").Scan(&pending); err != nil {
+	if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM pending_projects)").Scan(&pending); err != nil {
 		return 0, false, err
 	}
 	if pending {
@@ -34,6 +34,6 @@ func cachedRootSessionCount(ctx context.Context, tx *sql.Tx, f sessionFilter) (i
 		query += " AND diagnostic=0"
 	}
 	var count int
-	err := tx.QueryRowContext(ctx, "SELECT COALESCE(SUM(root_count),0) FROM project_totals WHERE 1"+query, args...).Scan(&count)
+	err := tx.QueryRowContext(ctx, "SELECT COALESCE(SUM(root_count),0) FROM project_summaries WHERE 1"+query, args...).Scan(&count)
 	return count, true, err
 }

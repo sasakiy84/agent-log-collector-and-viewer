@@ -3,17 +3,25 @@ package app
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strings"
 )
 
 // All write paths publish the same derived state before committing. Trace
 // reassignment dirties cards/search first; timelines and totals depend on them.
 func refreshProjections(ctx context.Context, tx *sql.Tx) error {
-	for _, refresh := range []func(context.Context, *sql.Tx) error{
-		reconcileTraces, refreshCards, refreshSearch, refreshTimelines, refreshSkillReads, refreshPresentation, refreshModelCalls, refreshSessionVisibility, refreshFolders,
+	for _, step := range []struct {
+		name string
+		run  func(context.Context, *sql.Tx) error
+	}{
+		{"trace ownership", reconcileTraces}, {"record totals", refreshRecordTotals},
+		{"record facts", refreshCards}, {"search", refreshSearch},
+		{"logical events and usage", refreshTimelines}, {"skill reads", refreshSkillReads},
+		{"presentation", refreshPresentation}, {"model calls", refreshModelCalls},
+		{"session visibility", refreshSessionVisibility}, {"project summaries", refreshFolders},
 	} {
-		if err := refresh(ctx, tx); err != nil {
-			return err
+		if err := step.run(ctx, tx); err != nil {
+			return fmt.Errorf("%s projection: %w", step.name, err)
 		}
 	}
 	return nil
@@ -25,17 +33,17 @@ func refreshProjections(ctx context.Context, tx *sql.Tx) error {
 // events still requires only primary-key reads for the affected component.
 const componentCTE = `WITH eligible AS MATERIALIZED (
  SELECT e.id,e.session,e.parent,e.source,e.time,e.sequence,e.origin,e.kind,e.tool_name
- FROM read_model_dirty d CROSS JOIN events e ON e.id=d.id
+ FROM pending_timeline d CROSS JOIN records e ON e.id=d.id
  WHERE d.session=? AND e.session=?
 ) ` + timelineProjection
 
 const timelineProjection = `, candidates AS MATERIALIZED (
  SELECT DISTINCT i.id AS imported,o.id AS otel
- FROM eligible i JOIN event_keys ik ON ik.event_id=i.id
- JOIN event_keys ok ON ok.key=ik.key
+ FROM eligible i JOIN record_keys ik ON ik.event_id=i.id
+ JOIN record_keys ok ON ok.key=ik.key
  JOIN eligible o ON o.id=ok.event_id AND o.origin='otel' AND o.session=i.session AND o.source=i.source
  WHERE i.origin='import' AND (i.tool_name='' OR o.tool_name='' OR i.tool_name=o.tool_name)
- AND NOT EXISTS (SELECT 1 FROM event_keys x JOIN event_keys y ON y.event_id=o.id AND y.namespace=x.namespace WHERE x.event_id=i.id AND x.key<>y.key)
+ AND NOT EXISTS (SELECT 1 FROM record_keys x JOIN record_keys y ON y.event_id=o.id AND y.namespace=x.namespace WHERE x.event_id=i.id AND x.key<>y.key)
 ), pairs AS MATERIALIZED (
  SELECT c.* FROM candidates c WHERE
  c.imported IN (SELECT imported FROM candidates GROUP BY imported HAVING COUNT(*)=1) AND

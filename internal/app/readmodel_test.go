@@ -16,7 +16,7 @@ import (
 
 // Independent full-session eligibility checks the incremental invalidation path.
 const timelineCTE = `WITH eligible AS MATERIALIZED (
- SELECT id,session,parent,source,time,sequence,origin,kind,tool_name FROM events WHERE (?='' OR origin=?) AND session=?
+ SELECT id,session,parent,source,time,sequence,origin,kind,tool_name FROM records WHERE (?='' OR origin=?) AND session=?
 ) ` + timelineProjection
 
 func projectionArgs(origin, session string) []any { return []any{origin, origin, session} }
@@ -45,7 +45,7 @@ func TestIncrementalProjectionMatchesFullProjection(t *testing.T) {
 				want = append(want, v)
 			}
 			rows.Close()
-			rows, err = a.DB.Query("SELECT id,time,end,sequence FROM timeline_entries WHERE session=? ORDER BY id", session)
+			rows, err = a.DB.Query("SELECT id,time,end,sequence FROM logical_events WHERE session=? ORDER BY id", session)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -60,7 +60,7 @@ func TestIncrementalProjectionMatchesFullProjection(t *testing.T) {
 				t.Fatalf("%s want=%+v got=%+v", session, want, got)
 			}
 			var count int
-			err = a.DB.QueryRow("SELECT count FROM session_catalog WHERE session=?", session).Scan(&count)
+			err = a.DB.QueryRow("SELECT count FROM sessions WHERE session=?", session).Scan(&count)
 			if len(want) == 0 {
 				if err != sql.ErrNoRows {
 					t.Fatal("empty session catalog retained", err)
@@ -74,9 +74,9 @@ func TestIncrementalProjectionMatchesFullProjection(t *testing.T) {
 			if err := a.DB.QueryRow("SELECT COALESCE(SUM(count),0) FROM " + table).Scan(&total); err != nil {
 				t.Fatal(err)
 			}
-			reference := "events"
+			reference := "records"
 			if table == "timeline_counts" {
-				reference = "timeline_entries"
+				reference = "logical_events"
 			}
 			var expected int
 			a.DB.QueryRow("SELECT COUNT(*) FROM " + reference).Scan(&expected)
@@ -138,7 +138,7 @@ func TestWALReadersDoNotWaitForIngestionTransaction(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer tx.Rollback()
-	if _, err = tx.Exec("UPDATE events SET parent='pending' WHERE session='codex:old'"); err != nil {
+	if _, err = tx.Exec("UPDATE records SET parent='pending' WHERE session='codex:old'"); err != nil {
 		t.Fatal(err)
 	}
 	done := make(chan int, 1)
@@ -151,7 +151,7 @@ func TestWALReadersDoNotWaitForIngestionTransaction(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("read blocked by the write pool")
 	}
-	if _, err = a.readers.Exec("DELETE FROM events"); err == nil {
+	if _, err = a.readers.Exec("DELETE FROM records"); err == nil {
 		t.Fatal("reader pool is writable")
 	}
 }
@@ -175,7 +175,7 @@ func TestIndexedReadModelRestartAndDeletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = tx.Exec("DELETE FROM events WHERE id=?", e.ID); err == nil {
+	if _, err = tx.Exec("DELETE FROM records WHERE id=?", e.ID); err == nil {
 		err = refreshTimelines(context.Background(), tx)
 	}
 	if err != nil {

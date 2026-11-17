@@ -53,7 +53,7 @@ func (a *App) archiveList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
-	job, e := scanArchive(tx.QueryRowContext(r.Context(), "SELECT "+archiveColumns+" FROM archives ORDER BY created_at DESC,id DESC LIMIT 1"))
+	job, e := scanArchive(tx.QueryRowContext(r.Context(), "SELECT "+archiveColumns+" FROM archive_jobs ORDER BY created_at DESC,id DESC LIMIT 1"))
 	if e != nil && !errors.Is(e, sql.ErrNoRows) {
 		databaseError(w, r, e)
 		return
@@ -197,7 +197,7 @@ func (a *App) archiveDownload(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" && tracked.bytes > 0 && (tracked.status == http.StatusOK || tracked.status == http.StatusPartialContent) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if _, err = a.DB.ExecContext(ctx, "UPDATE archives SET download_at=? WHERE id=? AND status='ready'", timestamp(time.Now()), job.ID); err != nil {
+		if _, err = a.DB.ExecContext(ctx, "UPDATE archive_jobs SET download_at=? WHERE id=? AND status='ready'", timestamp(time.Now()), job.ID); err != nil {
 			log.Printf("%s %s: %v", r.Method, r.URL.Path, err)
 		}
 	}
@@ -220,7 +220,7 @@ func (a *App) archiveDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
-	job, err := scanArchive(tx.QueryRowContext(r.Context(), "SELECT "+archiveColumns+" FROM archives WHERE id=?", r.PathValue("id")))
+	job, err := scanArchive(tx.QueryRowContext(r.Context(), "SELECT "+archiveColumns+" FROM archive_jobs WHERE id=?", r.PathValue("id")))
 	if err != nil {
 		archiveError(w, r, err)
 		return
@@ -249,7 +249,7 @@ func (a *App) archiveDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err = tx.ExecContext(r.Context(), "INSERT INTO archive_locks SELECT session,archive_id FROM archive_sessions WHERE archive_id=?", job.ID); err == nil {
-		_, err = tx.ExecContext(r.Context(), "UPDATE archives SET status='deleting',confirmed_at=?,database_bytes_before=? WHERE id=?", timestamp(time.Now()), a.diskBytes(), job.ID)
+		_, err = tx.ExecContext(r.Context(), "UPDATE archive_jobs SET status='deleting',confirmed_at=?,database_bytes_before=? WHERE id=?", timestamp(time.Now()), a.diskBytes(), job.ID)
 	}
 	if err == nil {
 		err = refreshFolders(r.Context(), tx)
@@ -272,7 +272,7 @@ func (a *App) archiveCancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
-	result, err := a.DB.ExecContext(r.Context(), "UPDATE archives SET status='canceled' WHERE id=? AND status IN ('preparing','ready')", id)
+	result, err := a.DB.ExecContext(r.Context(), "UPDATE archive_jobs SET status='canceled' WHERE id=? AND status IN ('preparing','ready')", id)
 	if err != nil {
 		databaseError(w, r, err)
 		return
@@ -311,7 +311,7 @@ func (a *App) archiveCompact(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "A database rebuild requires an explicit rebuild request", 409)
 		return
 	}
-	result, err := a.DB.ExecContext(r.Context(), "UPDATE archives SET status='compacting',rebuild_requested=? WHERE id=? AND status='deleted' AND NOT EXISTS(SELECT 1 FROM archives WHERE status IN ('preparing','ready','deleting','compacting'))", input.Rebuild, job.ID)
+	result, err := a.DB.ExecContext(r.Context(), "UPDATE archive_jobs SET status='compacting',rebuild_requested=? WHERE id=? AND status='deleted' AND NOT EXISTS(SELECT 1 FROM archive_jobs WHERE status IN ('preparing','ready','deleting','compacting'))", input.Rebuild, job.ID)
 	if err != nil {
 		archiveError(w, r, err)
 		return

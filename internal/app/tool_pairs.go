@@ -22,9 +22,9 @@ type ToolPair struct {
 func toolCandidates(ctx context.Context, tx *sql.Tx, event TimelineEvent, origin, key string) ([]string, error) {
 	id := "e.id"
 	if origin == "" {
-		id = `COALESCE((SELECT id FROM timeline_entries t WHERE t.otel_id=e.id AND t.import_id<>'' AND t.otel_id<>''),e.id)`
+		id = `COALESCE((SELECT id FROM logical_events t WHERE t.otel_id=e.id AND t.import_id<>'' AND t.otel_id<>''),e.id)`
 	}
-	query := `SELECT DISTINCT ` + id + ` FROM event_keys k CROSS JOIN events e ON e.id=k.event_id WHERE k.namespace='tool.call' AND k.key=? AND e.session=? AND e.source=?`
+	query := `SELECT DISTINCT ` + id + ` FROM record_keys k CROSS JOIN records e ON e.id=k.event_id WHERE k.namespace='tool.call' AND k.key=? AND e.session=? AND e.source=?`
 	args := []any{key, event.Session, event.Source}
 	if origin != "" {
 		query += " AND e.origin=?"
@@ -104,10 +104,10 @@ func attachToolPair(ctx context.Context, tx *sql.Tx, event *TimelineEvent, origi
 		pair.State = "ambiguous"
 		return nil
 	}
-	query := `SELECT t.id,` + qualifiedCardColumns("c") + ` FROM timeline_entries t JOIN event_cards c ON c.id=t.import_id OR c.id=t.otel_id WHERE t.session=? AND t.id=? ORDER BY c.origin,c.id`
+	query := `SELECT t.id,` + qualifiedCardColumns("c") + ` FROM logical_events t JOIN record_facts c ON c.id=t.import_id OR c.id=t.otel_id WHERE t.session=? AND t.id=? ORDER BY c.origin,c.id`
 	args := []any{event.Session, ids[0]}
 	if origin != "" {
-		query = "SELECT id," + cardColumns + " FROM event_cards WHERE session=? AND id=? AND origin=?"
+		query = "SELECT id," + cardColumns + " FROM record_facts WHERE session=? AND id=? AND origin=?"
 		args = append(args, origin)
 	}
 	rows, err := tx.QueryContext(ctx, query, args...)
