@@ -141,9 +141,6 @@ func (a *japaneseAnalyzer) tokens(ctx context.Context, text string, emit func(st
 	return nil
 }
 
-func searchMatch(ctx context.Context, query string) (string, error) {
-	return searchMatchMode(ctx, query, "all")
-}
 func searchMatchMode(ctx context.Context, query, mode string) (string, error) {
 	if utf8.RuneCountInString(query) > 512 {
 		return "", fmt.Errorf("Search is limited to 512 characters")
@@ -280,21 +277,21 @@ func storeSearch(ctx context.Context, tx *sql.Tx, event Event, doc document) err
 }
 
 func storeSearchDocument(ctx context.Context, tx *sql.Tx, event Event, index searchDocument) error {
-	if err := storeIdentifiers(ctx, tx, event, index.identifiers); err != nil {
-		return err
-	}
 	var rowid int64
-	err := tx.QueryRowContext(ctx, `INSERT INTO search_documents(event_id,session) VALUES(?,?) ON CONFLICT(event_id) DO UPDATE SET session=excluded.session RETURNING rowid`, event.ID, event.Session).Scan(&rowid)
+	err := queryRecord(ctx, tx, `INSERT INTO search_documents(event_id,session) VALUES(?,?) ON CONFLICT(event_id) DO UPDATE SET session=excluded.session RETURNING rowid`, event.ID, event.Session).Scan(&rowid)
 	if err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, "DELETE FROM event_search WHERE rowid=?", rowid); err != nil {
+	if err = storeIdentifiers(ctx, tx, event, rowid, index.identifiers); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, "INSERT INTO event_search(rowid,text) VALUES(?,?)", rowid, index.text); err != nil {
+	if _, err = execRecord(ctx, tx, "DELETE FROM event_search WHERE rowid=?", rowid); err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, "DELETE FROM work_items WHERE kind='search' AND (scope,key) IN(SELECT event_id,'' FROM pending_search WHERE event_id=?)", event.ID)
+	if _, err = execRecord(ctx, tx, "INSERT INTO event_search(rowid,text) VALUES(?,?)", rowid, index.text); err != nil {
+		return err
+	}
+	_, err = execRecord(ctx, tx, "DELETE FROM work_items WHERE kind='search' AND (scope,key) IN(SELECT event_id,'' FROM pending_search WHERE event_id=?)", event.ID)
 	return err
 }
 func refreshSearchBatch(ctx context.Context, tx *sql.Tx) (int, error) {

@@ -48,6 +48,8 @@ uv run scripts/migrate_db.py \
   --archives /別の場所/archives
 ```
 
+変換後にID索引を辞書化し、原本SHA-256を計算します。IDの元キー・alias・検索結果を照合し、不要になった索引の空きページをincremental vacuumで回収します。原本JSONは圧縮・再シリアライズしません。
+
 出力は次の一式です。
 
 ```text

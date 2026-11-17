@@ -33,9 +33,9 @@ chmod 600 .env config.json
 docker compose up -d --build
 ```
 
-受信キューの準備後にHTTPの待ち受けを開始します。既存DBの移行・過去データの索引作成中もOTELを受信でき、成功応答したデータは再起動後も処理を再開します。閲覧はスキーマ準備後から利用できます。キュー・索引・SQLiteの一時ファイルは`data/`に保存します。
+受信キューの準備後にHTTPの待ち受けを開始します。スキーマ準備・未完了の変更の回復中もOTELを受信でき、成功応答したデータは再起動後も処理を再開します。閲覧はスキーマ準備後から利用できます。キュー・索引・SQLiteの一時ファイルは`data/`に保存します。
 
-起動ログに移行・データ整備の進捗を表示します。過去データの整備はバックグラウンドで進み、完了済みの処理や未変更の監視ファイルは再実行しません。[起動と受信キュー](startup.md)
+旧v0.23 DBは[Pythonでオフライン移行](storage-migration.md)します。移行済みの履歴や未変更の監視ファイルは起動ごとに再処理しません。[起動と受信キュー](startup.md)
 
 コンテナは`.env`のUID/GIDで動きます。ホストのユーザーだけが読めるログも取り込め、`data/`も同じユーザーの所有になります。
 
@@ -96,6 +96,10 @@ server {
     ssl_certificate_key /etc/nginx/certs/agents.example.com.key;
     ssl_protocols TLSv1.2 TLSv1.3;
     client_max_body_size 16m;
+    gzip on;
+    gzip_min_length 1024;
+    gzip_types application/json;
+    gzip_vary on;
 
     location / {
         proxy_read_timeout 300s;

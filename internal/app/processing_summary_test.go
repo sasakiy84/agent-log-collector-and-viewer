@@ -72,7 +72,19 @@ func TestProcessingSummariesRetainExactRangesAndOrigins(t *testing.T) {
 					}
 					var want, got [3]int
 					for _, cached := range []bool{false, true} {
-						query, args := processingCountSQL("codex:buckets", origin, after, before, cached)
+						query, args := processingCountSQL("codex:buckets", origin, after, before)
+						if !cached {
+							scope, values := timelineScope("codex:buckets", origin)
+							scope += " AND conversation=0"
+							if after != nil {
+								scope, values = positionBound(scope, values, ">", *after)
+							}
+							if before != nil {
+								scope, values = positionBound(scope, values, "<", *before)
+							}
+							query = "SELECT COUNT(*),COALESCE(SUM(activity),0),COALESCE(SUM(is_error),0) FROM " + timelineTable(origin) + " WHERE " + scope
+							args = values
+						}
 						dest := &want
 						if cached {
 							dest = &got

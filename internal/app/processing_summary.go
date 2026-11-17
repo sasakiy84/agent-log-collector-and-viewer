@@ -7,7 +7,7 @@ import (
 // Minute counters skip complete intervals of collapsed logs. The two boundary
 // minutes still use the chronological index, retaining exact (time,sequence,id)
 // placement even for equal timestamps and merged import/OTEL records.
-func processingCountSQL(session, origin string, after, before *timelinePosition, ready bool) (string, []any) {
+func processingCountSQL(session, origin string, after, before *timelinePosition) (string, []any) {
 	scope, args := timelineScope(session, origin)
 	scope += " AND conversation=0"
 	if after != nil {
@@ -17,9 +17,6 @@ func processingCountSQL(session, origin string, after, before *timelinePosition,
 		scope, args = positionBound(scope, args, "<", *before)
 	}
 	direct := "SELECT COUNT(*),COALESCE(SUM(activity),0),COALESCE(SUM(is_error),0) FROM " + timelineTable(origin) + " WHERE " + scope
-	if !ready {
-		return direct, args
-	}
 	minute := func(p *timelinePosition) (string, string, bool) {
 		if p == nil {
 			return "", "", true

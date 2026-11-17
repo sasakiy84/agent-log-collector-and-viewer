@@ -55,7 +55,6 @@ async function refreshSkills(signal) {
   $("#skillcount").textContent =
     `${data.total.toLocaleString()} ${data.total === 1 ? "skill" : "skills"} · ${data.uses.toLocaleString()} reported · ${data.reads.toLocaleString()} ${data.reads === 1 ? "read" : "reads"}`;
   $("#skillcount").title = "Reported skill invocations and confirmed reads are separate counts.";
-  $("#skillindexstatus").textContent = data.ready ? "" : "Indexing history";
   $("#skillrows").innerHTML = data.skills.length
     ? data.skills
         .map(

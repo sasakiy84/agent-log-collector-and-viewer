@@ -16,4 +16,4 @@ New databases return free pages to disk automatically in small batches, allowing
 
 Existing databases first keep freed pages available for reuse. To return this space to disk, choose **Rebuild database · pauses ingestion**. This one-time SQLite rebuild can require up to twice the database size in free space; clients should retry ingestion until it finishes. Subsequent archives use incremental reclamation.
 
-Archive listings read indexed session summaries and incrementally maintained record/byte counts. They do not scan original event payloads. Existing counts are populated once in resumable startup batches. No Refresh button or periodic browser polling is used.
+Archive listings read indexed session summaries and incrementally maintained record/byte counts. They do not scan original event payloads. The offline migration preserves and verifies existing counts. No Refresh button or periodic browser polling is used.

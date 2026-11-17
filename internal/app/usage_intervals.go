@@ -31,19 +31,19 @@ func storeInterval(ctx context.Context, tx *sql.Tx, e Event, u *usagePoint) erro
 		return nil
 	}
 	var stream int64
-	if err := tx.QueryRowContext(ctx, "INSERT INTO usage_streams(session,origin,series) VALUES(?,?,?) ON CONFLICT(session,origin,series) DO UPDATE SET series=excluded.series RETURNING id", e.Session, e.Origin, u.Series).Scan(&stream); err != nil {
+	if err := queryRecord(ctx, tx, "INSERT INTO usage_streams(session,origin,series) VALUES(?,?,?) ON CONFLICT(session,origin,series) DO UPDATE SET series=excluded.series RETURNING id", e.Session, e.Origin, u.Series).Scan(&stream); err != nil {
 		return err
 	}
 	if stream > 2147483647 {
 		return fmt.Errorf("too many accounting streams")
 	}
 	b := intervalBounds(u.Start, u.End)
-	_, err := tx.ExecContext(ctx, `INSERT INTO usage_interval_data SELECT rowid,id,?,?,?,?,?,?,?,?,? FROM usage_samples WHERE id=?`, stream, u.Start, u.End, b[0], b[1], b[2], b[3], b[4], b[5], e.ID)
+	_, err := execRecord(ctx, tx, `INSERT INTO usage_interval_data SELECT rowid,id,?,?,?,?,?,?,?,?,? FROM usage_samples WHERE id=?`, stream, u.Start, u.End, b[0], b[1], b[2], b[3], b[4], b[5], e.ID)
 	return err
 }
 func overlappingUsage(ctx context.Context, tx *sql.Tx, eventID, key string) (bool, error) {
 	var overlap bool
-	err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM usage_interval_data d CROSS JOIN usage_interval_index i CROSS JOIN usage_samples p ON p.rowid=i.id
+	err := queryRecord(ctx, tx, `SELECT EXISTS(SELECT 1 FROM usage_interval_data d CROSS JOIN usage_interval_index i CROSS JOIN usage_samples p ON p.rowid=i.id
  WHERE d.event_id=? AND i.min_stream<=d.stream AND i.max_stream>=d.stream AND i.min_day<=d.max_day AND i.max_day>=d.min_day
  AND i.min_second<=d.max_second AND i.max_second>=d.min_second AND i.min_nano<=d.max_nano AND i.max_nano>=d.min_nano
  AND p.start<d.end AND p.end>d.start AND p.group_key<>?)`, eventID, key).Scan(&overlap)

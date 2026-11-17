@@ -12,6 +12,7 @@ import (
 )
 
 type App struct {
+	skillSummaries     skillSummaryCache
 	Version            string
 	startedAt          time.Time
 	inbox              *ingestQueue

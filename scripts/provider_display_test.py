@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Provider display, real Copilot trace fixture, old-DB repair and browser flows."""
+"""Provider display, real Copilot trace fixture, restart preservation and browser flows."""
 import hashlib,json,os,pathlib,socket,sqlite3,subprocess,tempfile,time,urllib.request
 from playwright.sync_api import sync_playwright,expect
 from test_support import wait_for_ingestion
-binary=os.environ.get('AGENTLOG_BIN','./agentlog');baseline=os.getenv('AGENTLOG_BASELINE_BIN');token='synthetic-provider-display-token'
+binary=os.environ.get('AGENTLOG_BIN','./agentlog');token='synthetic-provider-display-token'
 fixture=json.loads((pathlib.Path(__file__).resolve().parents[1]/'internal/app/testdata/copilot-1.0.112-traces.json').read_text())
 with tempfile.TemporaryDirectory() as folder:
  db=folder+'/test.db';proc=None
@@ -29,10 +29,7 @@ with tempfile.TemporaryDirectory() as folder:
    for id,raw in c.execute('SELECT id,raw FROM records ORDER BY id'):digest.update(id.encode());digest.update(raw)
   return digest.hexdigest()
  try:
-  start(baseline or binary);api('/v1/traces',fixture);before=fingerprint()
-  if baseline:
-   old=api('/api/session?id=copilot:fixture-session');assert old['usage']['values']['input_tokens']=='600',old['usage'];assert api('/api/skills')['total']==0
-   stop();start(binary)
+  start(binary);api('/v1/traces',fixture);before=fingerprint()
   assert fingerprint()==before,'original records changed'
   current=api('/api/session?id=copilot:fixture-session&view=activity');assert current['count']==3 and current['usage']['values']['input_tokens']=='300',current
   assert api('/api/skills')['uses']==1

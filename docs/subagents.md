@@ -12,7 +12,7 @@ Launch/result pairs use explicit tool call IDs, scoped to the session and execut
 
 Codex and Claude use their existing child sessions. Copilot runtime agents stay in their original session; the preview filters by agent attribution and counts paired import/OTEL cards once. Full session navigation still shows that session's complete history.
 
-Preview pages read cached cards, not original payloads. A resumable, bounded upgrade indexes relevant existing records on first start; future changes update the index in the ingestion transaction. Archive deletion removes the corresponding index entries.
+Preview pages read cached cards, not original payloads. The offline migration preserves existing links; new evidence updates them in the ingestion transaction. Archive deletion removes the corresponding index entries.
 
 ```sh
 AGENTLOG_BIN=./agentlog python3 scripts/subagents_browser_test.py

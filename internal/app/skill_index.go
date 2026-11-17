@@ -19,7 +19,7 @@ func storeSkillFacts(ctx context.Context, tx *sql.Tx, e Event, d Detail) error {
 		return nil
 	}
 	for _, table := range []string{"skill_events", "skill_read_inputs"} {
-		if _, err := tx.ExecContext(ctx, "DELETE FROM "+table+" WHERE event_id=?", e.ID); err != nil {
+		if _, err := execRecord(ctx, tx, "DELETE FROM "+table+" WHERE event_id=?", e.ID); err != nil {
 			return err
 		}
 	}

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Merge a real old DB's 41 named + 6 directory sessions, then test the UI."""
+"""Group 41 named + 6 directory sessions, then test the UI."""
 import hashlib
 import json
 import os
@@ -17,7 +17,6 @@ from test_support import settled_urlopen, wait_for_ingestion
 
 TOKEN = 'synthetic-project-name-grouping-token'
 BINARY = os.getenv('AGENTLOG_BIN', './agentlog')
-BASELINE = os.getenv('AGENTLOG_BASELINE_BIN')
 
 
 def attrs(values):
@@ -58,7 +57,7 @@ with tempfile.TemporaryDirectory() as directory:
                     digest.update(value if isinstance(value, bytes) else value.encode())
         return digest.hexdigest()
 
-    old = start(BASELINE or BINARY)
+    old = start(BINARY)
     try:
         resources = []
         for kind, count, metadata in [('named', 41, {'service.namespace': 'shop'}), ('directory', 6, {'cwd': '/workspaces/shop'})]:
@@ -71,8 +70,6 @@ with tempfile.TemporaryDirectory() as directory:
             resources.append({'resource': {'attributes': attrs({'service.name': 'codex', **metadata})},
                               'scopeLogs': [{'logRecords': records}]})
         api('/v1/logs', {'resourceLogs': resources})
-        if BASELINE:
-            assert api('/api/projects')['total'] == 2
         original = fingerprint()
     finally:
         old.terminate()
@@ -130,4 +127,4 @@ with tempfile.TemporaryDirectory() as directory:
     finally:
         restarted.terminate()
         restarted.wait(timeout=20)
-print('PASS: 41 named + 6 directory sessions merge into one project; old DB/URLs, skills, ZIP export, original records, mobile and restart verified')
+print('PASS: 41 named + 6 directory sessions merge into one project; saved URLs, skills, ZIP export, original records, mobile and restart verified')

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"unicode/utf8"
@@ -67,16 +68,26 @@ func identifierStrings(value any, emit func(string)) {
 
 type searchIdentifier struct{ Key, Value string }
 
-func storeIdentifiers(ctx context.Context, tx *sql.Tx, event Event, identifiers map[searchIdentifier]bool) error {
-	if _, err := tx.ExecContext(ctx, "DELETE FROM search_identifiers WHERE event_id=?", event.ID); err != nil {
-		return err
-	}
+func storeIdentifiers(ctx context.Context, tx *sql.Tx, event Event, documentID int64, identifiers map[searchIdentifier]bool) error {
+	// Keep shared dictionary entries while an updated record's postings are rebuilt.
+	// Insert the new set first, then remove only obsolete postings in one operation.
+	ids := make([]int64, 0, len(identifiers))
 	for id := range identifiers {
-		if _, err := tx.ExecContext(ctx, "INSERT INTO search_identifiers(event_id,session,key,value) VALUES(?,?,?,?)", event.ID, event.Session, id.Key, id.Value); err != nil {
+		if _, err := execRecord(ctx, tx, "INSERT INTO identifier_values(key,value) VALUES(?,?) ON CONFLICT(value,key) DO NOTHING", id.Key, id.Value); err != nil {
+			return err
+		}
+		var key int64
+		if err := queryRecord(ctx, tx, "SELECT id FROM identifier_values WHERE value=? AND key=?", id.Value, id.Key).Scan(&key); err != nil {
+			return err
+		}
+		ids = append(ids, key)
+		if _, err := execRecord(ctx, tx, "INSERT INTO identifier_postings(document_id,identifier_id,session) VALUES(?,?,?) ON CONFLICT(document_id,identifier_id) DO UPDATE SET session=excluded.session WHERE session<>excluded.session", documentID, key, event.Session); err != nil {
 			return err
 		}
 	}
-	return nil
+	encoded, _ := json.Marshal(ids)
+	_, err := execRecord(ctx, tx, "DELETE FROM identifier_postings WHERE document_id=? AND identifier_id NOT IN(SELECT value FROM json_each(?))", documentID, string(encoded))
+	return err
 }
 
 func identifierFilter(key, value string) (string, []any, error) {
@@ -86,11 +97,11 @@ func identifierFilter(key, value string) (string, []any, error) {
 	if value == "" || utf8.RuneCountInString(value) > 4096 || utf8.RuneCountInString(key) > 256 || key != "" && !identifierKey(key) {
 		return "", nil, fmt.Errorf("Specify an ID value (up to 4096 characters) and an ID field, or leave the field empty to search all IDs")
 	}
-	query := " AND s.session IN (SELECT session FROM search_identifiers WHERE value=?"
+	query := " AND s.session IN (SELECT p.session FROM identifier_values v JOIN identifier_postings p ON p.identifier_id=v.id WHERE v.value=?"
 	args := []any{value}
 	if key != "" {
-		query += " AND key=?"
+		query += " AND v.key=?"
 		args = append(args, key)
 	}
-	return query + " GROUP BY session)", args, nil
+	return query + " GROUP BY p.session)", args, nil
 }

@@ -110,8 +110,13 @@ with tempfile.TemporaryDirectory() as directory:
             expect(page.locator('#inspectortitle')).to_have_text('Guardian internal observation')
             expect(page.locator('#inspectdetails')).to_contain_text('0.012938 ms')
             expect(page.locator('.toolpair')).to_have_count(0)
+            # Details omit raw JSON; only opening JSON fetches the original.
+            assert all('raw=0' in request for request in requests if '/api/event?' in request), requests
             page.locator('#jsontab').click()
             expect(page.locator('#eventjson')).to_contain_text('guardian_scoring_observation')
+            assert sum('/api/event?' in request and 'raw=0' not in request for request in requests) == 1
+            page.locator('#detailtab').click(); page.locator('#jsontab').click()
+            assert sum('/api/event?' in request and 'raw=0' not in request for request in requests) == 1
             page.screenshot(path=str(out / 'guardian-inspector.png'), full_page=True)
             page.locator('#closeinspector').click()
             first.locator('summary').click()

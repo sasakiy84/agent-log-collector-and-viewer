@@ -111,6 +111,12 @@ class OfflineMigrationTests(unittest.TestCase):
             self.assertEqual(hashlib.sha256(wal.read_bytes()).digest(), wal_before)
         with closing(sqlite3.connect(self.output / "agentlog.db")) as db:
             self.assertEqual(db.execute("SELECT raw FROM records").fetchone()[0], RAW)
+            self.assertEqual(db.execute("SELECT raw_hash FROM records").fetchone()[0], hashlib.sha256(RAW).digest())
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0], 2)
+            self.assertEqual(db.execute("PRAGMA freelist_count").fetchone()[0], 0)
+            self.assertNotIn('presentation_ready', [row[1] for row in db.execute('PRAGMA table_info(record_facts)')])
+            self.assertEqual(db.execute("SELECT event_id,session,key,value FROM search_identifiers").fetchall(), [('import:demo','codex:demo','message.id','message-1')])
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM identifier_values v WHERE NOT EXISTS(SELECT 1 FROM identifier_postings p WHERE p.identifier_id=v.id)").fetchone()[0], 0)
             self.assertEqual(db.execute("SELECT name,key FROM api_keys").fetchone(), ('WAL内の名前','alk_synthetic-secret'))
             self.assertEqual(db.execute("SELECT rowid FROM event_search WHERE event_search MATCH '日本語 AND 検索'").fetchall(), [(42,)])
             self.assertEqual(db.execute("SELECT rowid FROM event_search WHERE event_search MATCH '\"検索 高速\"'").fetchall(), [(42,)])
@@ -132,6 +138,14 @@ class OfflineMigrationTests(unittest.TestCase):
         self.assertEqual((self.output / "archives/archive-one.zip").read_bytes(), (self.source.parent / "archives/archive-one.zip").read_bytes())
         with self.assertRaisesRegex(migration.MigrationError, 'already exists'):
             self.migrate()
+
+    def test_missing_identifier_document_is_not_silently_dropped(self):
+        with closing(sqlite3.connect(self.source)) as db:
+            db.execute("DELETE FROM search_documents")
+            db.commit()
+        with self.assertRaisesRegex(migration.MigrationError, 'no corresponding search document'):
+            self.migrate()
+        self.assertFalse(self.output.exists())
 
     def test_retired_skill_checkpoint_is_covered_by_completed_successor(self):
         with closing(sqlite3.connect(self.source)) as db:

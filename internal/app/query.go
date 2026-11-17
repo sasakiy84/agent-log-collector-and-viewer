@@ -85,7 +85,11 @@ func (a *App) sessionList(w http.ResponseWriter, r *http.Request, forExport bool
 	if forExport {
 		countColumn = "s.import_count+s.otel_count"
 	}
-	rows, err := tx.QueryContext(r.Context(), "SELECT s.session,s.source,s.parent,"+countColumn+",s.start,s.end,s.preview,"+usageColumn+query+" ORDER BY s.end DESC,s.session LIMIT 201 OFFSET ?", args...)
+	listUsage := usageColumn
+	if r.URL.Query().Get("compact") == "1" {
+		listUsage = "json_remove(" + usageColumn + ",'$.variants','$.basis')"
+	}
+	rows, err := tx.QueryContext(r.Context(), "SELECT s.session,s.source,s.parent,"+countColumn+",s.start,s.end,s.preview,"+listUsage+query+" ORDER BY s.end DESC,s.session LIMIT 201 OFFSET ?", args...)
 	if err != nil {
 		databaseError(w, r, err)
 		return
@@ -273,7 +277,7 @@ func (a *App) session(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	page.Children, page.ChildrenNext = children.Children, children.Next
-	page.Skills, err = sessionSkills(r.Context(), tx, id, origin)
+	page.Skills, err = a.cachedSessionSkills(r.Context(), tx, id, origin)
 	if err == nil && r.URL.Query().Get("view") != "conversation" {
 		err = attachSkills(r.Context(), tx, page.Events)
 	}
@@ -360,6 +364,14 @@ func (a *App) event(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if r.URL.Query().Get("view") == "raw" {
+		if err = tx.Commit(); err != nil {
+			databaseError(w, r, err)
+			return
+		}
+		write(w, map[string]any{"records": records})
+		return
+	}
 	event, err := projectEvent(id, records)
 	if err != nil {
 		databaseError(w, r, err)
@@ -387,6 +399,11 @@ func (a *App) event(w http.ResponseWriter, r *http.Request) {
 	if err = tx.Commit(); err != nil {
 		databaseError(w, r, err)
 		return
+	}
+	if r.URL.Query().Get("raw") == "0" {
+		for i := range event.Records {
+			event.Records[i].Raw = nil
+		}
 	}
 	write(w, event)
 }

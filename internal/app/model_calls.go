@@ -48,7 +48,7 @@ func storeModelFact(ctx context.Context, tx *sql.Tx, e Event, doc document, p De
 		}
 	}
 	if role == "" {
-		_, err := tx.ExecContext(ctx, "DELETE FROM model_facts WHERE id=?", e.ID)
+		_, err := execRecord(ctx, tx, "DELETE FROM model_facts WHERE id=?", e.ID)
 		return err
 	}
 	root := ""
@@ -59,7 +59,7 @@ func storeModelFact(ctx context.Context, tx *sql.Tx, e Event, doc document, p De
 	if err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO model_facts VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
+	_, err = execRecord(ctx, tx, `INSERT INTO model_facts VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
  session=excluded.session,source=excluded.source,origin=excluded.origin,trace=excluded.trace,span=excluded.span,parent_span=excluded.parent_span,
  turn=excluded.turn,role=excluded.role,root=CASE WHEN excluded.role='request' THEN excluded.id ELSE model_facts.root END,time=excluded.time,info=excluded.info`,
 		e.ID, e.Session, e.Source, e.Origin, e.Trace, e.Span, e.ParentSpan, p.Turn, role, root, e.Time, string(encoded))

@@ -10,6 +10,7 @@ import (
 // and Japanese tokenization do not hold the SQLite writer reservation. The
 // writer owns persistence and all affected projections in one transaction.
 type recordAnalysis struct {
+	ready    bool
 	event    Event
 	document document
 	detail   Detail
@@ -18,10 +19,7 @@ type recordAnalysis struct {
 }
 
 func analyzeRecord(ctx context.Context, e Event) (recordAnalysis, error) {
-	if e.ID == "" {
-		digest := sha256.Sum256(append([]byte(e.Source+e.Signal), e.Raw...))
-		e.ID = hex.EncodeToString(digest[:])
-	}
+	e = identifyRecord(e)
 	doc, err := decodeDocument(e.Raw)
 	if err != nil {
 		return recordAnalysis{}, err
@@ -35,5 +33,13 @@ func analyzeRecord(ctx context.Context, e Event) (recordAnalysis, error) {
 	if err != nil {
 		return recordAnalysis{}, err
 	}
-	return recordAnalysis{event: e, document: doc, detail: detail, keys: correlationKeys(e, detail, doc), search: search}, nil
+	return recordAnalysis{ready: true, event: e, document: doc, detail: detail, keys: correlationKeys(e, detail, doc), search: search}, nil
+}
+
+func identifyRecord(e Event) Event {
+	if e.ID == "" {
+		digest := sha256.Sum256(append([]byte(e.Source+e.Signal), e.Raw...))
+		e.ID = hex.EncodeToString(digest[:])
+	}
+	return e
 }
