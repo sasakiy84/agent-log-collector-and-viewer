@@ -102,25 +102,39 @@ func (a *App) serviceAvailable(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
-func (a *App) status(w http.ResponseWriter, r *http.Request) {
-	state := "ready"
+type serviceStatus struct {
+	State               string `json:"state"`
+	PendingBatches      int64  `json:"pending_batches"`
+	PendingBytes        int64  `json:"pending_bytes"`
+	QueueCapacityBytes  int64  `json:"queue_capacity_bytes"`
+	ImportCapacityBytes int64  `json:"import_capacity_bytes"`
+}
+
+func (a *App) statusSnapshot(ctx context.Context) (serviceStatus, error) {
+	s := serviceStatus{State: "ready", QueueCapacityBytes: maxInboxBytes, ImportCapacityBytes: maxImportBytes}
 	if !closed(a.initialized) {
-		state = "migrating"
+		s.State = "migrating"
 	} else if a.startupErr != nil {
-		state = "failed"
+		s.State = "failed"
 	} else if !closed(a.maintained) {
-		state = "preparing"
+		s.State = "preparing"
 	} else if a.maintenanceErr != nil {
-		state = "failed"
+		s.State = "failed"
 	}
-	var batches, bytes int64
 	if a.inbox != nil {
 		var err error
-		batches, bytes, err = a.inbox.size(r.Context())
+		s.PendingBatches, s.PendingBytes, err = a.inbox.size(ctx)
 		if err != nil {
-			databaseError(w, r, err)
-			return
+			return s, err
 		}
 	}
-	write(w, map[string]any{"state": state, "pending_batches": batches, "pending_bytes": bytes, "queue_capacity_bytes": maxInboxBytes, "import_capacity_bytes": maxImportBytes})
+	return s, nil
+}
+func (a *App) status(w http.ResponseWriter, r *http.Request) {
+	s, err := a.statusSnapshot(r.Context())
+	if err != nil {
+		databaseError(w, r, err)
+		return
+	}
+	write(w, s)
 }

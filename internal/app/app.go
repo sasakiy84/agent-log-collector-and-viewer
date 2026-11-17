@@ -24,7 +24,10 @@ func (a *App) signature(v string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 func (a *App) bearer(r *http.Request) bool {
-	return a.token == "" || subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+a.token)) == 1
+	if _, key := apiKeyCredential(r); key && !a.ownerBearer(r) {
+		return false
+	}
+	return a.token == "" || a.ownerBearer(r)
 }
 func (a *App) authenticated(r *http.Request) bool {
 	if a.bearer(r) {
@@ -78,6 +81,14 @@ func (a *App) Handler() http.Handler {
 		http.SetCookie(w, &http.Cookie{Name: "agentlog", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteStrictMode})
 		write(w, map[string]bool{"ok": true})
 	})
+	crossOrigin := http.NewCrossOriginProtection()
+	mux.HandleFunc("GET /api/settings/api-keys", a.listAPIKeys)
+	mux.Handle("POST /api/settings/api-keys", crossOrigin.Handler(http.HandlerFunc(a.createAPIKey)))
+	mux.Handle("PATCH /api/settings/api-keys/{id}", crossOrigin.Handler(http.HandlerFunc(a.renameAPIKey)))
+	mux.Handle("DELETE /api/settings/api-keys/{id}", crossOrigin.Handler(http.HandlerFunc(a.deleteAPIKey)))
+	mux.HandleFunc("GET /api/readme", a.apiReadme)
+	mux.HandleFunc("GET /api/metrics", a.metrics)
+	mux.HandleFunc("GET /settings", serveShell)
 	mux.HandleFunc("GET /api/archive", a.archiveList)
 	mux.HandleFunc("POST /api/archives", a.archiveCreate)
 	mux.HandleFunc("GET /api/archives/{id}", a.archiveStatus)
@@ -124,9 +135,15 @@ func (a *App) Handler() http.Handler {
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'; object-src 'none'")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Cache-Control", "no-store")
-		if strings.HasPrefix(r.URL.Path, "/api/") && r.URL.Path != "/api/login" && !a.authenticated(r) {
-			http.Error(w, "Unauthorized", 401)
-			return
+		if strings.HasPrefix(r.URL.Path, "/api/") && r.URL.Path != "/api/login" {
+			if key, provided := apiKeyCredential(r); provided && !a.ownerBearer(r) {
+				if !a.authorizeReadKey(w, r, key) {
+					return
+				}
+			} else if !a.authenticated(r) {
+				http.Error(w, "Unauthorized", 401)
+				return
+			}
 		}
 		if strings.HasPrefix(r.URL.Path, "/api/") && r.URL.Path != "/api/login" && r.URL.Path != "/api/logout" && r.URL.Path != "/api/status" && !a.serviceAvailable(w, r) {
 			return
@@ -141,6 +158,8 @@ func serveShell(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/skills":
 		title = "Skills"
+	case "/settings":
+		title = "Settings"
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte(strings.Replace(string(b), "<title>Sessions · Agentlog</title>", "<title>"+title+" · Agentlog</title>", 1)))

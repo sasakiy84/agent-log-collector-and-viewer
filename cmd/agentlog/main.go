@@ -54,6 +54,7 @@ func serverMain() error {
 		return e
 	}
 	defer a.Close()
+	a.Version = version
 	srv := &http.Server{Addr: *addr, Handler: a.Handler(), BaseContext: func(net.Listener) context.Context { return ctx }, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	var workers sync.WaitGroup
 	if len(watch) > 0 {
