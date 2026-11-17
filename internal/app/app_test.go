@@ -15,18 +15,60 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
 const token = "test-token-at-least-16"
 
+// Only migration tests need to replay the complete schema history. Behavioral
+// tests copy an immutable, closed empty database; each still owns its own file.
+var emptyTestDatabase = sync.OnceValues(func() ([]byte, error) {
+	dir, err := os.MkdirTemp("", "agentlog-test-schema-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(dir)
+	path := filepath.Join(dir, "empty.db")
+	a, err := Open(context.Background(), path, token)
+	if err != nil {
+		return nil, err
+	}
+	if err = a.Close(); err != nil {
+		return nil, err
+	}
+	return os.ReadFile(path)
+})
+
 func setup(t *testing.T) *App {
 	t.Helper()
-	a, e := Open(context.Background(), filepath.Join(t.TempDir(), "test.db"), token)
+	data, e := emptyTestDatabase()
 	if e != nil {
 		t.Fatal(e)
+	}
+	path := filepath.Join(t.TempDir(), "test.db")
+	if e = os.WriteFile(path, data, 0600); e != nil {
+		t.Fatal(e)
+	}
+	// The copied fixture has no dirty queues. Exercise initialization once when
+	// creating it, rather than rerunning all historical jobs for every API test.
+	a, e := newApp(context.Background(), token)
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, step := range []func() error{
+		func() error { return a.openDatabase(a.ctx, path) },
+		func() error { return a.initReaders(path) },
+		func() error { return a.initArchives(path) },
+		a.startSkillIndexer,
+	} {
+		if e = step(); e != nil {
+			a.Close()
+			t.Fatal(e)
+		}
 	}
 	t.Cleanup(func() { a.Close() })
 	return a
