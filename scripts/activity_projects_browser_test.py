@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import time
 import urllib.request
+import urllib.parse
 from pathlib import Path
 
 from playwright.sync_api import expect, sync_playwright
@@ -86,6 +87,26 @@ with tempfile.TemporaryDirectory() as directory:
             page.locator('#loginform button').click()
             expect(page.locator('.session')).to_have_count(7)
             expect(page.locator('#projectsidebar')).to_be_visible()
+            # Replacing a sidebar request must not cancel the parallel session list.
+            held = []
+            def hold_first_scope(route):
+                query = urllib.parse.parse_qs(urllib.parse.urlsplit(route.request.url).query)
+                if query.get('session_q') == ['setup'] and not query.get('q'):
+                    held.append(route)
+                else:
+                    route.continue_()
+            page.route('**/api/projects?*', hold_first_scope)
+            with page.expect_request(lambda request: '/api/projects?' in request.url and 'session_q=setup' in request.url):
+                page.locator('#search').fill('setup')
+            page.locator('#projectsearch').fill('Documentation')
+            expect(page.locator('.session')).to_have_count(1)
+            expect(page.locator('.session')).to_contain_text('Update the setup guide.')
+            expect(page.locator('[data-project="name:Documentation"]')).to_be_visible()
+            for route in held:
+                route.abort()
+            page.unroute('**/api/projects?*', hold_first_scope)
+            page.goto(base)
+            expect(page.locator('.session')).to_have_count(7)
             page.locator('[data-project="name:Agentlog"]').click()
             expect(page.locator('.session')).to_have_count(2)
             page.locator('#search').fill('日本語')
