@@ -32,7 +32,7 @@ with tempfile.TemporaryDirectory() as folder:
   start(binary);api('/v1/traces',fixture);before=fingerprint()
   assert fingerprint()==before,'original records changed'
   current=api('/api/session?id=copilot:fixture-session&view=activity');assert current['count']==3 and current['usage']['values']['input_tokens']=='300',current
-  assert api('/api/skills')['uses']==1
+  assert api('/api/skills')['attempts']==1
   def attrs(values):
    return [{'key':k,'value':{'boolValue':v} if isinstance(v,bool) else {'intValue':str(v)} if isinstance(v,int) else {'stringValue':v}} for k,v in values.items()]
   def log(i,name,values):return {'eventName':'claude_code.'+name,'timeUnixNano':str(1794764000000000000+i*1000000000),'attributes':attrs({'session.id':'claude-session','event.name':name,**values})}
@@ -46,9 +46,9 @@ with tempfile.TemporaryDirectory() as folder:
   child={'traceId':parent['traceId'],'spanId':'f'*16,'parentSpanId':parent['spanId'],'name':'invoke_agent Explore','startTimeUnixNano':parent['startTimeUnixNano'],'endTimeUnixNano':parent['endTimeUnixNano'],'attributes':attrs({'gen_ai.operation.name':'invoke_agent','gen_ai.conversation.id':'fixture-session','gen_ai.agent.id':'explore-definition','gen_ai.agent.name':'Explore','gen_ai.input.messages':'[{"role":"user","content":"Check fixture"}]','gen_ai.output.messages':'[{"role":"assistant","content":"Only this subagent work"}]'})}
   api('/v1/traces',{'resourceSpans':[{'resource':fixture['resourceSpans'][0]['resource'],'scopeSpans':[{'spans':[child]}]}]})
   with sync_playwright() as p:
-   browser=p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox']);page=browser.new_page(viewport={'width':1440,'height':1000});errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
+   browser=p.chromium.launch(executable_path=os.getenv('AGENTLOG_CHROMIUM', '/usr/bin/chromium'),headless=True,args=['--no-sandbox']);page=browser.new_page(viewport={'width':1440,'height':1000});errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
    page.goto(base);page.locator('#token').fill(token);page.locator('#loginform button').click();expect(page.locator('.session')).to_have_count(2);assert '<current_datetime>' not in page.locator('#sessions').inner_text()
-   page.locator('[data-session="copilot:fixture-session"]').click();expect(page.locator('#timeline > .event')).to_have_count(1);page.locator('[data-view=activity]').click();expect(page.locator('#sessionskills')).to_contain_text('review 1 reported');expect(page.locator('#sessionusage')).to_contain_text('300');expect(page.locator('#timeline .event')).to_have_count(4)
+   page.locator('[data-session="copilot:fixture-session"]').click();expect(page.locator('#timeline > .event')).to_have_count(1);page.locator('[data-view=activity]').click();expect(page.locator('#sessionskills')).to_contain_text('review 1 attempt');expect(page.locator('#sessionusage')).to_contain_text('300');expect(page.locator('#timeline .event')).to_have_count(4)
    root=page.locator('#timeline .event').filter(has=page.get_by_role('heading',name='Agent turn',exact=True));expect(root.locator('[data-model-call]')).to_have_count(3)
    tool=page.locator('#timeline .event').filter(has=page.get_by_role('heading',name='view',exact=True));tool.click();expect(page.locator('#inspectdetails')).to_contain_text('Synthetic file contents for Agentlog display test.');expect(page.locator('#inspectdetails > .block').filter(has=page.get_by_text('Output',exact=True)).locator('pre')).to_have_text('Synthetic file contents for Agentlog display test.');page.locator('#jsontab').click();expect(page.locator('#eventjson')).to_contain_text('gen_ai.tool.call.result');page.keyboard.press('Escape')
    page.locator('.subagent-link').filter(has_text='Explore').click();expect(page.locator('#inspectagent')).to_contain_text('Only this subagent work');expect(page.locator('#inspectagent .subagent-link')).to_have_count(0);page.keyboard.press('Escape')

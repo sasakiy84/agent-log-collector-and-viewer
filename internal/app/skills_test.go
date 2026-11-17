@@ -26,7 +26,7 @@ func TestSkillsReportedUsesReferencesAndExactFiltering(t *testing.T) {
 		t.Fatalf("skills: %+v", catalog)
 	}
 	for _, row := range catalog.Skills {
-		if row.Plugin == "" && (row.Uses != 2 || row.Pending != 1 || row.Sessions != 1) {
+		if row.Plugin == "" && (row.Attempts != 3 || row.Sessions != 1) {
 			t.Fatal(row)
 		}
 	}
@@ -36,11 +36,11 @@ func TestSkillsReportedUsesReferencesAndExactFiltering(t *testing.T) {
 		t.Fatal("text mention matched actual skill filter", sessions)
 	}
 	p := page(t, a, "codex:root", "import", 0)
-	if len(p.Skills) != 1 || p.Skills[0].Uses != 1 || p.Skills[0].Pending != 1 {
+	if len(p.Skills) != 1 || p.Skills[0].Attempts != 2 {
 		t.Fatal("origin-specific skill totals", p.Skills)
 	}
 	getJSON(t, a, "/api/skills?q="+url.QueryEscape("/work/.codex"), &catalog)
-	if catalog.Total != 1 || catalog.Skills[0].Uses != 2 {
+	if catalog.Total != 1 || catalog.Skills[0].Attempts != 3 {
 		t.Fatal("path search changed whole-skill totals", catalog)
 	}
 	if _, err := a.DB.Exec("DELETE FROM records WHERE session='codex:root'"); err != nil {
@@ -127,7 +127,7 @@ func TestSessionSkillsRepresentativeEvidenceAndOrigins(t *testing.T) {
 		}
 		for _, row := range rows {
 			if row.Plugin == "plugin-a" {
-				if row.Event != recent.ID || row.Reads != 1 || row.Uses != 0 {
+				if row.Event != recent.ID || row.Attempts != 1 {
 					t.Fatal(row)
 				}
 				continue
@@ -136,7 +136,7 @@ func TestSessionSkillsRepresentativeEvidenceAndOrigins(t *testing.T) {
 			if origin == "otel" {
 				want = native.ID
 			}
-			if row.Event != want || row.Uses != 1 || row.Reads != 1 || row.Last != recent.Time {
+			if row.Event != want || row.Attempts != 2 || row.Last != recent.Time {
 				t.Fatal(row)
 			}
 		}

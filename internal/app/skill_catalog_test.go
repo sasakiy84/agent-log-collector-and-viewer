@@ -8,12 +8,11 @@ import (
 )
 
 type skillCatalogPage struct {
-	Skills []SkillSummary `json:"skills"`
-	Total  int            `json:"total"`
-	Uses   int            `json:"uses"`
-	Reads  int            `json:"reads"`
-	Offset int            `json:"offset"`
-	Sort   string         `json:"sort"`
+	Skills   []SkillSummary `json:"skills"`
+	Total    int            `json:"total"`
+	Attempts int            `json:"attempts"`
+	Offset   int            `json:"offset"`
+	Sort     string         `json:"sort"`
 }
 
 func TestSkillUsageCatalogProjectScopeAndOrdering(t *testing.T) {
@@ -38,31 +37,31 @@ func TestSkillUsageCatalogProjectScopeAndOrdering(t *testing.T) {
 	save(t, a, rows...)
 	var p skillCatalogPage
 	getJSON(t, a, "/api/skills", &p)
-	if p.Total != 4 || p.Uses != 8 || p.Reads != 0 || p.Sort != "reads" || p.Skills[0].Name != "review" || p.Skills[0].Uses != 4 || p.Skills[0].Sessions != 3 {
+	if p.Total != 4 || p.Attempts != 10 || p.Sort != "attempts" || p.Skills[0].Name != "review" || p.Skills[0].Attempts != 4 || p.Skills[0].Sessions != 3 {
 		t.Fatal(p)
 	}
 	getJSON(t, a, "/api/skills?project=name:A", &p)
-	if p.Total != 3 || p.Uses != 6 || p.Reads != 0 || p.Skills[0].Name != "review" || p.Skills[0].Uses != 3 || p.Skills[0].Sessions != 2 {
+	if p.Total != 3 || p.Attempts != 7 || p.Skills[0].Name != "review" || p.Skills[0].Attempts != 3 || p.Skills[0].Sessions != 2 {
 		t.Fatal(p)
 	}
 	getJSON(t, a, "/api/skills?sort=recent", &p)
-	if p.Sort != "recent" || p.Skills[0].Name != "newest" || p.Uses != 8 || p.Reads != 0 {
+	if p.Sort != "recent" || p.Skills[0].Name != "newest" || p.Attempts != 10 {
 		t.Fatal(p)
 	}
 	getJSON(t, a, "/api/skills?sort=sessions", &p)
-	if p.Skills[0].Name != "review" || p.Skills[1].Name != "history" || p.Uses != 8 || p.Reads != 0 {
+	if p.Skills[0].Name != "review" || p.Skills[1].Name != "history" || p.Attempts != 10 {
 		t.Fatal(p)
 	}
 	getJSON(t, a, "/api/skills?q="+url.QueryEscape("ＲＥＶＩＥＷ"), &p)
-	if p.Total != 1 || p.Uses != 4 {
+	if p.Total != 1 || p.Attempts != 4 {
 		t.Fatal(p)
 	}
 	getJSON(t, a, "/api/skills?project=name:A&q=only-B", &p)
-	if p.Total != 0 || p.Uses != 0 || len(p.Skills) != 0 {
+	if p.Total != 0 || p.Attempts != 0 || len(p.Skills) != 0 {
 		t.Fatal("path match from another project", p)
 	}
 	getJSON(t, a, "/api/skills?project=name:B&q=only-B", &p)
-	if p.Total != 1 || p.Uses != 0 || p.Reads != 0 || p.Skills[0].Pending != 1 {
+	if p.Total != 1 || p.Attempts != 1 {
 		t.Fatal(p)
 	}
 	// Archive-locked sessions contribute neither reported usage nor search metadata.
@@ -70,7 +69,7 @@ func TestSkillUsageCatalogProjectScopeAndOrdering(t *testing.T) {
 		t.Fatal(err)
 	}
 	getJSON(t, a, "/api/skills?q=only-B", &p)
-	if p.Total != 0 || p.Uses != 0 {
+	if p.Total != 0 || p.Attempts != 0 {
 		t.Fatal("archived path matched", p)
 	}
 	r := httptest.NewRequest("GET", "/api/skills?sort=invalid", nil)
@@ -100,7 +99,7 @@ func TestSkillUsageTotalCoversAllPages(t *testing.T) {
 		if offset > 0 {
 			want = 5
 		}
-		if p.Total != 205 || p.Uses != 102 || p.Reads != 0 || len(p.Skills) != want {
+		if p.Total != 205 || p.Attempts != 205 || len(p.Skills) != want {
 			t.Fatal(offset, p)
 		}
 	}

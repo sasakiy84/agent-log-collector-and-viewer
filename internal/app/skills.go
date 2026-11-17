@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"database/sql"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -20,37 +21,33 @@ type SkillEvidence struct {
 	Path     string `json:"path,omitempty"`
 }
 type SkillSummary struct {
-	Name       string   `json:"name"`
-	Plugin     string   `json:"plugin,omitempty"`
-	Sessions   int      `json:"sessions"`
-	Uses       int      `json:"uses"`
-	Reads      int      `json:"reads"`
-	Pending    int      `json:"pending"`
-	Failed     int      `json:"failed"`
-	Injections int      `json:"injections"`
-	Last       string   `json:"last"`
-	Scopes     []string `json:"scopes"`
-	Event      string   `json:"event,omitempty"`
+	Name     string   `json:"name"`
+	Plugin   string   `json:"plugin,omitempty"`
+	Sessions int      `json:"sessions"`
+	Attempts int      `json:"attempts"`
+	Last     string   `json:"last"`
+	Scopes   []string `json:"scopes"`
+	Event    string   `json:"event,omitempty"`
 }
 
-// These counters describe separate evidence. Reads never imply invocations.
+// Outcomes are evidence of the same attempt, not separate counters. A wrapper
+// is redundant only when a concrete tool exports the same execution identity.
 func skillRollup() string {
-	reported := "CASE WHEN k.evidence='reported' THEN k.group_key END"
-	count := func(evidence string) string {
-		condition := ""
-		if evidence == "pending" || evidence == "failed" {
-			condition = " AND NOT EXISTS(SELECT 1 FROM skill_events confirmed WHERE confirmed.group_key=k.group_key AND confirmed.evidence='read')"
-		}
-		if evidence == "failed" {
-			condition += " AND NOT EXISTS(SELECT 1 FROM skill_events waiting WHERE waiting.group_key=k.group_key AND waiting.evidence='pending')"
-		}
-
-		return "COUNT(DISTINCT CASE WHEN k.evidence='" + evidence + "'" + condition + " THEN k.group_key END)"
-	}
-	return `SELECT k.name,k.plugin,COUNT(DISTINCT k.session) AS sessions,COUNT(DISTINCT ` + reported + `) AS uses,` + count("read") + ` AS reads,` + count("pending") + ` AS pending,` + count("failed") + ` AS failed,` + count("injection") + ` AS injections,MAX(k.time) AS last,json_group_array(DISTINCT k.scope) AS scopes`
+	return `SELECT k.name,k.plugin,COUNT(DISTINCT k.session) AS sessions,
+ COUNT(DISTINCT CASE WHEN k.evidence='injection' THEN
+ COALESCE((SELECT id FROM logical_events WHERE session=k.session AND
+ (id=k.event_id OR (otel_id=k.event_id AND import_id<>'')) LIMIT 1),k.group_key)
+ ELSE k.group_key END) AS attempts,MAX(k.time) AS last,
+ json_group_array(DISTINCT k.scope) AS scopes`
 }
 
-type skillUsageTotals struct{ Uses, Reads int }
+// Use the already scoped evidence on both sides: an OTEL child must not hide
+// its imported wrapper when the caller selected only imported records.
+//
+//go:embed skill_attempts_query.sql
+var skillAttemptsCTE string
+
+type skillUsageTotals struct{ Attempts int }
 
 func scanSkillRows(rows *sql.Rows, totals *skillUsageTotals, includeEvent bool) ([]SkillSummary, error) {
 	defer rows.Close()
@@ -58,9 +55,9 @@ func scanSkillRows(rows *sql.Rows, totals *skillUsageTotals, includeEvent bool) 
 	for rows.Next() {
 		var s SkillSummary
 		var scopes string
-		args := []any{&s.Name, &s.Plugin, &s.Sessions, &s.Uses, &s.Reads, &s.Pending, &s.Failed, &s.Injections, &s.Last, &scopes}
+		args := []any{&s.Name, &s.Plugin, &s.Sessions, &s.Attempts, &s.Last, &scopes}
 		if totals != nil {
-			args = append(args, &totals.Uses, &totals.Reads)
+			args = append(args, &totals.Attempts)
 		}
 		if includeEvent {
 			args = append(args, &s.Event)
@@ -76,15 +73,13 @@ func scanSkillRows(rows *sql.Rows, totals *skillUsageTotals, includeEvent bool) 
 	return out, rows.Err()
 }
 func (a *App) skills(w http.ResponseWriter, r *http.Request) {
-	order := "reads DESC,uses DESC,sessions DESC,last DESC,name,plugin"
+	order := "attempts DESC,sessions DESC,last DESC,name,plugin"
 	sort := r.URL.Query().Get("sort")
 	switch sort {
-	case "", "reads":
-		sort = "reads"
-	case "uses":
-		order = "uses DESC,reads DESC,sessions DESC,last DESC,name,plugin"
+	case "", "attempts", "reads", "uses":
+		sort = "attempts"
 	case "sessions":
-		order = "sessions DESC,uses DESC,last DESC,name,plugin"
+		order = "sessions DESC,attempts DESC,last DESC,name,plugin"
 	case "recent":
 		order = "last DESC,name,plugin"
 	default:
@@ -113,7 +108,7 @@ func (a *App) skills(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	evidence, evidenceArgs := scope.evidenceSQL("e")
-	cte := `WITH skill_events AS NOT MATERIALIZED (SELECT e.* FROM main.skill_events e WHERE 1` + evidence + `) `
+	cte := `WITH scoped_skill_events AS NOT MATERIALIZED (SELECT e.* FROM main.skill_events e WHERE 1` + evidence + `) ` + skillAttemptsCTE
 	from := ` FROM skill_events k JOIN sessions s ON s.session=k.session WHERE NOT EXISTS(SELECT 1 FROM archive_locks l WHERE l.session=k.session)`
 	sessionScope, args := scope.sessionSQL()
 	from += sessionScope
@@ -166,7 +161,7 @@ func (a *App) skills(w http.ResponseWriter, r *http.Request) {
 	params := append(append([]any{}, args...), off)
 	// Window aggregation covers every matching skill before LIMIT, so the
 	// displayed total remains correct on later pages and under project/search filters.
-	rows, err := tx.QueryContext(r.Context(), strings.TrimSuffix(cte, " ")+", totals AS ("+skillRollup()+grouped+") SELECT name,plugin,sessions,uses,reads,pending,failed,injections,last,scopes,SUM(uses) OVER(),SUM(reads) OVER() FROM totals ORDER BY "+order+" LIMIT 200 OFFSET ?", params...)
+	rows, err := tx.QueryContext(r.Context(), strings.TrimSuffix(cte, " ")+", totals AS ("+skillRollup()+grouped+") SELECT name,plugin,sessions,attempts,last,scopes,SUM(attempts) OVER() FROM totals ORDER BY "+order+" LIMIT 200 OFFSET ?", params...)
 	var out []SkillSummary
 	var totals skillUsageTotals
 	if err == nil {
@@ -179,23 +174,23 @@ func (a *App) skills(w http.ResponseWriter, r *http.Request) {
 		databaseError(w, r, err)
 		return
 	}
-	write(w, map[string]any{"skills": out, "total": total, "uses": totals.Uses, "reads": totals.Reads, "sort": sort, "offset": off, "ready": true})
+	write(w, map[string]any{"skills": out, "total": total, "attempts": totals.Attempts, "sort": sort, "offset": off, "ready": true})
 }
 func sessionSkills(ctx context.Context, tx *sql.Tx, session, origin string) ([]SkillSummary, error) {
-	cte := `WITH skill_events AS NOT MATERIALIZED (SELECT * FROM main.skill_events WHERE session=?`
+	cte := `WITH scoped_skill_events AS NOT MATERIALIZED (SELECT * FROM main.skill_events WHERE session=?`
 	args := []any{session}
 	if origin != "" {
 		cte += " AND origin=?"
 		args = append(args, origin)
 	}
-	cte += ") "
+	cte += ") " + skillAttemptsCTE
 	// Rank the preferred evidence for every skill in one pass. Correlated
 	// point lookups below preserve current logical IDs after import/OTEL merge,
 	// without one or two extra round trips for every distinct skill.
 	cte += ", summaries AS (" + skillRollup() + ` FROM skill_events k GROUP BY k.name,k.plugin),
  ranked AS (SELECT name,plugin,event_id,ROW_NUMBER() OVER (
  PARTITION BY name,plugin ORDER BY CASE WHEN evidence='reported' THEN 0 ELSE 1 END,time DESC,event_id) AS position FROM skill_events)
- SELECT s.name,s.plugin,s.sessions,s.uses,s.reads,s.pending,s.failed,s.injections,s.last,s.scopes,`
+ SELECT s.name,s.plugin,s.sessions,s.attempts,s.last,s.scopes,`
 	event := "r.event_id"
 	if origin == "" {
 		event = `COALESCE((SELECT id FROM logical_events WHERE id=r.event_id AND session=?
@@ -238,7 +233,8 @@ func attachSkills(ctx context.Context, tx *sql.Tx, events []TimelineEvent) error
 			return err
 		}
 		i := positions[id]
-		key := fmt.Sprint(i) + "\x00" + f.Name + "\x00" + f.Plugin + "\x00" + f.Evidence
+		f.Evidence = "attempt"
+		key := fmt.Sprint(i) + "\x00" + f.Name + "\x00" + f.Plugin
 		if !seen[key] {
 			events[i].Skills = append(events[i].Skills, f)
 			seen[key] = true

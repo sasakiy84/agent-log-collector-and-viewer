@@ -135,6 +135,27 @@ def snapshot(base):
     return result
 
 
+def attempt_snapshot(value):
+    """Compare preserved data after the intentional single-metric API change."""
+    if isinstance(value, list):
+        return [attempt_snapshot(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    converted = {key: attempt_snapshot(item) for key, item in value.items()}
+    if 'uses' in converted and 'reads' in converted:
+        if 'skills' in converted:
+            converted['attempts'] = sum(skill['attempts'] for skill in converted['skills'])
+        else:
+            converted['attempts'] = sum(converted.get(key, 0) for key in ('uses', 'reads', 'pending', 'failed', 'injections'))
+        for key in ('uses', 'reads', 'pending', 'failed', 'injections'):
+            converted.pop(key, None)
+        if converted.get('sort') in ('reads', 'uses'):
+            converted['sort'] = 'attempts'
+    if 'evidence' in converted and 'name' in converted:
+        converted['evidence'] = 'attempt'
+    return converted
+
+
 with tempfile.TemporaryDirectory() as temporary:
     directory = Path(temporary)
     source = directory / 'old' / 'agentlog.db'
@@ -146,6 +167,6 @@ with tempfile.TemporaryDirectory() as temporary:
     with server(args.binary, directory / 'new' / 'agentlog.db') as base:
         after = snapshot(base)
         for path in before:
-            assert before[path] == after[path], (path, before[path], after[path])
+            assert attempt_snapshot(before[path]) == after[path], (path, before[path], after[path])
         assert call(base, '/api/projects', token=key['key']) == after['/api/projects']
     print(f'PASS: {len(before)} API snapshots match across offline migration; original bytes, Japanese search, origins, usage, skills, children, API keys and restart retained.')

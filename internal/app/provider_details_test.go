@@ -67,7 +67,7 @@ func TestCopilotRecordedTraceReadableActivityAndUsage(t *testing.T) {
 	}
 	var skills skillCatalogPage
 	getJSON(t, a, "/api/skills", &skills)
-	if skills.Total != 1 || skills.Uses != 1 || skills.Reads != 0 || skills.Skills[0].Name != "review" {
+	if skills.Total != 1 || skills.Attempts != 1 || skills.Skills[0].Name != "review" {
 		t.Fatal(skills)
 	}
 	var diagnostics SessionPage
@@ -111,7 +111,7 @@ func TestClaudeDocumentedToolSkillAndResponseFormats(t *testing.T) {
 		t.Fatal(skills)
 	} // Named plugin invocation and independent file-read evidence.
 	for _, s := range skills.Skills {
-		if s.Plugin == "tools" && (s.Uses != 1 || s.Reads != 0) {
+		if s.Plugin == "tools" && (s.Attempts != 1) {
 			t.Fatal(s)
 		}
 	}
@@ -147,12 +147,12 @@ func TestCopilotMultipleSkillInvocationsAndAgentTotalsAreNotDuplicated(t *testin
 	usageWant(t, u, "nano_aiu", "1500000000")
 	var p skillCatalogPage
 	getJSON(t, a, "/api/skills", &p)
-	if p.Uses != 2 || p.Reads != 0 {
+	if p.Attempts != 2 {
 		t.Fatal(p)
 	}
 	save(t, a, root, child)
 	getJSON(t, a, "/api/skills", &p)
-	if p.Uses != 2 {
+	if p.Attempts != 2 {
 		t.Fatal("replay counted", p)
 	}
 }
@@ -247,7 +247,7 @@ func TestCopilotNestedSkillSearchUsesInvocationTime(t *testing.T) {
 	const scope = "from=2026-11-14T00:30:00Z&to=2026-11-14T01:30:00Z"
 	var p skillCatalogPage
 	getJSON(t, a, "/api/skills?"+scope, &p)
-	if p.Uses != 1 {
+	if p.Attempts != 1 {
 		t.Fatal(p)
 	}
 	var sessions []SessionSummary

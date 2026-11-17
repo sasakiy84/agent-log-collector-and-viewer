@@ -86,21 +86,21 @@ func TestSessionSkillCacheRevisionAndOrigin(t *testing.T) {
 		}
 		return out
 	}
-	if got := read("import"); len(got) != 1 || got[0].Uses != 1 {
+	if got := read("import"); len(got) != 1 || got[0].Attempts != 1 {
 		t.Fatal(got)
 	}
 	if got := read("otel"); len(got) != 0 {
 		t.Fatal("origin leaked", got)
 	}
 	save(t, a, skillReport(t, "second", "import", "cache", "review", "two", ""))
-	if got := read("import"); len(got) != 1 || got[0].Uses != 2 {
+	if got := read("import"); len(got) != 1 || got[0].Attempts != 2 {
 		t.Fatal("stale cache", got)
 	}
 	if _, err := a.DB.Exec("DELETE FROM records WHERE id=?", first.ID); err != nil {
 		t.Fatal(err)
 	}
 	save(t, a)
-	if got := read("import"); len(got) != 1 || got[0].Uses != 1 {
+	if got := read("import"); len(got) != 1 || got[0].Attempts != 1 {
 		t.Fatal("delete reused stale cache", got)
 	}
 }
