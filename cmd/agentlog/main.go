@@ -45,7 +45,7 @@ func serverMain() error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	log.Printf("agentlog %s starting; preparing database %s", version, *db)
+	log.Printf("AGrahpite %s starting; preparing database %s", version, *db)
 	a, e := app.Start(ctx, *db, os.Getenv("AGENTLOG_TOKEN"))
 	if e != nil {
 		if ctx.Err() != nil {
@@ -82,7 +82,7 @@ func serverMain() error {
 			srv.Close()
 		}
 	}()
-	log.Printf("agentlog %s listening on %s", version, *addr)
+	log.Printf("AGrahpite %s listening on %s", version, *addr)
 	e = srv.ListenAndServe()
 	stop()
 	workers.Wait()

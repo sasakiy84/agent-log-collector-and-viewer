@@ -1,4 +1,4 @@
-Third-party license notices for Agentlog
+Third-party license notices for AGrahpite
 
 Go toolchain / standard library
 

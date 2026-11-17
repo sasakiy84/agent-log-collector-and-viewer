@@ -22,13 +22,13 @@ with tempfile.TemporaryDirectory() as folder:
             return [{'key':k,'value':{'boolValue':v} if isinstance(v,bool) else {'stringValue':str(v)}} for k,v in values.items()]
         def record(session, index, name, values, old=False):
             return {'eventName':name,'timeUnixNano':str((1735689600000000000 if old else 1794736800000000000)+index*1000000000),'attributes':attrs({'session.id':session,**values})}
-        rows = [record('review',0,'codex.user_prompt',{'service.namespace':'Agentlog','cwd':'/work/agentlog','prompt':'検索結果の表示を確認して、プロジェクト一覧とセッション詳細の位置・余白を揃えてください。','turn.id':'turn-one'})]
+        rows = [record('review',0,'codex.user_prompt',{'service.namespace':'AGrahpite','cwd':'/work/agentlog','prompt':'検索結果の表示を確認して、プロジェクト一覧とセッション詳細の位置・余白を揃えてください。','turn.id':'turn-one'})]
         rows += [record('review',1,'codex.skill_invocation',{'skill.name':'review-layout-and-accessibility','skill.plugin_id':'workspace-tools','turn.id':'turn-one'}),
             record('review',2,'gen_ai.tool.start',{'tool_name':'exec_command','call_id':'layout-test','arguments':json.dumps({'cmd':'go test ./internal/app -run TestSessionLayout -count=1'})}),
             record('review',3,'gen_ai.tool.result',{'tool_name':'exec_command','call_id':'layout-test','output':'FAIL: expected aligned column headers\n'+('/work/a-long-directory-name/'*5)+'layout_test.go:42','success':False,'error':'Exit code 1'}),
             record('review',4,'codex.agent_response',{'response':'検索欄、一覧の列、詳細パネルの見出しを確認しました。長いプロジェクト名や日本語の説明も確認します。','turn.id':'turn-one','model':'gpt-6.1-sol'}),
             record('review',5,'gen_ai.client.operation',{'gen_ai.request.model':'gpt-6.1-sol','gen_ai.usage.input_tokens':14522,'gen_ai.usage.output_tokens':820,'gen_ai.usage.cache_read.input_tokens':4096})]
-        for i,(session,project,prompt) in enumerate([('other','Documentation','セットアップガイドの手順を整理して'),('long','日本語の長いプロジェクト名-long-project-name-for-layout-review','長いプロジェクト名でも操作ボタンが隠れないか確認してください'),('archive','Agentlog','以前の調査ログを確認する')]):
+        for i,(session,project,prompt) in enumerate([('other','Documentation','セットアップガイドの手順を整理して'),('long','日本語の長いプロジェクト名-long-project-name-for-layout-review','長いプロジェクト名でも操作ボタンが隠れないか確認してください'),('archive','AGrahpite','以前の調査ログを確認する')]):
             rows += [record(session,10+i,'codex.user_prompt',{'service.namespace':project,'cwd':'/work/'+session,'prompt':prompt},old=session=='archive')]
         for i,name in enumerate(['日本語ドキュメントのレビュー','a-very-long-skill-name-without-spaces-to-check-narrow-columns','review-core']):
             rows += [record('other',20+i,'codex.skill_invocation',{'skill.name':name,'skill.plugin_id':'long-plugin-name-for-layout-verification','turn.id':str(i),'skill.scope':'project'})]

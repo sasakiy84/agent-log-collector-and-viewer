@@ -190,7 +190,7 @@ function updateDocumentTitle() {
     const scope = projectScopeName() || (folder !== null ? folderName(folder) : "");
     parts = [scope, skillsMode ? "Skills" : "Sessions"];
   }
-  document.title = [...parts, "Agentlog"]
+  document.title = [...parts, "AGrahpite"]
     .map((part) => String(part || "").replace(/\s+/g, " ").trim())
     .filter(Boolean).join(" · ");
 }

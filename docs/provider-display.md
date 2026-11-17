@@ -1,6 +1,6 @@
 # Claude Code and Copilot display
 
-Agentlog decodes provider-specific conversation, tool and skill fields before rendering cards. Activity shows useful conversation/tool records; Diagnostics retains model calls, permission/audit records, metrics and other internal telemetry. Errors remain visible in Activity.
+AGrahpite decodes provider-specific conversation, tool and skill fields before rendering cards. Activity shows useful conversation/tool records; Diagnostics retains model calls, permission/audit records, metrics and other internal telemetry. Errors remain visible in Activity.
 
 ## Claude Code
 
@@ -53,4 +53,4 @@ To recapture telemetry with an installed Copilot CLI:
 COPILOT_BIN=/path/to/copilot python3 scripts/copilot_capture_probe.py --output /tmp/copilot-capture
 ```
 
-The optional probe writes only its synthetic test files/configuration, uses a loopback mock provider and exits within 45 seconds. It emits the original CLI file-exporter format; that diagnostic format is distinct from OTLP HTTP and the CLI's saved session JSONL. No Copilot executable or new runtime dependency is bundled with Agentlog.
+The optional probe writes only its synthetic test files/configuration, uses a loopback mock provider and exits within 45 seconds. It emits the original CLI file-exporter format; that diagnostic format is distinct from OTLP HTTP and the CLI's saved session JSONL. No Copilot executable or new runtime dependency is bundled with AGrahpite.
