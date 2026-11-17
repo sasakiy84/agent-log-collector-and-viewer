@@ -12,6 +12,8 @@ import (
 )
 
 type App struct {
+	Version            string
+	startedAt          time.Time
 	inbox              *ingestQueue
 	maintenancePause   time.Duration
 	initialized        chan struct{}
@@ -63,7 +65,7 @@ func newApp(ctx context.Context, token string) (*App, error) {
 		return nil, fmt.Errorf("AGENTLOG_TOKEN must be empty or contain at least 16 characters")
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	return &App{ctx: ctx, cancel: cancel, token: token, exportSlots: make(chan struct{}, maxConcurrentExports)}, nil
+	return &App{Version: "dev", startedAt: time.Now(), ctx: ctx, cancel: cancel, token: token, exportSlots: make(chan struct{}, maxConcurrentExports)}, nil
 }
 func (a *App) WatchState() *checkpoint.Store {
 	if a.inbox == nil {

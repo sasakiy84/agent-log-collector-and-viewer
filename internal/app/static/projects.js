@@ -108,8 +108,9 @@ const projectNavigation = (() => {
       $("#dataoptions").open = false;
       location.assign("/api/export/download?" + params);
     };
-    $("#sessionsnav").setAttribute("aria-current", skillsMode ? "false" : "page");
+    $("#sessionsnav").setAttribute("aria-current", skillsMode || settingsMode ? "false" : "page");
     $("#skillsnav").setAttribute("aria-current", skillsMode ? "page" : "false");
+    $("#settingsnav").setAttribute("aria-current", settingsMode ? "page" : "false");
     $("#allprojects").onclick = () => chooseProject(null);
     let timer,
       composing = false;

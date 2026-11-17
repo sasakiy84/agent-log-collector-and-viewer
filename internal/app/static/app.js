@@ -112,6 +112,7 @@ let selected = location.pathname.startsWith("/sessions/")
   ? decodeURIComponent(location.pathname.slice(10))
   : "";
 const skillsMode = location.pathname === "/skills";
+const settingsMode=location.pathname==="/settings";
 let exportQueryPending = false;
 let archiveRequested = new URL(location.href).searchParams.get("manage") === "inactive";
 const listURL = new URL(location.href);
@@ -169,13 +170,15 @@ if (selected) {
 }
 $("#search").value = query;
 syncIdentifierSearch();
-if (!selected)
+if (!selected && !settingsMode)
   sessionStorage.setItem("sessionsURL", location.pathname + location.search);
 $("#detailpage > .back").href = sessionStorage.getItem("sessionsURL") || "/";
 function updateDocumentTitle() {
   let parts;
   if (!$("#login").hidden) {
     parts = ["Sign in"];
+  } else if(settingsMode){
+ parts=["Settings"];
   } else if (selected) {
     const preview = meta?.preview;
     const context = typeof preview?.project === "string" && preview.project
@@ -190,8 +193,8 @@ function updateDocumentTitle() {
     .map((part) => String(part || "").replace(/\s+/g, " ").trim())
     .filter(Boolean).join(" · ");
 }
-async function apiResponse(path, signal) {
-  const r = await fetch(path, { signal });
+async function apiResponse(path, signal, options = {}) {
+  const r = await fetch(path, { ...options, signal });
   $("#logout").hidden = r.headers.get("X-Agentlog-Auth") === "disabled";
   if (r.status === 401) {
     closeInspector(false);
@@ -201,6 +204,7 @@ async function apiResponse(path, signal) {
     updateDocumentTitle();
     throw Error("Sign in required.");
   }
+  if(!r.ok && settingsMode) throw Error((await r.text()).trim() || `Unable to load (HTTP ${r.status}).`);
   if (!r.ok)
     throw Error(
       r.status === 404
@@ -721,7 +725,9 @@ async function refresh(scrollMode) {
   $("#origin").disabled = true;
   $("#downloadexport").disabled = true;
   try {
-    if (skillsMode) {
+    if(settingsMode){
+ await refreshSettings(controller.signal);
+    } else if (skillsMode) {
       await Promise.all([
         refreshSkills(controller.signal),
         projectNavigation.load(controller.signal),
@@ -784,9 +790,10 @@ async function refresh(scrollMode) {
     if (controller.signal.aborted) return;
     $("#login").hidden = true;
     $("#workspace").hidden = false;
-    $("#listpage").hidden = !!selected || skillsMode;
+    $("#listpage").hidden = !!selected || skillsMode || settingsMode;
     $("#skillpage").hidden = !skillsMode;
-    $("#detailpage").hidden = !selected || skillsMode;
+    $("#detailpage").hidden = !selected || skillsMode || settingsMode;
+    $("#settingspage").hidden = !settingsMode;
     updateDocumentTitle();
     $("#error").textContent = "";
     if (selected) placeTimeline(scrollMode, anchor, serial);
@@ -836,9 +843,10 @@ async function refresh(scrollMode) {
     $("#error").textContent = e.message;
     if ($("#login").hidden) {
       $("#workspace").hidden = false;
-      $("#listpage").hidden = !!selected || skillsMode;
+      $("#listpage").hidden = !!selected || skillsMode || settingsMode;
       $("#skillpage").hidden = !skillsMode;
-      $("#detailpage").hidden = !selected || skillsMode;
+      $("#detailpage").hidden = !selected || skillsMode || settingsMode;
+    $("#settingspage").hidden = !settingsMode;
       }
   } finally {
     if (serial === requestSerial) {
@@ -1022,8 +1030,9 @@ $("#origin").onchange = () => {
   closeInspector(false);
   refresh("bottom");
 };
-setupSearchControls();
+if (!settingsMode) setupSearchControls();
 setupSubagentPreview();
 setupSkills();
 setupArchive();
+setupSettings();
 refresh();

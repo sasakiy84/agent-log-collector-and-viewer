@@ -120,3 +120,11 @@ CLI setup examples were checked against the current official configuration refer
 Reported invocations and confirmed reads are separate metrics. Tests cover repeated reads within one session, import/OTEL and input/output deduplication, late and reverse result arrival, mixed origins, agent-scoped and reused call IDs, failure/deletion updates, shell/JavaScript literal parsing, and resumable recovery from original payloads rather than clipped cards. Nested Copilot invocation reports remain indexed during the rebuild.
 
 The release-baseline upgrade check recovers successful compound-shell and JavaScript reads while preserving event identities and raw payload fingerprints. Browser checks cover project/time/origin filters, distinct report/read/pending/failure labels, sort and URL state, event/JSON navigation, and desktop/mobile screenshots. Migration lookups use separate full-key indexes, avoiding a scan of every skill read in a long session.
+
+## Agent API access (v0.23.0)
+
+Settings creates, renames, reveals, copies and deletes recoverable read-only API keys. API tests cover owner cookies/tokens, invalid and revoked credentials, key persistence after reopening the DB, explicit-key scope with owner cookies and with local authentication disabled, case-insensitive Bearer schemes, and cross-origin management requests. Read keys cannot manage keys, log in as the owner, ingest OTLP or mutate archives.
+
+`/api/readme` serves the embedded Markdown API reference. `/api/metrics` reports the actual running version, uptime, raw/logical event counts, raw bytes and queue state using existing metadata counters. Tests distinguish original/imported duplicates from logical entries, handle deletions and report unavailable historical counts as null.
+
+All 327 Go tests, focused auth/API race checks, vet/static checks, published-baseline DB upgrade, optional-auth and search browser flows pass. The Settings browser check exercises real curl discovery, the placeholder-only command, clipboard controls, rename/reload/revocation and four viewport widths; desktop/mobile screenshots were inspected. Docker Compose non-root/read-only startup, persistence and lazy original access remain valid.
