@@ -182,6 +182,11 @@ func skillExecutionChunks(d Detail) []string {
 	return out
 }
 
+// Keep the two identity seeks separate and spell out the partial-index predicate.
+// The OR form otherwise scans the complete timeline for every skill input.
+const skillLogicalIDLookup = `SELECT id FROM logical_events WHERE id=?
+ UNION ALL SELECT id FROM logical_events WHERE otel_id=? AND import_id<>'' AND otel_id<>'' LIMIT 1`
+
 func refreshSkillReads(ctx context.Context, tx *sql.Tx) error {
 	for {
 		rows, err := tx.QueryContext(ctx, `SELECT i.event_id,i.facts,i.start_key,i.result_key FROM pending_skill_reads d JOIN skill_read_inputs i ON i.event_id=d.event_id LIMIT 128`)
@@ -261,7 +266,7 @@ func refreshSkillReads(ctx context.Context, tx *sql.Tx) error {
 					logical = starts[0]
 				}
 			}
-			err = tx.QueryRowContext(ctx, `SELECT id FROM logical_events WHERE id=? OR (otel_id=? AND import_id<>'') LIMIT 1`, logical, logical).Scan(&logical)
+			err = tx.QueryRowContext(ctx, skillLogicalIDLookup, logical, logical).Scan(&logical)
 			if err != nil && err != sql.ErrNoRows {
 				return err
 			}
