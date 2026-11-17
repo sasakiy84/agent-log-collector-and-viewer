@@ -59,7 +59,7 @@ func openIngestQueue(ctx context.Context, path string) (*ingestQueue, error) {
 	if _, err = db.ExecContext(ctx, "PRAGMA journal_mode=WAL"); err != nil {
 		return nil, err
 	}
-	if err = migrate(ctx, db, inboxMigrations); err != nil {
+	if err = migrateWithSQL(ctx, db, inboxMigrations, inboxMigrationSQL); err != nil {
 		return nil, err
 	}
 	checkpoints, err := checkpoint.New(ctx, db)

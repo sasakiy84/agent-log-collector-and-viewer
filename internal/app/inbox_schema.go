@@ -1,6 +1,43 @@
 package app
 
-import _ "embed"
+import (
+	"database/sql/driver"
+	_ "embed"
+	"encoding/json"
+	"errors"
+	"strings"
+
+	"modernc.org/sqlite"
+)
+
+func init() {
+	// Queued batches were accepted by encoding/json, whose nesting limit exceeds
+	// SQLite JSON's. Count with that same decoder before replaying those batches.
+	sqlite.MustRegisterDeterministicScalarFunction("agentlog_inbox_records", 1, func(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
+		var data []byte
+		switch value := args[0].(type) {
+		case []byte:
+			data = value
+		case string:
+			data = []byte(value)
+		default:
+			return nil, errors.New("queued batch is not JSON text")
+		}
+		var records []json.RawMessage
+		if err := json.Unmarshal(data, &records); err != nil {
+			return nil, err
+		}
+		return int64(len(records)), nil
+	})
+}
+
+func inboxMigrationSQL(m migration) string {
+	if m.version == 2 && m.name == "0002_inbox_record_counts" {
+		// Keep migration 2's checksum valid on installations that applied it.
+		return strings.Replace(m.sql, "json_array_length(CAST(data AS TEXT))", "agentlog_inbox_records(data)", 1)
+	}
+	return m.sql
+}
 
 //go:embed inbox_record_counts.sql
 var inboxRecordCountsSchema string
