@@ -146,5 +146,3 @@ func sessionDirectory(ctx context.Context, tx *sql.Tx, session string) (string, 
 		// Discard an invalid legacy candidate and try the next known directory.
 	}
 }
-
-// Backfill folder summaries in bounded, resumable session-key batches.

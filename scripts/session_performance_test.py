@@ -110,12 +110,12 @@ def fixture(binary, database, records, skewed=False):
                     'fields': [], 'attributes': {}, 'cwd': '/work/large'}
         values['metadata'] = json.dumps(metadata)
         db.execute("""INSERT INTO record_facts(id,session,origin,source,parent,time,sequence,is_user,signal,trace,span,parent_span,
- detail,prompt_title,activity,kind,is_error,turn,presentation_ready,conversation,has_skill)
+ detail,prompt_title,activity,kind,is_error,turn,conversation,has_skill)
  SELECT id,:session,origin,'codex','',time,sequence,kind='user','logs','','','',
  CAST(CASE WHEN conversation=0 THEN :metadata ELSE json_object('name',kind,'kind',kind,'title',kind,
  'blocks',json_array(json_object('label',CASE WHEN kind='user' THEN 'Request' ELSE 'Response' END,
  'text','Synthetic conversation '||sequence)), 'fields',json('[]'),'attributes',json('{}'),'cwd','/work/large') END AS BLOB),
- '',activity,kind,is_error,'',1,conversation,0 FROM fixture""", values)
+ '',activity,kind,is_error,'',conversation,0 FROM fixture""", values)
         db.execute("""INSERT INTO logical_events(id,session,source,parent,time,end,sequence,is_user,import_id,otel_id,
  activity,kind,is_error,conversation,has_skill)
  SELECT id,:session,'codex','',time,time,sequence,kind='user',CASE WHEN origin='import' THEN id ELSE '' END,

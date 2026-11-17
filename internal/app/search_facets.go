@@ -141,6 +141,26 @@ func (f sessionFilter) matchingCards(ctx context.Context) (sqlSelection, error) 
 			from = ` FROM event_search CROSS JOIN search_documents d ON d.rowid=event_search.rowid JOIN record_facts c ON c.id=d.event_id`
 			query += " AND event_search MATCH ?"
 			args = append(args, match)
+
+			// Push only project/source/directory scope, not list visibility or archive
+			// locks: matchingCards also serves search inside a directly opened session.
+			candidate, candidateArgs := f.Facets.sessionSQL()
+			if len(f.Facets.Sources) == 0 && f.Source != "" {
+				candidate += " AND s.source=?"
+				candidateArgs = append(candidateArgs, f.Source)
+			}
+			if len(f.Facets.Projects) == 0 && f.Project != nil {
+				candidate += " AND s.project_key=?"
+				candidateArgs = append(candidateArgs, *f.Project)
+			}
+			if f.Folder != nil {
+				candidate += " AND " + directoryColumn + "=?"
+				candidateArgs = append(candidateArgs, *f.Folder)
+			}
+			if candidate != "" {
+				query += " AND d.session IN(SELECT s.session FROM sessions s WHERE 1=1" + candidate + ")"
+				args = append(args, candidateArgs...)
+			}
 		}
 	}
 	if f.IDValue != "" {

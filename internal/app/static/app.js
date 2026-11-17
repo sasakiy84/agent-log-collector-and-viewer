@@ -108,6 +108,7 @@ let inspectedID = "",
   inspectorRequest = null,
   jsonEvent = null;
 const inspectorCache = new Map();
+let inspectorRawRequest = null;
 let selected = location.pathname.startsWith("/sessions/")
   ? decodeURIComponent(location.pathname.slice(10))
   : "";
@@ -456,6 +457,7 @@ async function openInspector(id) {
   inspectorRequest = controller;
   inspectedID = id;
   inspectorEvent = inspectorCache.get(id) || null;
+  inspectorRawRequest = null;
   inspectedRecord = null;
   jsonEvent = null;
   $("#eventjson").textContent = "";
@@ -483,7 +485,7 @@ async function openInspector(id) {
   if (inspectorEvent) return;
   try {
     const event = await api(
-      `/api/event?session=${encodeURIComponent(selected)}&id=${encodeURIComponent(id)}&origin=${encodeURIComponent(pageOrigin)}`,
+      `/api/event?session=${encodeURIComponent(selected)}&id=${encodeURIComponent(id)}&origin=${encodeURIComponent(pageOrigin)}&raw=0`,
       controller.signal,
     );
     if (controller.signal.aborted || inspectedID !== id) return;
@@ -503,21 +505,43 @@ async function openInspector(id) {
     }
   }
 }
-function renderInspectorJSON() {
+async function renderInspectorJSON() {
   if (!inspectorEvent) {
     $("#eventjson").textContent = "Loading JSON…";
     return;
   }
-  if (jsonEvent === inspectorEvent) return;
-  jsonEvent = inspectorEvent;
+  const event = inspectorEvent;
+  if (jsonEvent === event) return;
+  if (event.records.some(record => !record.raw)) {
+    $("#eventjson").textContent = "Loading JSON…";
+    $("#copyjson").disabled = true;
+    if (!inspectorRawRequest) {
+      const signal = inspectorRequest.signal;
+      inspectorRawRequest = api(`/api/event?session=${encodeURIComponent(selected)}&id=${encodeURIComponent(inspectedID)}&origin=${encodeURIComponent(pageOrigin)}&view=raw`, signal);
+    }
+    const request = inspectorRawRequest;
+    try {
+      const full = await request;
+      if (inspectorEvent !== event) return;
+      event.records = full.records;
+    } catch (error) {
+      if (inspectorEvent === event && error.name !== "AbortError") {
+        $("#eventjson").textContent = error.message;
+        $("#copyjson").disabled = false;
+      }
+      return;
+    } finally {
+      if (inspectorRawRequest === request) inspectorRawRequest = null;
+    }
+  }
+  if (inspectorEvent !== event) return;
+  jsonEvent = event;
+  $("#copyjson").disabled = false;
   $("#eventjson").textContent = JSON.stringify(
-    inspectorEvent.records.length === 1
-      ? inspectorEvent.records[0].raw
-      : { records: inspectorEvent.records },
-    null,
-    2,
+    event.records.length === 1 ? event.records[0].raw : { records: event.records }, null, 2,
   );
 }
+
 function closeInspector(restore = true) {
   resetSubagentPreview();
   inspectorRequest?.abort();
@@ -525,6 +549,7 @@ function closeInspector(restore = true) {
   inspectedID = "";
   inspectedRecord = null;
   inspectorEvent = null;
+  inspectorRawRequest = null;
   jsonEvent = null;
   $("#inspector").hidden = true;
   $("#detailpage").classList.remove("inspector-open");
@@ -633,7 +658,11 @@ $(".inspectortabs").onkeydown = (e) => {
   }
 };
 $("#copyjson").onclick = async () => {
+  const event = inspectorEvent;
   try {
+    await renderInspectorJSON();
+    if (inspectorEvent !== event) return;
+    if (!jsonEvent) throw new Error("JSON not loaded");
     await navigator.clipboard.writeText($("#eventjson").textContent);
     $("#copystatus").textContent = "Copied";
   } catch {
@@ -760,6 +789,7 @@ async function refresh(scrollMode) {
       renderEvents();
     } else {
       const params = listParameters();
+      params.set("compact", "1");
       params.set("offset", sessionOffset);
       if (folder !== null) params.set("folder", folder);
       const response = await apiResponse("/api/sessions?" + params, controller.signal),

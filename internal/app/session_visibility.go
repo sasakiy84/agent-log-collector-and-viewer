@@ -26,10 +26,10 @@ func storeSessionFacts(ctx context.Context, tx *sql.Tx, e Event, doc document, d
 		}
 	}
 	if !ephemeral && !persistent && !temporary && !automatic && !human {
-		_, err := tx.ExecContext(ctx, "DELETE FROM session_evidence WHERE event_id=?", e.ID)
+		_, err := execRecord(ctx, tx, "DELETE FROM session_evidence WHERE event_id=?", e.ID)
 		return err
 	}
-	_, err := tx.ExecContext(ctx, `INSERT INTO session_evidence(event_id,session,ephemeral,persistent,temporary,automatic,human) VALUES(?,?,?,?,?,?,?) ON CONFLICT(event_id) DO UPDATE SET
+	_, err := execRecord(ctx, tx, `INSERT INTO session_evidence(event_id,session,ephemeral,persistent,temporary,automatic,human) VALUES(?,?,?,?,?,?,?) ON CONFLICT(event_id) DO UPDATE SET
  session=excluded.session,ephemeral=excluded.ephemeral,persistent=excluded.persistent,temporary=excluded.temporary,automatic=excluded.automatic,human=excluded.human`,
 		e.ID, e.Session, ephemeral, persistent, temporary, automatic, human)
 	return err

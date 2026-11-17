@@ -124,9 +124,6 @@ func (a *App) initArchives(path string) error {
 	a.wakeArchive()
 	return nil
 }
-func (a *App) createArchive(ctx context.Context, cutoff string, all bool, ids []string) (ArchiveJob, error) {
-	return a.createFolderArchive(ctx, cutoff, all, ids, nil)
-}
 func (a *App) createFolderArchive(ctx context.Context, cutoff string, all bool, ids, folders []string) (ArchiveJob, error) {
 	if a.dbPath == ":memory:" {
 		return ArchiveJob{}, fmt.Errorf("archiving requires a persistent database")

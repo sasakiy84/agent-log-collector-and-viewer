@@ -41,13 +41,9 @@ func TestServerMetricsUseOriginalAndLogicalCounters(t *testing.T) {
 	if *metrics.Events != 2 || *metrics.Sessions != 1 || *metrics.LogicalEvents != 1 {
 		t.Fatal(metrics)
 	}
-	// Partial historical metadata is unknown, never a misleading zero or a raw scan.
-	if _, err := a.DB.Exec("INSERT OR IGNORE INTO work_items(kind,scope,key) VALUES('storage','legacy','')"); err != nil {
-		t.Fatal(err)
-	}
 	a.maintained = make(chan struct{})
 	fetch()
-	if metrics.CountsReady || metrics.Events != nil || metrics.Sessions != nil || metrics.RawBytes != nil || metrics.LogicalEvents != nil || metrics.State != "preparing" {
+	if !metrics.CountsReady || *metrics.Events != 2 || *metrics.Sessions != 1 || metrics.LogicalEvents != nil || metrics.State != "preparing" {
 		t.Fatal(metrics)
 	}
 	w := keyRequest(a, "GET", "/api/readme", "", key.Key)

@@ -350,10 +350,10 @@ func storeSkillReadInput(ctx context.Context, tx *sql.Tx, e Event, d Detail) err
 	if err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, `INSERT OR REPLACE INTO skill_read_inputs VALUES(?,?,?,?,?,?)`, e.ID, e.Session, e.Source, start, result, facts); err != nil {
+	if _, err = execRecord(ctx, tx, `INSERT OR REPLACE INTO skill_read_inputs VALUES(?,?,?,?,?,?)`, e.ID, e.Session, e.Source, start, result, facts); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, `INSERT OR IGNORE INTO work_items(kind,scope,key) VALUES('skill_reads',?,'')`, e.ID); err != nil {
+	if _, err = execRecord(ctx, tx, `INSERT OR IGNORE INTO work_items(kind,scope,key) VALUES('skill_reads',?,'')`, e.ID); err != nil {
 		return err
 	}
 	for _, r := range reads {

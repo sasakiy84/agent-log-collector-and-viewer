@@ -14,6 +14,7 @@ import argparse
 from contextlib import closing
 from datetime import datetime, timezone
 import hashlib
+from itertools import zip_longest
 import json
 import os
 from pathlib import Path
@@ -25,6 +26,7 @@ import tempfile
 APPLICATION_ID = 0x414C4732
 SCHEMA_VERSION = 1
 LEGACY_VERSION = 23
+PERFORMANCE = Path(__file__).resolve().parents[1] / "internal/app/performance.sql"
 SCHEMA = Path(__file__).resolve().parents[1] / "internal/app/schema.sql"
 
 # Identity names are deliberately listed too: unknown data must never be dropped.
@@ -236,11 +238,43 @@ def copy_main(source: Path, legacy: sqlite3.Connection, destination: Path,
                 raise MigrationError(f"Data verification failed: {old} → {new}")
             report[new] = {"source": old, "rows": after[0], "sha256": after[1]}
             print(f"Verified {old} → {new}: {after[0]:,} rows", flush=True)
+        # Verify the old representation first, then independently verify each
+        # transformed field. The retired presentation_ready flag is deliberately
+        # removed; original raw JSON and all original ID keys remain unchanged.
+        if db.execute("SELECT 1 FROM search_identifiers i WHERE NOT EXISTS(SELECT 1 FROM search_documents d WHERE d.event_id=i.event_id) LIMIT 1").fetchone():
+            raise MigrationError("Identifier has no corresponding search document")
+        db.executescript(PERFORMANCE.read_text())
+        after_ids = db.execute("SELECT event_id,session,key,value FROM search_identifiers ORDER BY event_id,key,value")
+        # Streaming comparison avoids retaining a second materialized copy.
+        before_ids = legacy.execute("SELECT event_id,session,key,value FROM search_identifiers ORDER BY event_id,key,value")
+        if any(before != after for before, after in zip_longest(before_ids, after_ids)):
+            raise MigrationError("Identifier dictionary verification failed")
+        # Only the new hash changes. Existing UPDATE triggers intentionally
+        # invalidate evidence even for metadata updates, so suppress them during
+        # this offline, single-writer operation and restore the exact definitions.
+        hash_triggers = db.execute("SELECT name,sql FROM sqlite_master WHERE type='trigger' AND tbl_name='records'").fetchall()
+        for name, _ in hash_triggers:
+            db.execute(f"DROP TRIGGER {quote(name)}")
+        cursor = db.execute("SELECT id,raw FROM records ORDER BY id")
+        while batch := cursor.fetchmany(1000):
+            db.executemany("UPDATE records SET raw_hash=? WHERE id=?", ((hashlib.sha256(raw).digest(), key) for key, raw in batch))
+        for _, definition in hash_triggers:
+            db.execute(definition)
+        db.execute("INSERT INTO schema_migrations VALUES(2,'0002_storage_performance',?,?)", (
+            hashlib.sha256(PERFORMANCE.read_bytes()).hexdigest(), datetime.now(timezone.utc).isoformat()))
+        db.execute("ANALYZE main")
+        db.commit()
         if db.execute("SELECT 1 FROM work_items LIMIT 1").fetchone():
             raise MigrationError("New database unexpectedly contains pending work")
         if db.execute("PRAGMA application_id").fetchone()[0] != APPLICATION_ID or \
                 db.execute("PRAGMA user_version").fetchone()[0] != SCHEMA_VERSION:
             raise MigrationError("New database schema identity does not match the runtime")
+        # Reclaim the dropped indexes/ID representation without changing hidden
+        # rowids referenced by usage_interval_data. Generic VACUUM is unsuitable.
+        while db.execute("PRAGMA freelist_count").fetchone()[0]:
+            db.execute("PRAGMA incremental_vacuum(10000)").fetchall()
+            db.commit()
+        integrity(db, "Optimized database")
         db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     return report
 
@@ -342,6 +376,10 @@ def run(source: Path, output: Path, inbox: Path | None = None,
                 "source_version": "0.23.0", "application_id": APPLICATION_ID,
                 "schema_version": SCHEMA_VERSION,
                 "schema_sha256": hashlib.sha256(SCHEMA.read_bytes()).hexdigest(),
+                "migrations": [
+                    {"version": 1, "name": "0001_storage_v2", "sha256": hashlib.sha256(SCHEMA.read_bytes()).hexdigest()},
+                    {"version": 2, "name": "0002_storage_performance", "sha256": hashlib.sha256(PERFORMANCE.read_bytes()).hexdigest()},
+                ],
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "tables": copy_main(source, old, stage / "agentlog.db", mapping),
                 "inbox": copy_inbox(queue, stage / "agentlog.db.ingest.db"),

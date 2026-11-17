@@ -367,7 +367,7 @@ func TestArchiveChangedBeforeBuild(t *testing.T) {
 	a.workers.Wait()
 	e := oldEvent(t, "one", "old")
 	save(t, a, e)
-	j, err := a.createArchive(context.Background(), "2025-02-01T00:00:00.000000000Z", true, nil)
+	j, err := a.createFolderArchive(context.Background(), "2025-02-01T00:00:00.000000000Z", true, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -153,7 +153,7 @@ func TestStorageGenerationAndMigrationHistory(t *testing.T) {
 	a.DB.QueryRow("PRAGMA application_id").Scan(&id)
 	a.DB.QueryRow("PRAGMA user_version").Scan(&version)
 	a.DB.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&history)
-	if id != storageApplicationID || version != 1 || history != 1 {
+	if id != storageApplicationID || version != 1 || history != 2 {
 		t.Fatal(id, version, history)
 	}
 	a.DB.Exec("PRAGMA user_version=99")

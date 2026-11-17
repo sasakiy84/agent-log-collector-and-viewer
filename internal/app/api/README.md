@@ -38,6 +38,8 @@ Returns `{"projects":[{"id":"name:shop","name":"shop","count":2,"end":"..."}],"t
 
 `GET /api/sessions?project=name%3Ashop&q=authentication&offset=0`
 
+`compact=1` omits usage `basis` and alternate-origin `variants` from list responses. The default response and session details retain them.
+
 Returns an array of session summaries: `id`, `source`, `parent`, `count`, `start`, `end`, `preview`, `usage`. These summaries describe whole sessions, even when search conditions match an earlier event. Results are ordered by last activity descending. Child sessions are reached through parents, not the ordinary list.
 
 Pagination headers are `X-Total-Count` and `X-Page-Offset`. Pages contain up to **201 entries**: 200 results plus one lookahead entry. Consume the first 200 and advance the returned offset by 200 until reaching the total. Stale offsets clamp to a valid page.
@@ -73,7 +75,7 @@ Returns a session summary plus `total_count`, `count`, `offset`, `limit`, `view`
 
 `GET /api/processing?session=<SESSION_ID>&after=<ID>&before=<ID>` expands a range supplied by `processing`. Omit an absent boundary. Returns `{"events":[...],"next":"..."}`, up to 50 events. Pass `cursor=<next>` for another page; an empty next cursor ends the range. Add `diagnostics=1` for internal records, `errors=1` for only errors, and retain the selected `origin`.
 
-`GET /api/event?session=<SESSION_ID>&id=<EVENT_ID>` returns the full inspected event and original `records[].raw`. Tool input/output counterparts and known subagent links are included when explicit identifiers establish the relationship. Use event IDs returned by this API, not inferred IDs. Retain `origin` when inspecting an origin-specific page.
+`GET /api/event?session=<SESSION_ID>&id=<EVENT_ID>` returns the full inspected event and original `records[].raw`. Tool input/output counterparts and known subagent links are included when explicit identifiers establish the relationship. Use event IDs returned by this API, not inferred IDs. Retain `origin` when inspecting an origin-specific page. Add `raw=0` to omit originals from the Details response. `view=raw` returns only `{ "records": [...] }` with full original bytes, without reparsing presentations or loading relationships.
 
 `GET /api/session/children?session=<SESSION_ID>&after=<CHILD_ID>` pages child session IDs, 20 at a time, returning `children` and `next`.
 

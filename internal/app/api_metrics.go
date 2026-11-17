@@ -42,20 +42,13 @@ func (a *App) metrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
-	var pending bool
-	if err = tx.QueryRowContext(r.Context(), "SELECT EXISTS(SELECT 1 FROM pending_storage)").Scan(&pending); err != nil {
+	var events, sessions, bytes int64
+	if err = tx.QueryRowContext(r.Context(), "SELECT COALESCE(SUM(records),0),COUNT(*),COALESCE(SUM(raw_bytes),0) FROM record_totals").Scan(&events, &sessions, &bytes); err != nil {
 		databaseError(w, r, err)
 		return
 	}
-	if !pending {
-		var events, sessions, bytes int64
-		if err = tx.QueryRowContext(r.Context(), "SELECT COALESCE(SUM(records),0),COUNT(*),COALESCE(SUM(raw_bytes),0) FROM record_totals").Scan(&events, &sessions, &bytes); err != nil {
-			databaseError(w, r, err)
-			return
-		}
-		out.Events, out.Sessions, out.RawBytes = &events, &sessions, &bytes
-		out.CountsReady = true
-	}
+	out.Events, out.Sessions, out.RawBytes = &events, &sessions, &bytes
+	out.CountsReady = true
 	if state.State == "ready" {
 		var logical int64
 		if err = tx.QueryRowContext(r.Context(), "SELECT COALESCE(SUM(count),0) FROM timeline_counts").Scan(&logical); err != nil {

@@ -117,7 +117,7 @@ func storeAgentData(ctx context.Context, tx *sql.Tx, e Event, d Detail) error {
 	}
 	owner = agentID(owner)
 	if owner != "" && e.Source == "copilot" {
-		if _, err := tx.ExecContext(ctx, "INSERT INTO agent_activity VALUES(?,?,?) ON CONFLICT(event_id) DO UPDATE SET session=excluded.session,agent=excluded.agent", e.ID, e.Session, owner); err != nil {
+		if _, err := execRecord(ctx, tx, "INSERT INTO agent_activity VALUES(?,?,?) ON CONFLICT(event_id) DO UPDATE SET session=excluded.session,agent=excluded.agent", e.ID, e.Session, owner); err != nil {
 			return err
 		}
 	}
@@ -136,7 +136,7 @@ func storeAgentData(ctx context.Context, tx *sql.Tx, e Event, d Detail) error {
 	if err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, "INSERT INTO agent_calls VALUES(?,?,?,?,?,?) ON CONFLICT(event_id) DO UPDATE SET session=excluded.session,owner=excluded.owner,call_id=excluded.call_id,launch=excluded.launch,targets=excluded.targets", e.ID, e.Session, owner, call, launch, string(encoded))
+	_, err = execRecord(ctx, tx, "INSERT INTO agent_calls VALUES(?,?,?,?,?,?) ON CONFLICT(event_id) DO UPDATE SET session=excluded.session,owner=excluded.owner,call_id=excluded.call_id,launch=excluded.launch,targets=excluded.targets", e.ID, e.Session, owner, call, launch, string(encoded))
 	return err
 }
 func subagentLink(parent, source string, t agentTarget) SubagentLink {

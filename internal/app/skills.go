@@ -52,10 +52,6 @@ func skillRollup() string {
 
 type skillUsageTotals struct{ Uses, Reads int }
 
-func scanSkills(rows *sql.Rows) ([]SkillSummary, error) {
-	return scanSkillRows(rows, nil, false)
-}
-
 func scanSkillRows(rows *sql.Rows, totals *skillUsageTotals, includeEvent bool) ([]SkillSummary, error) {
 	defer rows.Close()
 	out := []SkillSummary{}

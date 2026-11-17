@@ -223,7 +223,7 @@ func conversationGroups(ctx context.Context, tx *sql.Tx, page SessionPage, origi
 			query, args = positionBound(query, args, "<", *before)
 		}
 		from := " FROM " + timelineTable(origin) + " WHERE " + query
-		countSQL, countArgs := processingCountSQL(page.ID, origin, after, before, true)
+		countSQL, countArgs := processingCountSQL(page.ID, origin, after, before)
 		err := count(countSQL, countArgs, &group.Count, &group.Activity, &group.Errors)
 		if err == nil && matchPredicate != "" && group.Count > 0 {
 			err = count("SELECT COUNT(*)"+from+matchPredicate, append(args, matchArgs...), &group.Matches)

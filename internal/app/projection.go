@@ -14,7 +14,7 @@ func refreshProjections(ctx context.Context, tx *sql.Tx) error {
 		name string
 		run  func(context.Context, *sql.Tx) error
 	}{
-		{"trace ownership", reconcileTraces}, {"record totals", refreshRecordTotals},
+		{"trace ownership", reconcileTraces},
 		{"record facts", refreshCards}, {"search", refreshSearch},
 		{"logical events and usage", refreshTimelines}, {"skill reads", refreshSkillReads},
 		{"presentation", refreshPresentation}, {"model calls", refreshModelCalls},
