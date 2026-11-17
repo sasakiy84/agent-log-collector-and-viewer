@@ -140,6 +140,9 @@ func Open(ctx context.Context, path, token string) (*App, error) {
 	if err = a.startSkillIndexer(); err != nil {
 		return nil, err
 	}
+	if err = a.startProcessingIndexer(); err != nil {
+		return nil, err
+	}
 	ready = true
 	return a, nil
 }

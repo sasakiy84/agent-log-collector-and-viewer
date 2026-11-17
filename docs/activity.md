@@ -70,3 +70,8 @@ only candidate Guardian/tool spans, empty-title Codex user records and old Copil
 agent envelopes. Completed jobs do
 not run again. Ordinary timeline requests use indexed cards; initial conversation
 requests read only conversation bodies and processing counters.
+
+Collapsed processing counts use minute summaries with exact chronological
+boundary scans. After an upgrade, historical summaries build in the background;
+counts use the existing indexed path until that scope is ready. Normal receiving
+and browsing remain available, and completed builds are retained on restart.

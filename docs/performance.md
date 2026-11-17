@@ -1,5 +1,56 @@
 # Session-view performance
 
+## Skewed conversations and list totals (v0.22.1)
+
+A navigation HAR showed 6.93 seconds waiting for the session API and 1.36
+seconds waiting for the list API. A session with 650,962 events returned only
+58 conversation messages, but first counted 418,601 collapsed processing logs.
+Uniform event spacing in the earlier benchmark missed this concentration.
+
+Processing totals now use compact per-minute counters. Only the two partial
+boundary minutes read chronological flags directly; complete minutes use the
+counters. Counts, errors, ordering and import/OTEL semantics remain exact.
+Counters and their backfill checkpoints update in the same write transaction,
+including late arrivals, merged records, reclassification, moves and deletion.
+The one-time historical build reads metadata in background batches after
+startup. Existing indexed counts remain available until that scope is complete.
+Completed jobs (`processing.timeline.v1` and `processing.cards.v1`) do not run
+again on restart. Original JSON is not reparsed or changed by these jobs.
+
+Unfiltered/project/agent list totals reuse the existing visible-root project
+summaries. Searches and time/origin/type filters retain their indexed catalog
+count. Pending external edits fall back to that count. A partial recent-root
+index also avoids sorting or examining hidden/child rows when fetching a page.
+
+Local same-database medians, three reads following the first request, compared
+with v0.22.0. The synthetic fixture has 650,962 events, 858 conversation messages,
+13,085 sessions and a heavily concentrated latest page:
+
+| Request | v0.22.0 | Current |
+| --- | ---: | ---: |
+| Latest conversation, all origins | 170.90 ms | 9.65 ms |
+| Latest conversation, OTEL | 143.75 ms | 12.06 ms |
+| Latest conversation, imported | 78.04 ms | 7.42 ms |
+| First conversation page | 37.75 ms | 16.72 ms |
+| First session-list page | 19.95 ms | 5.66 ms |
+
+Every complete JSON response matched the baseline, including collapsed counts.
+The fixture produces 28,980 compact counter rows across the logical and two
+origin views. Chromium navigation to the latest messages measured 475 → 311 ms;
+processing bodies and original JSON remained unloaded. A separate 4,000-event
+mixed import/OTEL append took 6.87 → 6.91 seconds, including durable ingestion
+and indexing. These are local workload-specific measurements, not production
+latency guarantees.
+
+```sh
+python3 scripts/navigation_performance_test.py --binary ./agentlog --baseline /path/to/v0.22.0/agentlog --browser
+```
+
+The script uses synthetic content and upgrades one disposable database in place,
+avoiding multiple multi-GB copies. The earlier uniform-distribution and frontend
+benchmarks below remain useful for their separate workloads.
+
+
 The folder overview reads cached per-folder/source summaries instead of decoding and adding every session's usage on each GET. In a local synthetic fixture with 20,000 sessions, 20 folders and rich usage reports, warm HTTP medians were **1,472 ms → 1.63 ms** versus v0.10.2. Reusing browser number/date formatters reduced rendering 200 session rows from **57.9 ms → 8.3 ms**. Responses, counts, ordering and exact usage values matched the baseline. These measurements are fixture-specific, not deployment guarantees.
 
 Folder membership, exact decimal totals, coverage and latest activity update in the ingestion transaction. Updates subtract the previous contribution before adding the replacement; archive locks remove contributions before deletion begins. Folder/source/diagnostic filters use the cached groups. Search and skill filters still aggregate their selected sessions. Initial upgrade populates the cache from session summaries in resumable batches of 200; it does not read original logs. The 20,000-session upgrade took 3.75 seconds in this run. Normal startup does not repeat completed work.

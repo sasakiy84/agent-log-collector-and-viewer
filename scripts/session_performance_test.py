@@ -54,7 +54,7 @@ def server(binary, database):
             process.wait(timeout=15)
 
 
-def fixture(binary, database, records):
+def fixture(binary, database, records, skewed=False):
     with server(binary, database) as base:
         while not api(base, '/api/skills')['ready']:
             time.sleep(.01)
@@ -65,14 +65,39 @@ def fixture(binary, database, records):
         for name, _ in triggers:
             db.execute('DROP TRIGGER "' + name + '"')
         values = {'records': records, 'session': SESSION}
-        db.execute("""CREATE TEMP TABLE fixture AS
+        # A long-lived real session can have most logs between its last few
+        # messages. Uniform placement alone hides the cost of collapsed ranges.
+        if skewed:
+            counts = [15,10,52,21,27,30,18,45,30,15,31,15,12,12,12,12,15,28,48,19,
+                      27,21,23,15,24,15,39,28,15,131,199,101,1498,465,371,132,1471,
+                      115,2653,12,2030,263,1804,9,203,24,374,57,133,350,9,
+                      153046,3307,2708,35572,39606,67162,104122]
+            counts = [round(n * records / 650962) for n in counts]
+            prefix = records - sum(counts) - len(counts)
+            positions = [i * (prefix - 1) // 799 for i in range(800)]
+            cursor = prefix
+            for count in counts:
+                cursor += count
+                positions.append(cursor)
+                cursor += 1
+            db.execute('CREATE TEMP TABLE conversation_positions(position INTEGER PRIMARY KEY,number INTEGER)')
+            db.executemany('INSERT INTO conversation_positions VALUES(?,?)', ((position, i) for i, position in enumerate(positions)))
+            conversation = 'p.position IS NOT NULL'
+            kind = "CASE WHEN p.position IS NULL THEN 'event' WHEN p.number%2=0 THEN 'user' ELSE 'assistant' END"
+            seconds = f'CASE WHEN i<{prefix} THEN i*518400.0/{prefix} ELSE 518400.0+(i-{prefix})*61200.0/{records-prefix} END'
+            join = 'LEFT JOIN conversation_positions p ON p.position=n.i'
+        else:
+            conversation = 'i%1000 IN(0,999) OR i=:records-1'
+            kind = "CASE WHEN i%1000=0 THEN 'user' WHEN i%1000=999 OR i=:records-1 THEN 'assistant' ELSE 'event' END"
+            seconds, join = 'i/1000.0', ''
+        base_date = "2026-11-10" if skewed else "2026-11-17"
+        db.execute(f"""CREATE TEMP TABLE fixture AS
  WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM n WHERE i+1<:records)
  SELECT CASE WHEN i%3=0 THEN 'import:' ELSE '' END||printf('%064x',i) AS id,
- strftime('%Y-%m-%dT%H:%M:%f','2026-11-17',printf('+%f seconds',i/1000.0))||'000000Z' AS time,
+ strftime('%Y-%m-%dT%H:%M:%f','{base_date}',printf('+%f seconds',{seconds}))||'000000Z' AS time,
  i AS sequence,CASE WHEN i%3=0 THEN 'import' ELSE 'otel' END AS origin,
- i%1000 IN(0,999) OR i=:records-1 AS conversation,
- CASE WHEN i%1000=0 THEN 'user' WHEN i%1000=999 OR i=:records-1 THEN 'assistant' ELSE 'event' END AS kind,
- i%31<>0 AS activity,i%17003=0 AND i%1000 NOT IN(0,999) AND i<>:records-1 AS is_error FROM n""", values)
+ {conversation} AS conversation, {kind} AS kind,
+ i%31<>0 AS activity,i%17003=0 AND NOT ({conversation}) AS is_error FROM n {join}""", values)
         db.execute("""INSERT INTO events(id,session,parent,source,signal,time,name,trace,span,parent_span,raw,sequence,origin,kind,tool_name)
  SELECT id,:session,'','codex','logs',time,kind,'','','',
  CAST(json_object('resource',json_object('attributes',json_array(
@@ -102,6 +127,9 @@ def fixture(binary, database, records):
  SELECT :session,'codex','',COUNT(*),MIN(time),MAX(time),SUM(origin='import'),MIN(time),MAX(time),
  SUM(origin='otel'),MIN(time),MAX(time),:metadata FROM fixture""", values)
         db.execute('INSERT INTO folder_dirty VALUES(?)', (SESSION,))
+        if db.execute("SELECT 1 FROM sqlite_master WHERE name='processing_buckets'").fetchone():
+            db.execute('DELETE FROM processing_buckets')
+            db.execute("UPDATE maintenance_jobs SET cursor='',complete=0,processed=0 WHERE name IN('processing.cards.v1','processing.timeline.v1')")
         for _, sql in triggers:
             db.execute(sql)
 
