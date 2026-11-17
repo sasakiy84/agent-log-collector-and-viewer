@@ -18,12 +18,15 @@ var performanceSchema string
 //go:embed skill_attempts.sql
 var skillAttemptsSchema string
 
+//go:embed work_conflict.sql
+var workConflictSchema string
+
 const storageApplicationID = 1095518002 // ALG2
 
 // Generation 2 starts with one complete baseline. Future changes append migrations;
 // released baselines remain immutable and independently verifiable by Python.
 func migrations() ([]migration, error) {
-	return []migration{{1, "0001_storage_v2", storageSchema}, {2, "0002_storage_performance", performanceSchema}, {3, "0003_skill_attempts", skillAttemptsSchema}}, nil
+	return []migration{{1, "0001_storage_v2", storageSchema}, {2, "0002_storage_performance", performanceSchema}, {3, "0003_skill_attempts", skillAttemptsSchema}, {4, "0004_work_conflict", workConflictSchema}}, nil
 }
 
 type migration struct {
