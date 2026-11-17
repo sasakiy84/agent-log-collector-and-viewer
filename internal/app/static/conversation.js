@@ -13,7 +13,7 @@ function conversationTimelineHTML(visible) {
   const disclosure = (index) => {
     const group = groups[index];
     processingStates.set(String(index), {
-      group, events: [], next: "", loaded: false, request: null,
+      group, count: 0, next: "", loaded: false, request: null,
       diagnostics: group.activity === 0, matches: false, errors: false,
     });
     return `<details class="processing-group" data-processing="${index}"><summary><span>${group.activity ? "Processing details" : "Diagnostics"}<span class="muted processing-count" title="${group.count.toLocaleString()} total logs"> · ${(group.activity || group.count).toLocaleString()} logs</span></span>${group.errors ? `<button type="button" class="processing-error status failed">${group.errors.toLocaleString()} ${group.errors === 1 ? "error" : "errors"}</button>` : ""}${group.matches ? `<button type="button" class="processing-match">${group.matches.toLocaleString()} ${group.matches === 1 ? "log matches" : "logs match"}</button>` : ""}</summary><div class="processing-body"><div class="processing-options">${group.count > group.activity ? `<label><input type="checkbox" data-processing-diagnostics ${group.activity === 0 ? "checked" : ""}>Include diagnostics (${(group.count - group.activity).toLocaleString()})</label>` : ""}${group.matches ? '<label><input type="checkbox" data-processing-matches>Matching logs only</label>' : ""}${group.errors ? '<label><input type="checkbox" data-processing-errors>Errors only</label>' : ""}</div><p class="processing-status muted" role="status"></p><div class="processing-events"></div><button type="button" class="processing-more" hidden>Load more logs</button><button type="button" class="processing-retry" hidden>Retry</button></div></details>`;
@@ -76,7 +76,7 @@ function bindProcessingGroups() {
       loadProcessing(element, state);
     };
     element.querySelector(".processing-more").onclick = () => loadProcessing(element, state, true);
-    element.querySelector(".processing-retry").onclick = () => loadProcessing(element, state, !!state.events.length);
+    element.querySelector(".processing-retry").onclick = () => loadProcessing(element, state, state.count > 0);
   });
 }
 
@@ -87,7 +87,7 @@ async function loadProcessing(element, state, more = false) {
   state.request = controller;
   if (!more) {
     if (inspectedID && element.querySelector(`[data-event="${CSS.escape(inspectedID)}"]`)) closeInspector(false);
-    state.events = [];
+    state.count = 0;
     state.loaded = false;
     state.next = "";
     element.querySelector(".processing-events").replaceChildren();
@@ -112,15 +112,18 @@ async function loadProcessing(element, state, more = false) {
   try {
     const page = await api("/api/processing?" + params, controller.signal);
     if (controller.signal.aborted || !element.isConnected) return;
-    state.events.push(...page.events);
+    state.count += page.events.length;
     state.next = page.next;
     state.loaded = true;
     const container = element.querySelector(".processing-events");
-    container.insertAdjacentHTML("beforeend", page.events.map((event) => eventCardHTML(event)).join(""));
-    bindEventCards(container);
-    bindModelCalls(container);
-    bindSubagentLinks(container);
-    status.textContent = state.events.length ? "" : "No logs match these filters.";
+    const template = document.createElement("template");
+    template.innerHTML = page.events.map((event) => eventCardHTML(event)).join("");
+    // Only initialize the new page; previously loaded cards keep their handlers.
+    bindEventCards(template.content);
+    bindModelCalls(template.content);
+    bindSubagentLinks(template.content);
+    container.append(template.content);
+    status.textContent = state.count ? "" : "No logs match these filters.";
     moreButton.hidden = !state.next;
   } catch (error) {
     if (error.name === "AbortError" || !element.isConnected) return;
@@ -131,7 +134,7 @@ async function loadProcessing(element, state, more = false) {
       retry.onclick = () => refresh("preserve");
     } else {
       retry.textContent = "Retry";
-      retry.onclick = () => loadProcessing(element, state, !!state.events.length);
+      retry.onclick = () => loadProcessing(element, state, state.count > 0);
     }
     retry.hidden = false;
   } finally {
