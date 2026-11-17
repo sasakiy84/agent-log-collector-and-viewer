@@ -116,7 +116,7 @@ func TestLegacyCheckpointAdoption(t *testing.T) {
 	for _, want := range []struct {
 		name, cursor string
 		complete     bool
-	}{{usageJob, "usage-cursor", false}, {agentsJob, "agent-cursor", true}, {skillsJob, "skill-cursor", false}, {directoriesJob, "", true}} {
+	}{{usageJob, "usage-cursor", false}, {agentsJob, "agent-cursor", true}, {"skills.v1", "skill-cursor", false}, {skillsJob, "", false}, {directoriesJob, "", true}} {
 		var cursor string
 		var complete bool
 		if err := db.QueryRow("SELECT cursor,complete FROM maintenance_jobs WHERE name=?", want.name).Scan(&cursor, &complete); err != nil || cursor != want.cursor || complete != want.complete {

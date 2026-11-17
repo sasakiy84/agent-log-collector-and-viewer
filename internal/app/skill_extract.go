@@ -3,7 +3,6 @@ package app
 import (
 	"encoding/xml"
 	"golang.org/x/text/unicode/norm"
-	"regexp"
 	"strings"
 )
 
@@ -29,54 +28,9 @@ func skillFromPath(path string) SkillEvidence {
 	if strings.Contains(path, "/.system/") {
 		scope = "system"
 	}
-	return SkillEvidence{Name: name, Scope: scope, Evidence: "reference", Path: path}
+	return SkillEvidence{Name: name, Scope: scope, Evidence: "pending", Path: path}
 }
 
-var shellSkillWords = regexp.MustCompile(`"(?:\\.|[^"\\])*"|'[^']*'|[^\s"']+`)
-
-// Conservative evidence only: direct read commands, no shell control flow,
-// substitutions or redirections. This never claims that a skill was invoked.
-func skillReadPaths(command string) []string {
-	if strings.ContainsAny(command, "\r\n;&|<>`#") || strings.Contains(command, "$(") {
-		return nil
-	}
-	matches := shellSkillWords.FindAllStringIndex(command, -1)
-	words := []string{}
-	end := 0
-	for _, m := range matches {
-		if strings.TrimSpace(command[end:m[0]]) != "" {
-			return nil
-		}
-		word := command[m[0]:m[1]]
-		if strings.HasPrefix(word, "\"") || strings.HasPrefix(word, "'") {
-			word = word[1 : len(word)-1]
-		} else if strings.Contains(word, "\\") {
-			return nil
-		}
-		words = append(words, word)
-		end = m[1]
-	}
-	if strings.TrimSpace(command[end:]) != "" || len(words) == 0 {
-		return nil
-	}
-	name := words[0]
-	if i := strings.LastIndex(name, "/"); i >= 0 {
-		name = name[i+1:]
-	}
-	switch strings.ToLower(name) {
-	case "cat", "head", "tail", "sed", "bat", "less", "more", "get-content":
-	default:
-		return nil
-	}
-	if name == "sed" {
-		for _, word := range words[1:] {
-			if strings.HasPrefix(word, "-i") || strings.HasPrefix(word, "--in-place") {
-				return nil
-			}
-		}
-	}
-	return words[1:]
-}
 func extractedSkills(e Event, d Detail) []SkillEvidence {
 	if (e.Source != "codex" && e.Source != "claude" && e.Source != "copilot") || strings.HasPrefix(e.Session, "trace:") || strings.HasPrefix(e.Session, "unassigned:") {
 		return nil
@@ -99,37 +53,6 @@ func extractedSkills(e Event, d Detail) []SkillEvidence {
 		if f.Name != "" && !seen[f.Name] && len(refs) < 16 {
 			seen[f.Name] = true
 			refs = append(refs, f)
-		}
-	}
-	if d.Kind == "tool" {
-		name := strings.ToLower(d.Title)
-		if i := strings.LastIndex(name, "."); i >= 0 {
-			name = name[i+1:]
-		}
-		if name == "skill" {
-			params := obj(decoded(d.Attributes["tool_parameters"]))
-			input := obj(decoded(firstValue(d.Attributes, "gen_ai.tool.call.arguments", "tool_input", "arguments")))
-			skill := firstValue(d.Attributes, "skill_name")
-			if !present(skill) {
-				skill = firstValue(params, "skill_name")
-			}
-			if !present(skill) {
-				skill = firstValue(input, "skill", "name")
-			}
-			add(SkillEvidence{Name: skillString(skill, 256), Plugin: skillString(d.Attributes["plugin.name"], 256), Evidence: "reference"})
-		}
-		for _, b := range d.Blocks {
-			if b.Label == "Command" {
-				for _, path := range skillReadPaths(b.Text) {
-					add(skillFromPath(path))
-				}
-			}
-			if b.Label == "File" {
-				switch name {
-				case "read", "read_file", "read_text", "get_file_contents", "view_file", "view":
-					add(skillFromPath(b.Text))
-				}
-			}
 		}
 	}
 	if d.Kind == "user" {
@@ -161,6 +84,7 @@ func extractedSkills(e Event, d Detail) []SkillEvidence {
 				f.Name = name
 			}
 			if f.Name != "" && path != "" {
+				f.Evidence = "injection"
 				add(f)
 			}
 		}

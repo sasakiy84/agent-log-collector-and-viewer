@@ -69,7 +69,7 @@ func TestCopilotRecordedTraceReadableActivityAndUsage(t *testing.T) {
 	}
 	var skills skillCatalogPage
 	getJSON(t, a, "/api/skills", &skills)
-	if skills.Total != 1 || skills.Uses != 1 || skills.Inferred != 0 || skills.Skills[0].Name != "review" {
+	if skills.Total != 1 || skills.Uses != 1 || skills.Reads != 0 || skills.Skills[0].Name != "review" {
 		t.Fatal(skills)
 	}
 	var diagnostics SessionPage
@@ -113,7 +113,7 @@ func TestClaudeDocumentedToolSkillAndResponseFormats(t *testing.T) {
 		t.Fatal(skills)
 	} // Named plugin invocation and independent file-read evidence.
 	for _, s := range skills.Skills {
-		if s.Plugin == "tools" && (s.Uses != 1 || s.Inferred != 0) {
+		if s.Plugin == "tools" && (s.Uses != 1 || s.Reads != 0) {
 			t.Fatal(s)
 		}
 	}
@@ -149,7 +149,7 @@ func TestCopilotMultipleSkillInvocationsAndAgentTotalsAreNotDuplicated(t *testin
 	usageWant(t, u, "nano_aiu", "1500000000")
 	var p skillCatalogPage
 	getJSON(t, a, "/api/skills", &p)
-	if p.Uses != 2 || p.Inferred != 0 {
+	if p.Uses != 2 || p.Reads != 0 {
 		t.Fatal(p)
 	}
 	save(t, a, root, child)
@@ -157,6 +157,18 @@ func TestCopilotMultipleSkillInvocationsAndAgentTotalsAreNotDuplicated(t *testin
 	if p.Uses != 2 {
 		t.Fatal("replay counted", p)
 	}
+	// Reindex nested reports on invoke_agent spans, not only model/tool rows.
+	if _, err := a.DB.Exec("DELETE FROM skill_events; UPDATE maintenance_jobs SET cursor='',complete=0 WHERE name=?", skillsJob); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.runMaintenance(context.Background(), skillsJob, backfillSkills, 0); err != nil {
+		t.Fatal(err)
+	}
+	getJSON(t, a, "/api/skills", &p)
+	if p.Uses != 2 {
+		t.Fatal("history lost nested skill reports", p)
+	}
+
 }
 func TestProviderRepairIsResumableAndKeepsOriginals(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "upgrade.db")
@@ -208,7 +220,7 @@ func TestProviderRepairIsResumableAndKeepsOriginals(t *testing.T) {
 	}
 	var p skillCatalogPage
 	getJSON(t, a, "/api/skills", &p)
-	if p.Uses != 1 || p.Inferred != 0 {
+	if p.Uses != 1 || p.Reads != 0 {
 		t.Fatal(p)
 	}
 }

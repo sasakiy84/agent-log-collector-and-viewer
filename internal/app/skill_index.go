@@ -3,30 +3,42 @@ package app
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
-	"errors"
 	"log"
+	"strings"
 	"time"
 )
 
+func insertSkillFact(ctx context.Context, tx *sql.Tx, e Event, f SkillEvidence, group string) error {
+	stamp := f.Time
+	if !validEventTime(stamp) {
+		stamp = e.Time
+	}
+	_, err := tx.ExecContext(ctx, `INSERT INTO skill_events VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(event_id,name,plugin,evidence,group_key) DO UPDATE SET session=excluded.session,origin=excluded.origin,scope=excluded.scope,mode=excluded.mode,time=excluded.time,path=excluded.path,search=excluded.search`, e.ID, e.Session, e.Origin, f.Name, f.Plugin, f.Scope, f.Mode, f.Evidence, group, stamp, f.Path, skillSearch(f.Name+" "+f.Plugin+" "+f.Scope+" "+f.Path))
+	return err
+}
 func storeSkillFacts(ctx context.Context, tx *sql.Tx, e Event, d Detail) error {
+	if len(d.SkillFacts) == 0 && d.Kind != "tool" && d.Kind != "user" && d.Kind != "skill" {
+		return nil
+	}
+	for _, table := range []string{"skill_events", "skill_read_inputs"} {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM "+table+" WHERE event_id=?", e.ID); err != nil {
+			return err
+		}
+	}
 	for _, f := range extractedSkills(e, d) {
 		turn := skillString(firstValue(d.Attributes, "turn.id", "turn_id"), 512)
 		if f.Instance != "" {
 			turn = "event:" + e.ID + ":" + f.Instance
 		}
-		if turn == "" {
+		if turn == "" || f.Evidence != "reported" {
 			turn = "event:" + e.ID
 		}
-		group := identityKey(e.Session, "skill:"+f.Name, f.Plugin, turn)
-		stamp := f.Time
-		if !validEventTime(stamp) {
-			stamp = e.Time
-		}
-		_, err := tx.ExecContext(ctx, `INSERT INTO skill_events VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(event_id,name,plugin,evidence,group_key) DO UPDATE SET session=excluded.session,origin=excluded.origin,scope=excluded.scope,mode=excluded.mode,group_key=excluded.group_key,time=excluded.time,path=excluded.path,search=excluded.search`, e.ID, e.Session, e.Origin, f.Name, f.Plugin, f.Scope, f.Mode, f.Evidence, group, stamp, f.Path, skillSearch(f.Name+" "+f.Plugin+" "+f.Scope+" "+f.Path))
-		if err != nil {
+		if err := insertSkillFact(ctx, tx, e, f, identityKey(e.Session, "skill:"+f.Name, f.Plugin, turn)); err != nil {
 			return err
 		}
+	}
+	if (e.Source == "codex" || e.Source == "claude" || e.Source == "copilot") && !strings.HasPrefix(e.Session, "trace:") && !strings.HasPrefix(e.Session, "unassigned:") {
+		return storeSkillReadInput(ctx, tx, e, d)
 	}
 	return nil
 }
@@ -47,71 +59,27 @@ func (a *App) startSkillIndexer() error {
 	}()
 	return nil
 }
+
+// Read originals in bounded batches so old clipped command cards cannot hide reads.
 func backfillSkills(ctx context.Context, tx *sql.Tx, cursor string) (string, int, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT id,session,origin,source,time,signal,CASE WHEN source='codex' THEN detail ELSE NULL END FROM event_cards WHERE id>? ORDER BY id LIMIT 128`, cursor)
+	batch, err := loadEventBatch(ctx, tx, "SELECT "+qualifiedColumns("e")+` FROM events e WHERE e.id>? AND e.source IN ('codex','claude','copilot') AND (e.kind IN ('tool','user','skill') OR e.source='copilot') ORDER BY e.id LIMIT 128`, cursor)
 	if err != nil {
 		return cursor, 0, err
 	}
-	type item struct {
-		event  Event
-		detail []byte
+	for _, e := range batch {
+		doc, err := decodeDocument(e.Raw)
+		if err != nil {
+			return cursor, 0, err
+		}
+		if err = storeSkillFacts(ctx, tx, e, describe(e, doc)); err != nil {
+			return cursor, 0, err
+		}
+		if _, err = tx.ExecContext(ctx, "UPDATE event_cards SET has_skill=EXISTS(SELECT 1 FROM skill_events WHERE event_id=?) WHERE id=? AND has_skill<>EXISTS(SELECT 1 FROM skill_events WHERE event_id=?)", e.ID, e.ID, e.ID); err != nil {
+			return cursor, 0, err
+		}
+		cursor = e.ID
 	}
-	batch := []item{}
-	for rows.Next() {
-		var v item
-		if err = rows.Scan(&v.event.ID, &v.event.Session, &v.event.Origin, &v.event.Source, &v.event.Time, &v.event.Signal, &v.detail); err != nil {
-			break
-		}
-		batch = append(batch, v)
-	}
-	rowErr := rows.Err()
-	rows.Close()
-	if err != nil || rowErr != nil {
-		return cursor, 0, errors.Join(err, rowErr)
-	}
-	for _, v := range batch {
-		if ctx.Err() != nil {
-			return cursor, 0, ctx.Err()
-		}
-		cursor = v.event.ID
-		if v.event.Source != "codex" {
-			continue
-		}
-		var d Detail
-		if err = json.Unmarshal(v.detail, &d); err != nil {
-			break
-		}
-		if d.Name == "codex.skill_invocation" {
-			var raw []byte
-			err = tx.QueryRowContext(ctx, "SELECT raw FROM events WHERE id=?", v.event.ID).Scan(&raw)
-			if err != nil {
-				break
-			}
-			doc, eErr := decodeDocument(raw)
-			if eErr != nil {
-				err = eErr
-				break
-			}
-			d = describe(v.event, doc)
-			encoded, eErr := json.Marshal(cardDetail(d))
-			if eErr != nil {
-				err = eErr
-				break
-			}
-			_, err = tx.ExecContext(ctx, "UPDATE event_cards SET detail=? WHERE id=?", encoded, v.event.ID)
-			if err != nil {
-				break
-			}
-		}
-		if err = storeSkillFacts(ctx, tx, v.event, d); err != nil {
-			break
-		}
-		if _, err = tx.ExecContext(ctx, "UPDATE event_cards SET has_skill=EXISTS(SELECT 1 FROM skill_events WHERE event_id=?) WHERE id=? AND has_skill<>EXISTS(SELECT 1 FROM skill_events WHERE event_id=?)", v.event.ID, v.event.ID, v.event.ID); err != nil {
-			break
-		}
-	}
-
-	if err != nil {
+	if err = refreshSkillReads(ctx, tx); err != nil {
 		return cursor, 0, err
 	}
 	if err = refreshPresentation(ctx, tx); err != nil {

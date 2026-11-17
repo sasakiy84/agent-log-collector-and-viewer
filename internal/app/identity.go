@@ -112,3 +112,22 @@ func agentIdentity(source string, at map[string]any) (string, bool) {
 	}
 	return id, true
 }
+
+func toolCallIdentity(source string, d Detail) (string, string, bool) {
+	owner, ok := agentIdentity(source, d.Attributes)
+	if !ok {
+		return "", "", false
+	}
+	call := ""
+	for _, key := range []string{"gen_ai.tool.call.id", "tool_call_id", "call_id", "tool_use_id"} {
+		if !present(d.Attributes[key]) {
+			continue
+		}
+		id, ok := d.Attributes[key].(string)
+		if !ok || (call != "" && call != id) {
+			return "", "", false
+		}
+		call = id
+	}
+	return owner, call, true
+}

@@ -26,7 +26,7 @@ func TestSkillsReportedUsesReferencesAndExactFiltering(t *testing.T) {
 		t.Fatalf("skills: %+v", catalog)
 	}
 	for _, row := range catalog.Skills {
-		if row.Plugin == "" && (row.Uses != 2 || row.References != 1 || row.Sessions != 1) {
+		if row.Plugin == "" && (row.Uses != 2 || row.Pending != 1 || row.Sessions != 1) {
 			t.Fatal(row)
 		}
 	}
@@ -36,7 +36,7 @@ func TestSkillsReportedUsesReferencesAndExactFiltering(t *testing.T) {
 		t.Fatal("text mention matched actual skill filter", sessions)
 	}
 	p := page(t, a, "codex:root", "import", 0)
-	if len(p.Skills) != 1 || p.Skills[0].Uses != 1 || p.Skills[0].References != 1 {
+	if len(p.Skills) != 1 || p.Skills[0].Uses != 1 || p.Skills[0].Pending != 1 {
 		t.Fatal("origin-specific skill totals", p.Skills)
 	}
 	getJSON(t, a, "/api/skills?q="+url.QueryEscape("/work/.codex"), &catalog)
@@ -58,12 +58,12 @@ func TestSkillReferenceExtractionIsConservative(t *testing.T) {
 		want    bool
 	}{
 		{`cat '/work/my skill/SKILL.md'`, true}, {`sed -n '1,200p' /work/foo/SKILL.md`, true}, {`/bin/cat "$HOME/.codex/skills/foo/SKILL.md"`, true},
-		{`cat > /work/foo/SKILL.md`, false}, {`sed -i 's/a/b/' /work/foo/SKILL.md`, false}, {`echo "cat /work/foo/SKILL.md"`, false}, {`cat $(echo /work/foo/SKILL.md)`, false}, {`echo hi; cat /work/foo/SKILL.md`, false},
+		{`cat > /work/foo/SKILL.md`, false}, {`sed -i 's/a/b/' /work/foo/SKILL.md`, false}, {`echo "cat /work/foo/SKILL.md"`, false}, {`cat $(echo /work/foo/SKILL.md)`, false}, {`echo hi; cat /work/foo/SKILL.md`, true},
 	} {
-		paths := skillReadPaths(test.command)
+		paths := shellSkillReads(test.command, "", 0)
 		found := false
-		for _, path := range paths {
-			found = found || skillFromPath(path).Name != ""
+		for _, read := range paths {
+			found = found || read.Name != ""
 		}
 		if found != test.want {
 			t.Fatalf("%q got %v", test.command, paths)
@@ -72,11 +72,11 @@ func TestSkillReferenceExtractionIsConservative(t *testing.T) {
 	e := recorded(t, "xml", "import", "codex", "root", "gen_ai.user.message", nil)
 	d := Detail{Kind: "user", Blocks: []Block{{Text: "<skill>\n<name>review-core</name><path>/work/skills/review-core/SKILL.md</path>\n" + strings.Repeat("instructions", 300)}}}
 	facts := extractedSkills(e, d)
-	if len(facts) != 1 || facts[0].Name != "review-core" || facts[0].Evidence != "reference" {
+	if len(facts) != 1 || facts[0].Name != "review-core" || facts[0].Evidence != "injection" {
 		t.Fatal("bounded skill injection header", facts)
 	}
 }
-func TestSkillHistoryUsesCachedReferencesAndResumes(t *testing.T) {
+func TestSkillHistoryUsesOriginalsAndResumes(t *testing.T) {
 	a := setup(t)
 	deadline := time.Now().Add(3 * time.Second)
 	for {
@@ -94,7 +94,7 @@ func TestSkillHistoryUsesCachedReferencesAndResumes(t *testing.T) {
 	}
 	read := recorded(t, "read", "import", "codex", "root", "gen_ai.tool.start", map[string]any{"tool_name": "Read", "arguments": `{"file_path":"/work/skills/review-core/SKILL.md"}`})
 	save(t, a, read, skillReport(t, "native", "otel", "root", "reported", "turn", ""))
-	if _, err := a.DB.Exec("UPDATE events SET raw='not JSON' WHERE id=?; DELETE FROM skill_events; UPDATE maintenance_jobs SET cursor='',complete=0 WHERE name='skills.v1'", read.ID); err != nil {
+	if _, err := a.DB.Exec("DELETE FROM skill_events; DELETE FROM skill_read_inputs; UPDATE maintenance_jobs SET cursor='',complete=0 WHERE name='skills.reads.v2'"); err != nil {
 		t.Fatal(err)
 	}
 	if err := a.runMaintenance(context.Background(), skillsJob, backfillSkills, 0); err != nil {

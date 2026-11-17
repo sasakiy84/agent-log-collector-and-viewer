@@ -150,15 +150,15 @@ func TestSkillTimeWindowKeepsDedupeWithinSelectedEvidence(t *testing.T) {
 	anchor.Time = begin
 	save(t, a, read, older, anchor)
 	window := "?from=" + url.QueryEscape(begin) + "&to=" + url.QueryEscape(end)
-	check := func(q string, uses, inferred int) {
+	check := func(q string, uses, reads int) {
 		t.Helper()
 		var p skillCatalogPage
 		getJSON(t, a, "/api/skills"+q, &p)
-		if p.Uses != uses || p.Inferred != inferred {
+		if p.Uses != uses || p.Reads != reads {
 			t.Fatalf("%s: %+v", q, p)
 		}
 	}
-	check(window, 1, 1) // Native reports outside the window do not suppress reads.
+	check(window, 0, 0) // Native reports outside the window do not suppress reads.
 	imported := skillReport(t, "inside", "import", "a", "review", "inside", "")
 	imported.Time = begin
 	boundary := skillReport(t, "boundary", "otel", "a", "review", "outside", "")
@@ -187,7 +187,7 @@ func TestSkillTimeWindowKeepsDedupeWithinSelectedEvidence(t *testing.T) {
 	check(window, 2, 0)
 	var body map[string]json.RawMessage
 	getJSON(t, a, "/api/skills"+window, &body)
-	if len(body["inferred"]) == 0 {
+	if len(body["reads"]) == 0 {
 		t.Fatal(body)
 	}
 }

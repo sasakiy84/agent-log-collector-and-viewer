@@ -10,7 +10,7 @@ import (
 // reassignment dirties cards/search first; timelines and totals depend on them.
 func refreshProjections(ctx context.Context, tx *sql.Tx) error {
 	for _, refresh := range []func(context.Context, *sql.Tx) error{
-		reconcileTraces, refreshCards, refreshSearch, refreshTimelines, refreshPresentation, refreshModelCalls, refreshSessionVisibility, refreshFolders,
+		reconcileTraces, refreshCards, refreshSearch, refreshTimelines, refreshSkillReads, refreshPresentation, refreshModelCalls, refreshSessionVisibility, refreshFolders,
 	} {
 		if err := refresh(ctx, tx); err != nil {
 			return err
