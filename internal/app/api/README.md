@@ -83,11 +83,11 @@ Returns a session summary plus `total_count`, `count`, `offset`, `limit`, `view`
 
 ## Skills
 
-`GET /api/skills?project=name%3Ashop&sort=reads&offset=0`
+`GET /api/skills?project=name%3Ashop&sort=attempts&offset=0`
 
-Supports project/source/origin/time conditions above, skill-name/plugin/scope/path `q` search, `text_mode` and `exclude`. `sort` is `reads` (default), `uses`, `sessions` or `recent`. Returns `skills`, `total`, `offset`, `sort`, `uses`, `reads` and history-index `ready`; pages contain at most 200 skills.
+Supports project/source/origin/time conditions above, skill-name/plugin/scope/path `q` search, `text_mode` and `exclude`. `sort` is `attempts` (default), `sessions` or `recent`. Legacy `reads` and `uses` sort values select `attempts`. Returns `skills`, `total`, `offset`, `sort`, total `attempts` and history-index `ready`; pages contain at most 200 skills.
 
-Each skill includes `name`, optional `plugin`, `sessions`, `uses`, `reads`, `pending`, `failed`, `injections`, `last`, and `scopes`. `uses` counts explicit invocation reports; it never infers invocation from a read. `reads` counts confirmed successful read calls, including repeated calls in one session. Pending/failed attempts and structured injections are separate. Counts use only evidence in the selected range/origin.
+Each skill includes `name`, optional `plugin`, `sessions`, `attempts`, `last`, and `scopes`. `attempts` counts detected invocation reports, read requests and structured skill injections regardless of success, failure, cancellation or missing results. Input/output and import/OTEL copies are deduplicated using explicit identities; nested wrappers and concrete tools sharing an executor chunk ID count once per skill and executing agent. A unique Copilot report and skill tool connected by parent/child spans also count once. Repeated requests with distinct identities count separately. Reports, injections and reads without a shared identity remain independent observations. One tool call contributes at most one attempt per skill. Counts and deduplication use only evidence in the selected range/origin. The former `uses`, `reads`, `pending`, `failed` and `injections` counters are no longer returned.
 
 ## Export
 

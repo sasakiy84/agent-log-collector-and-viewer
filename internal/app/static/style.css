@@ -1250,7 +1250,7 @@ input[type=checkbox] {
 }
 .skill-tablehead,.skill-row {
   display:grid;
-  grid-template-columns:minmax(0,1fr) 80px 100px 130px 150px;
+  grid-template-columns:minmax(0,1fr) 100px 80px 150px;
   gap:16px;
   align-items:center;
 }
@@ -1294,7 +1294,7 @@ input[type=checkbox] {
   text-align:right;
   font-variant-numeric:tabular-nums;
 }
-.skill-tablehead>span:nth-child(n+2):nth-child(-n+4) {text-align:right;}
+.skill-tablehead>span:nth-child(n+2):nth-child(-n+3) {text-align:right;}
 #sessionskills {
   display:flex;
   flex-wrap:wrap;
@@ -1350,14 +1350,10 @@ input[type=checkbox] {
   .skill-row {align-items:start;}
   .skill-row>span {text-align:left;}
   .skill-row>span:nth-child(2):before {
-    content:'Reported: ';
+    content:'Attempts: ';
     color:var(--muted);
   }
   .skill-row>span:nth-child(3):before {
-    content:'Reads: ';
-    color:var(--muted);
-  }
-  .skill-row>span:nth-child(4):before {
     content:'Sessions: ';
     color:var(--muted);
   }
@@ -1519,12 +1515,12 @@ html {
 #projectstatus:not(:empty) { padding: 8px; }
 #moreprojects { margin-top: 8px; width: 100%; }
 .session-results, .skill-results { min-width: 0; }
-.skill-uses { font-weight: 600; }
+.skill-attempts { font-weight: 600; }
 .skill-sort { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
 .skill-sort select { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--control-border); border-radius: 5px; padding: 7px 10px; }
 .skill-results .toolbar { flex-wrap: wrap; gap: 10px; }
 .skill-results #skillindexstatus:empty { display: none; }
-.skill-results .skill-tablehead, .skill-results .skill-row { grid-template-columns: minmax(0, 1fr) 95px 130px 80px 145px; gap: 12px; }
+.skill-results .skill-tablehead, .skill-results .skill-row { grid-template-columns: minmax(0, 1fr) 110px 80px 145px; gap: 12px; }
 .session-results .toolbar { flex-wrap: wrap; gap: 8px; }
 .session-results .tablehead, .session-results .session { grid-template-columns: minmax(0, 1fr) 90px 130px 120px 45px; gap: 12px; }
 .logbar { flex-wrap: wrap; gap: 6px 14px; }
@@ -1552,7 +1548,7 @@ html {
 }
 
 @media (min-width: 721px) and (max-width: 1100px) {
- .skill-results .skill-tablehead, .skill-results .skill-row {grid-template-columns: minmax(0,1fr) 85px 100px 65px;gap:8px;}
+ .skill-results .skill-tablehead, .skill-results .skill-row {grid-template-columns: minmax(0,1fr) 100px 65px;gap:8px;}
  .skill-results .skill-tablehead span:last-child,.skill-results .skill-row time {display:none;}
 }
 @media (max-width: 720px) {

@@ -76,7 +76,7 @@ func TestMergedProjectCountsSkillsExportsAndSubsequentChanges(t *testing.T) {
 	var skills skillCatalogPage
 	for _, key := range []string{"name:shop", "path:/workspaces/shop"} {
 		getJSON(t, a, "/api/skills?"+url.Values{"project": {key}, "q": {"review"}}.Encode(), &skills)
-		if skills.Uses != 2 || len(skills.Skills) != 1 || skills.Skills[0].Sessions != 2 {
+		if skills.Attempts != 2 || len(skills.Skills) != 1 || skills.Skills[0].Sessions != 2 {
 			t.Fatal("skills did not merge", key, skills)
 		}
 	}

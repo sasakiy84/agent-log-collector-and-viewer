@@ -150,44 +150,44 @@ func TestSkillTimeWindowKeepsDedupeWithinSelectedEvidence(t *testing.T) {
 	anchor.Time = begin
 	save(t, a, read, older, anchor)
 	window := "?from=" + url.QueryEscape(begin) + "&to=" + url.QueryEscape(end)
-	check := func(q string, uses, reads int) {
+	check := func(q string, attempts int) {
 		t.Helper()
 		var p skillCatalogPage
 		getJSON(t, a, "/api/skills"+q, &p)
-		if p.Uses != uses || p.Reads != reads {
+		if p.Attempts != attempts {
 			t.Fatalf("%s: %+v", q, p)
 		}
 	}
-	check(window, 0, 0) // Native reports outside the window do not suppress reads.
+	check(window, 1) // Native reports outside the window do not suppress reads.
 	imported := skillReport(t, "inside", "import", "a", "review", "inside", "")
 	imported.Time = begin
 	boundary := skillReport(t, "boundary", "otel", "a", "review", "outside", "")
 	boundary.Time = end
 	save(t, a, imported, boundary)
-	check(window, 1, 0) // Neither out-of-range native report suppresses this import.
-	check(window+"&origin=import", 1, 0)
-	check(window+"&origin=otel", 0, 0)
+	check(window, 2) // Neither out-of-range native report suppresses this import.
+	check(window+"&origin=import", 2)
+	check(window+"&origin=otel", 0)
 	native := skillReport(t, "native", "otel", "a", "review", "inside", "")
 	native.Time = begin
 	save(t, a, native)
-	check(window, 1, 0)
+	check(window, 2)
 	other := skillReport(t, "other", "otel", "b", "build", "inside", "")
 	other.Time = begin
 	prompt := recorded(t, "prompt", "otel", "codex", "b", "codex.user_prompt", map[string]any{"prompt": "build", "service.namespace": "B"})
 	prompt.Time = begin
 	save(t, a, other, prompt)
-	check(window+"&project=name:A&project=name:B", 2, 0)
-	check(window+"&q=review+build&text_mode=any", 2, 0)
-	check(window+"&q=review+build&text_mode=all", 0, 0)
-	check(window+"&exclude=build", 1, 0)
+	check(window+"&project=name:A&project=name:B", 3)
+	check(window+"&q=review+build&text_mode=any", 3)
+	check(window+"&q=review+build&text_mode=all", 0)
+	check(window+"&exclude=build", 2)
 	// The complete skill catalog is read-only; no raw reparse is needed.
 	if _, err := a.DB.Exec("UPDATE records SET raw='not JSON' WHERE id='import:read'"); err != nil {
 		t.Fatal(err)
 	}
-	check(window, 2, 0)
+	check(window, 2)
 	var body map[string]json.RawMessage
 	getJSON(t, a, "/api/skills"+window, &body)
-	if len(body["reads"]) == 0 {
+	if len(body["attempts"]) == 0 {
 		t.Fatal(body)
 	}
 }

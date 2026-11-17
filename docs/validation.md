@@ -132,3 +132,12 @@ Settings creates, renames, reveals, copies and deletes recoverable read-only API
 `/api/readme` serves the embedded Markdown API reference. `/api/metrics` reports the actual running version, uptime, raw/logical event counts, raw bytes and queue state using existing metadata counters. Tests distinguish original/imported duplicates from logical entries, handle deletions and report unavailable historical counts as null.
 
 All 327 Go tests, focused auth/API race checks, vet/static checks, published-baseline DB upgrade, optional-auth and search browser flows pass. The Settings browser check exercises real curl discovery, the placeholder-only command, clipboard controls, rename/reload/revocation and four viewport widths; desktop/mobile screenshots were inspected. Docker Compose non-root/read-only startup, persistence and lazy original access remain valid.
+
+
+## Skill attempts (v0.24.0)
+
+The catalog, session summaries and API expose Attempts as the single skill metric. Requests count regardless of success, failure, cancellation or missing results. Regression tests cover repeated requests, late/reverse results, import/OTEL copies, executing-agent scope, structured injections, project/time/origin filters, pagination and removal of obsolete API counters.
+
+Wrapper/concrete-tool deduplication uses executor chunk identities, while unique Copilot invocation/tool pairs use explicit parent/child spans. Tests retain origin-specific wrapper observations and restore them after concrete-record deletion. API-fetched production examples were replayed into an isolated local database: the inner and outer records for one read produce one attempt per skill.
+
+The generation-2 migration rebuilds only stored skill-read execution identities and preserves original bytes. All Go tests, the full race suite and focused race checks for the final identity parsing, vet/static checks, ten Python offline migration tests and sixty API snapshots across migration from the published v0.23.0 binary pass. Chromium checks cover skill search/sort/navigation, project/time/origin scope, provider details, failure recovery and layouts at 1920, 1440, 1024, 768, 390 and 320 pixels. Desktop and mobile skill screenshots were inspected.

@@ -36,7 +36,7 @@ with tempfile.TemporaryDirectory() as folder:
         req=urllib.request.Request(base+'/v1/logs',json.dumps({'resourceLogs':[{'resource':{'attributes':attrs({'service.name':'codex'})},'scopeLogs':[{'logRecords':rows}]}]}).encode(),headers={'Content-Type':'application/json'})
         urllib.request.urlopen(req).close(); wait_for_ingestion(base,'')
         with sync_playwright() as p:
-            browser=p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox'])
+            browser=p.chromium.launch(executable_path=os.getenv('AGENTLOG_CHROMIUM', '/usr/bin/chromium'),headless=True,args=['--no-sandbox'])
             page=browser.new_page(locale='ja-JP',timezone_id='Asia/Tokyo'); errors=[]
             page.on('pageerror',lambda error:errors.append(str(error)))
             def capture(name,width):
@@ -63,7 +63,7 @@ with tempfile.TemporaryDirectory() as folder:
                         for box in page.locator('.archive-folder-row>span:last-child').all():
                             text_right=box.evaluate('(e)=>{const r=document.createRange();r.selectNodeContents(e);return r.getBoundingClientRect().right}');assert abs(text_right-edge)<2,(width,'archive size alignment')
                     if name=='skills' and width>720:
-                        for col in range(2,5):
+                        for col in range(2,4):
                             heading=page.locator(f'.skill-tablehead>span:nth-child({col})').bounding_box()
                             for cell in page.locator(f'.skill-row>span:nth-child({col})').all():
                                 text_right=cell.evaluate('(e)=>{const r=document.createRange();r.selectNodeContents(e);return r.getBoundingClientRect().right}');assert abs(text_right-heading['x']-heading['width'])<1,(width,'skill numeric alignment')

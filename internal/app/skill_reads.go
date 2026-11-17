@@ -90,7 +90,7 @@ func eventSkillReads(d Detail) []skillRead {
 		}
 	}
 	reads := toolSkillReads(d.Title, params, str(d.Cwd), true)
-	// A single outer tool call can establish at most one read per skill.
+	// A single outer tool call contributes at most one attempt per skill.
 	unique := map[string]int{}
 	out := []skillRead{}
 	for _, r := range reads {
@@ -108,111 +108,78 @@ func eventSkillReads(d Detail) []skillRead {
 	return out
 }
 
-// Read status is inferred only from protocol metadata, or a known executor
-// envelope before its output section. Arbitrary returned file text is not status.
-var skillExit = regexp.MustCompile(`(?m)^Process exited with code (-?[0-9]+)\r?$`)
+// Chunk IDs are executor metadata, never inferred from skill text. Nested
+// results may be arrays or printed JSON values from functions.exec.
+var skillChunkHeader = regexp.MustCompile(`(?m)^Chunk ID: ([A-Za-z0-9_-]+)\r?$`)
 
-func skillResultStatus(d Detail, executor bool) string {
-	if d.Error || str(d.Attributes["is_error"]) == "true" {
-		return "failed"
-	}
-	if v := d.Attributes["exit_code"]; v != nil {
-		if str(v) == "0" {
-			return "read"
-		}
-		return "failed"
-	}
-	for _, b := range d.Blocks {
-		if b.Label != "Output" || !executor {
-			continue
-		}
-		if status := skillStructuredStatus(decoded(b.Text)); status != "" {
-			return status
-		}
-		header, _, _ := strings.Cut(b.Text, "\nFinal output:")
-		// Codex exec envelopes precede Final output; don't inspect printed content.
-		if strings.HasPrefix(header, "Chunk ID:") || strings.HasPrefix(header, "Wall time:") {
-			if m := skillExit.FindStringSubmatch(header); len(m) == 2 {
-				if m[1] == "0" {
-					return "read"
-				}
-				return "failed"
-			}
-		}
-	}
-	if v := d.Attributes["success"]; v != nil {
-		if str(v) == "true" {
-			return "read"
-		}
-		return "failed"
-	}
-	return "pending"
-}
-func skillStructuredStatus(v any) string {
-	m, ok := v.(map[string]any)
-	if !ok {
-		return ""
-	}
-	if _, ok := m["contents"].(string); ok && skillFromPath(str(m["resource"])).Name != "" {
-		return "read"
-	}
-	if v, ok := m["exit_code"]; ok && v != nil {
-		if str(v) == "0" {
-			return "read"
-		}
-		return "failed"
-	}
-	if v, ok := m["isError"].(bool); ok {
-		if v {
-			return "failed"
-		}
-		return "read"
-	}
-	return ""
-}
-func skillReadStatus(input Detail, result Detail, r skillRead) string {
-	leaf := strings.ToLower(input.Title)
+func skillExecutionChunks(d Detail) []string {
+	leaf := strings.ToLower(d.Title)
 	leaf = leaf[strings.LastIndex(leaf, ".")+1:]
-	executor := false
 	switch leaf {
-	case "exec_command", "shell", "bash", "run_shell_command", "run_in_terminal", "terminal":
-		executor = true
+	case "exec", "exec_command", "shell", "bash", "run_shell_command", "run_in_terminal", "terminal":
+	default:
+		return nil
 	}
-	status := skillResultStatus(result, executor)
-	if !r.Certain {
-		return "pending"
-	}
-	if r.Nested {
-		// The outer script's exit status doesn't establish an inner tool's outcome.
-		// A single explicitly returned executor result can; multiple results require
-		// per-call identity, and otherwise stay unconfirmed.
-		for _, b := range result.Blocks {
-			if b.Label != "Output" {
-				continue
+	chunks := map[string]bool{}
+	var visit func(any)
+	visit = func(v any) {
+		switch v := v.(type) {
+		case map[string]any:
+			if chunk, ok := v["chunk_id"].(string); ok && len(chunk) > 0 && len(chunk) <= 128 {
+				chunks[chunk] = true
 			}
-			if strings.HasPrefix(b.Text, "Script completed\n") {
-				_, body, ok := strings.Cut(b.Text, "\nOutput:\n")
-				if ok {
-					return firstString(skillStructuredStatus(decoded(strings.TrimSpace(body))), "pending")
+			if text, ok := v["text"].(string); ok {
+				visit(text)
+			}
+			for _, key := range []string{"result", "value"} {
+				if nested, ok := v[key]; ok {
+					visit(nested)
+				}
+			}
+		case []any:
+			for _, item := range v {
+				visit(item)
+			}
+		case string:
+			if strings.HasPrefix(v, "Chunk ID:") {
+				if m := skillChunkHeader.FindStringSubmatch(v); len(m) == 2 {
+					chunks[m[1]] = true
+				}
+				return
+			}
+			if strings.HasPrefix(v, "Script completed\n") {
+				_, body, ok := strings.Cut(v, "\nOutput:\n")
+				if !ok {
+					return
+				}
+				decoder := json.NewDecoder(strings.NewReader(body))
+				for {
+					var item any
+					if decoder.Decode(&item) != nil {
+						break
+					}
+					visit(item)
+				}
+				return
+			}
+			if strings.HasPrefix(strings.TrimSpace(v), "[") {
+				var items []any
+				if json.Unmarshal([]byte(v), &items) == nil {
+					visit(items)
 				}
 			}
 		}
-		return "pending"
 	}
-	if status != "pending" {
-		return status
-	}
-	switch leaf {
-	case "read", "read_file", "read_text", "get_file_contents", "view_file", "view", "skills__read", "skill":
-		if result.ToolPhase == "tool.result" {
-			for _, b := range result.Blocks {
-				if b.Label == "Output" && strings.TrimSpace(b.Text) != "" && !strings.Contains(b.Text, "Content not exported") {
-					return "read"
-				}
-			}
+	for _, block := range d.Blocks {
+		if block.Label == "Output" {
+			visit(block.Text)
 		}
 	}
-	return "pending"
+	out := make([]string, 0, len(chunks))
+	for chunk := range chunks {
+		out = append(out, chunk)
+	}
+	return out
 }
 
 func refreshSkillReads(ctx context.Context, tx *sql.Tx) error {
@@ -256,7 +223,7 @@ func refreshSkillReads(ctx context.Context, tx *sql.Tx) error {
 			}
 			input := describe(e, doc)
 			result := input
-			matched := false
+
 			if input.ToolPhase == "tool.start" && i.start != "" {
 				event := TimelineEvent{Session: e.Session, Source: e.Source}
 				starts, err := toolCandidates(ctx, tx, event, "", i.start)
@@ -276,19 +243,11 @@ func refreshSkillReads(ctx context.Context, tx *sql.Tx) error {
 					if err != nil {
 						return err
 					}
-					result = describe(other, doc)
-					_, _, valid := toolCallIdentity(other.Source, result)
-					otherTool := skillString(firstValue(result.Attributes, "gen_ai.tool.name", "tool_name", "tool_name_safe"), 512)
-					matched = valid && (otherTool == "" || input.Title == otherTool)
-				}
-			} else if input.ToolPhase == "tool.result" {
-				matched = true
-				if i.result != "" {
-					outputs, err := toolCandidates(ctx, tx, TimelineEvent{Session: e.Session, Source: e.Source}, "", i.result)
-					if err != nil {
-						return err
+					otherDetail := describe(other, doc)
+					otherTool := skillString(firstValue(otherDetail.Attributes, "gen_ai.tool.name", "tool_name", "tool_name_safe"), 512)
+					if _, _, valid := toolCallIdentity(other.Source, otherDetail); valid && (otherTool == "" || input.Title == otherTool) {
+						result = otherDetail
 					}
-					matched = len(outputs) == 1
 				}
 			}
 			// Completed spans can carry both arguments and the result in one record.
@@ -306,18 +265,29 @@ func refreshSkillReads(ctx context.Context, tx *sql.Tx) error {
 			if err != nil && err != sql.ErrNoRows {
 				return err
 			}
-			if _, err = tx.ExecContext(ctx, `DELETE FROM skill_events WHERE event_id=? AND evidence IN ('read','pending','failed')`, e.ID); err != nil {
+			if _, err = tx.ExecContext(ctx, `DELETE FROM skill_events WHERE event_id=? AND evidence IN ('read','pending','failed','attempt')`, e.ID); err != nil {
 				return err
 			}
 			var facts []skillRead
 			if err = json.Unmarshal(i.facts, &facts); err != nil {
 				return err
 			}
-			for _, r := range facts {
-				r.Evidence = "pending"
-				if matched {
-					r.Evidence = skillReadStatus(input, result, r)
+			if _, err = tx.ExecContext(ctx, "DELETE FROM skill_attempt_links WHERE event_id=?", e.ID); err != nil {
+				return err
+			}
+			owner, _, valid := toolCallIdentity(e.Source, input)
+			if valid {
+				wrapper := input.Title == "exec" || input.Title == "functions.exec"
+				execution := result
+				execution.Title = input.Title
+				for _, chunk := range skillExecutionChunks(execution) {
+					if _, err = tx.ExecContext(ctx, "INSERT INTO skill_attempt_links VALUES(?,?,?,?,?,?)", e.ID, e.Session, e.Source, owner, chunk, wrapper); err != nil {
+						return err
+					}
 				}
+			}
+			for _, r := range facts {
+				r.Evidence = "attempt"
 				group := identityKey(e.Session, "skill-read:"+r.Name, r.Plugin, logical)
 				if err = insertSkillFact(ctx, tx, e, r.SkillEvidence, group); err != nil {
 					return err
