@@ -31,6 +31,7 @@ type Options struct {
 	// Sink stores converted OTLP batches locally instead of sending HTTP.
 	Sink       func(context.Context, []any) error
 	Checkpoint *checkpoint.Store
+	delta      *recordDelta
 }
 type Stats struct{ Files, Records, Skipped, Failed int }
 
@@ -211,13 +212,28 @@ func Run(ctx context.Context, o Options, progress io.Writer) (Stats, error) {
 		}
 		stats.Files++
 		batch := []any{}
+		hashes := []checkpoint.Record{}
 		size := 0
 		flush := func() error {
-			if e := send(batch); e != nil {
+			records, changes := batch, hashes
+			if o.delta != nil {
+				var err error
+				records, changes, err = o.delta.changed(ctx, batch, hashes)
+				if err != nil {
+					return err
+				}
+			}
+			if e := send(records); e != nil {
 				return e
 			}
-			stats.Records += len(batch)
+			if o.delta != nil {
+				if err := o.delta.acknowledge(ctx, changes); err != nil {
+					return err
+				}
+			}
+			stats.Records += len(records)
 			batch = nil
+			hashes = nil
 			size = 0
 			return nil
 		}
@@ -233,6 +249,18 @@ func Run(ctx context.Context, o Options, progress io.Writer) (Stats, error) {
 				}
 			}
 			batch = append(batch, entry)
+			if o.delta != nil {
+				id := ""
+				for _, v := range a(record["attributes"]) {
+					item := m(v)
+					if item["key"] == "agentlog.import.id" {
+						id = s(m(item["value"])["stringValue"])
+						break
+					}
+				}
+				key := sha256.Sum256([]byte(id))
+				hashes = append(hashes, checkpoint.Record{ID: hex.EncodeToString(key[:]), Hash: sha256.Sum256(b)})
+			}
 			size += len(b)
 			return nil
 		}
@@ -398,23 +426,26 @@ func (p *state) parse(ctx context.Context, file string) error {
 		return e
 	}
 	limit := info.Size()
-	scan := bufio.NewReaderSize(io.NewSectionReader(f, 0, limit), 64<<10)
-	for {
-		if e = ctx.Err(); e != nil {
-			return e
-		}
-		b, e := readLine(scan)
-		if e != nil && e != io.EOF {
-			return e
-		}
-		var row map[string]any
-		if decodeObject(b, &row) == nil && s(row["type"]) == "response_item" && s(m(row["payload"])["type"]) == "message" {
-			d := m(row["payload"])
-			role := s(d["role"])
-			p.canonicalMessages[role+"\x00"+content(d["content"])]++
-		}
-		if e == io.EOF {
-			break
+	// Only Codex has event_msg/response_item aliases requiring a prepass.
+	if p.source == "codex" || p.source == "auto" {
+		scan := bufio.NewReaderSize(io.NewSectionReader(f, 0, limit), 64<<10)
+		for {
+			if e = ctx.Err(); e != nil {
+				return e
+			}
+			b, e := readLine(scan)
+			if e != nil && e != io.EOF {
+				return e
+			}
+			var row map[string]any
+			if decodeObject(b, &row) == nil && s(row["type"]) == "response_item" && s(m(row["payload"])["type"]) == "message" {
+				d := m(row["payload"])
+				role := s(d["role"])
+				p.canonicalMessages[role+"\x00"+content(d["content"])]++
+			}
+			if e == io.EOF {
+				break
+			}
 		}
 	}
 	reader := bufio.NewReaderSize(io.NewSectionReader(f, 0, limit), 64<<10)

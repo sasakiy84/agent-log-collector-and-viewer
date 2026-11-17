@@ -112,6 +112,7 @@ type watchedFile struct {
 	pending     bool
 	retry       time.Time
 	lastError   string
+	delta       *recordDelta
 }
 type watchState struct {
 	options   Options
@@ -172,6 +173,9 @@ func Watch(ctx context.Context, options []Options, interval time.Duration, progr
 				old := w.files[file]
 				if old == nil || info.Size() != old.info.Size() || !info.ModTime().Equal(old.info.ModTime()) || !os.SameFile(info, old.info) || fileIdentity(info) != fileIdentity(old.info) {
 					w.files[file] = &watchedFile{info: info, pending: true}
+					if old != nil {
+						w.files[file].delta = old.delta
+					}
 					if journalSegment(file) {
 						dirtyHeads[filepath.Join(filepath.Dir(file), "events.jsonl")] = true
 					}
@@ -214,6 +218,10 @@ func Watch(ctx context.Context, options []Options, interval time.Duration, progr
 				var fingerprint []byte
 				var e error
 				key := watchKey(o, file)
+				if f.delta == nil {
+					f.delta = &recordDelta{store: o.Checkpoint, key: key}
+				}
+				o.delta = f.delta
 				if o.Checkpoint != nil {
 					fingerprint, e = watchFingerprint(ctx, file)
 					if e == nil {

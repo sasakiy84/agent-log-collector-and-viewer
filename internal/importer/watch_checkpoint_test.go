@@ -3,9 +3,11 @@ package importer_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -132,5 +134,74 @@ func TestPersistentWatchIncludesCopilotPredecessors(t *testing.T) {
 	watchOnce(t, o)
 	if sends.Load() != 2 {
 		t.Fatal("changed predecessor was skipped after restart", sends.Load())
+	}
+}
+
+type watchCompletionWriter func([]byte) (int, error)
+
+func (f watchCompletionWriter) Write(p []byte) (int, error) { return f(p) }
+
+func TestWatchOnlyDeliversChangedRecordsAcrossRestart(t *testing.T) {
+	dir := t.TempDir()
+	var initial strings.Builder
+	for i := 0; i < 1000; i++ {
+		initial.WriteString(claudeLine(fmt.Sprint(i), "initial"))
+	}
+	path := file(t, dir, "session.jsonl", initial.String())
+	statePath := filepath.Join(t.TempDir(), "state.db")
+	var delivered atomic.Int32
+	var fail atomic.Bool
+	watch := func() {
+		store, err := checkpoint.Open(context.Background(), statePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer store.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		completed := false
+		progress := watchCompletionWriter(func(p []byte) (int, error) {
+			if strings.HasPrefix(string(p), "watch ") {
+				completed = true
+				cancel()
+			}
+			return len(p), nil
+		})
+		err = importer.Watch(ctx, []importer.Options{{Files: []string{path}, Source: "claude", Checkpoint: store, Sink: func(_ context.Context, batch []any) error {
+			if fail.Load() {
+				return errors.New("offline")
+			}
+			delivered.Add(int32(len(batch)))
+			return nil
+		}}}, 10*time.Millisecond, progress)
+		if err != nil || !completed {
+			t.Fatal("watch did not finish a scan", err)
+		}
+	}
+	watch()
+	if delivered.Load() != 1000 {
+		t.Fatal(delivered.Load())
+	}
+	appendFile(t, path, claudeLine("1000", "appended"))
+	watch()
+	if delivered.Load() != 1001 {
+		t.Fatal("unchanged records were redelivered", delivered.Load())
+	}
+	// A failed send cannot suppress its retry after restarting the watcher.
+	appendFile(t, path, claudeLine("1001", "retry"))
+	fail.Store(true)
+	watch()
+	fail.Store(false)
+	watch()
+	if delivered.Load() != 1002 {
+		t.Fatal("failed delivery was checkpointed", delivered.Load())
+	}
+	// Rewrites/truncation still deliver changed content with an existing ID.
+	if err := os.WriteFile(path, []byte(claudeLine("0", "edited")), 0600); err != nil {
+		t.Fatal(err)
+	}
+	watch()
+	if delivered.Load() != 1003 {
+		t.Fatal("edited record was suppressed", delivered.Load())
 	}
 }
