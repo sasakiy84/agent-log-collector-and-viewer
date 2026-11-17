@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -17,6 +18,83 @@ import (
 type delayedDownloadWriter struct {
 	http.ResponseWriter
 	delayed bool
+}
+
+type pausedDownloadWriter struct {
+	*httptest.ResponseRecorder
+	entered chan<- struct{}
+	release <-chan struct{}
+	once    sync.Once
+}
+
+func (w *pausedDownloadWriter) Write(p []byte) (int, error) {
+	w.once.Do(func() { w.entered <- struct{}{}; <-w.release })
+	return w.ResponseRecorder.Write(p)
+}
+
+func TestSlowExportsLeaveNavigationAvailableAndLimitConcurrency(t *testing.T) {
+	a := setup(t)
+	save(t, a, recorded(t, "download", "otel", "codex", "download", "codex.user_prompt", map[string]any{"prompt": "hello"}))
+	entered, release := make(chan struct{}, 2), make(chan struct{})
+	var workers sync.WaitGroup
+	for _, path := range []string{"/api/export?session=codex:download", "/api/export/download"} {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			r := httptest.NewRequest("GET", path, nil)
+			r.Header.Set("Authorization", "Bearer "+token)
+			a.Handler().ServeHTTP(&pausedDownloadWriter{ResponseRecorder: httptest.NewRecorder(), entered: entered, release: release}, r)
+		}()
+	}
+	defer workers.Wait()
+	defer close(release)
+	for i := 0; i < 2; i++ {
+		select {
+		case <-entered:
+		case <-time.After(5 * time.Second):
+			t.Fatal("download did not start")
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	r := httptest.NewRequest("GET", "/api/sessions", nil).WithContext(ctx)
+	r.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	a.Handler().ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatal("exports blocked navigation", w.Code, w.Body.String())
+	}
+	w = httptest.NewRecorder()
+	r = httptest.NewRequest("GET", "/api/export?session=codex:download", nil)
+	r.Header.Set("Authorization", "Bearer "+token)
+	a.Handler().ServeHTTP(w, r)
+	if w.Code != 503 || w.Header().Get("Retry-After") == "" {
+		t.Fatal("export concurrency is not bounded", w.Code)
+	}
+}
+
+type deadlineDownloadWriter struct {
+	*httptest.ResponseRecorder
+	deadlines []time.Time
+}
+
+func (w *deadlineDownloadWriter) SetWriteDeadline(deadline time.Time) error {
+	w.deadlines = append(w.deadlines, deadline)
+	return nil
+}
+func TestDownloadWriteDeadlineTracksProgress(t *testing.T) {
+	w := &deadlineDownloadWriter{ResponseRecorder: httptest.NewRecorder()}
+	stream := prepareDownload(w, "application/json", "test.json")
+	stream.Write([]byte("first"))
+	stream.Write([]byte("second"))
+	if len(w.deadlines) != 3 {
+		t.Fatal("deadline must refresh for each write", w.deadlines)
+	}
+	for _, d := range w.deadlines {
+		if d.IsZero() || time.Until(d) <= 0 || time.Until(d) > downloadIdleTimeout {
+			t.Fatal("invalid idle deadline", d)
+		}
+	}
 }
 
 func (w *delayedDownloadWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }

@@ -9,6 +9,7 @@ import (
 func (a *App) initReaders(path string) error {
 	if path == ":memory:" {
 		a.readers = a.DB
+		a.exportReaders = a.DB
 		return nil
 	}
 	address, err := databaseURI(path, true)
@@ -26,5 +27,12 @@ func (a *App) initReaders(path string) error {
 		return err
 	}
 	a.readers = db
+	exports, err := sql.Open("sqlite", address)
+	if err != nil {
+		return err
+	}
+	exports.SetMaxOpenConns(maxConcurrentExports)
+	exports.SetMaxIdleConns(maxConcurrentExports)
+	a.exportReaders = exports
 	return nil
 }

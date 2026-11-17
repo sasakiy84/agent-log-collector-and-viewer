@@ -8,6 +8,10 @@ import (
 )
 
 func (a *App) export(w http.ResponseWriter, r *http.Request) {
+	if !a.acquireExport(w) {
+		return
+	}
+	defer func() { <-a.exportSlots }()
 	origin, ok := eventOrigin(r)
 	if !ok {
 		http.Error(w, "Invalid event origin", http.StatusBadRequest)
@@ -24,13 +28,13 @@ func (a *App) export(w http.ResponseWriter, r *http.Request) {
 	// fetched by primary key. Raw payloads never enter SQLite's sort buffer.
 	query = "SELECT " + qualifiedColumns("e") + " FROM (" + query +
 		" ORDER BY time,sequence,id LIMIT -1) ordered CROSS JOIN events e ON e.id=ordered.id"
-	rows, err := a.readers.QueryContext(r.Context(), query, args...)
+	rows, err := a.exportReaders.QueryContext(r.Context(), query, args...)
 	if err != nil {
 		databaseError(w, r, err)
 		return
 	}
 	defer rows.Close()
-	prepareDownload(w, "application/json", "session.json")
+	w = prepareDownload(w, "application/json", "session.json")
 	if err = writeSessionJSON(w, rows); err != nil {
 		abortDownload(err)
 	}
