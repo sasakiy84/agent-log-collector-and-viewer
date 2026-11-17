@@ -110,6 +110,9 @@ func (q *ingestQueue) accept(ctx context.Context, events []Event, wait bool) err
 			if err != nil {
 				return err
 			}
+			if _, err = tx.ExecContext(ctx, "INSERT INTO ingest_record_counts(batch,records) VALUES(?,?)", id, len(events)); err != nil {
+				return err
+			}
 			sessions := map[string]bool{}
 			for _, event := range events {
 				sessions[event.Session] = true
@@ -187,8 +190,8 @@ func (q *ingestQueue) process(save func(context.Context, []Event) error) {
 
 func (q *ingestQueue) close() error { return q.db.Close() }
 
-func (q *ingestQueue) size(ctx context.Context) (batches, bytes int64, err error) {
-	err = q.db.QueryRowContext(ctx, "SELECT batches,bytes FROM ingest_size WHERE id=1").Scan(&batches, &bytes)
+func (q *ingestQueue) size(ctx context.Context) (batches, records, bytes int64, err error) {
+	err = q.db.QueryRowContext(ctx, "SELECT batches,records,bytes FROM ingest_size WHERE id=1").Scan(&batches, &records, &bytes)
 	return
 }
 

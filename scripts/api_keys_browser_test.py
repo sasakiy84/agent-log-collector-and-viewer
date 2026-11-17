@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Owner Settings, recoverable read keys, agent curl discovery and layout."""
 import json
+from contextlib import closing
 import os
 from pathlib import Path
 import socket
+import sqlite3
 import subprocess
 import tempfile
 import time
@@ -42,6 +44,9 @@ with tempfile.TemporaryDirectory(prefix='agentlog-api-keys-') as directory:
             expect(page.locator('#settingsnav')).to_have_attribute('aria-current','page')
             expect(page.locator('#apikeycount')).to_have_text('0 keys')
             expect(page.locator('#serverversion')).to_contain_text('Version ')
+            expect(page.locator('#pendingrecords')).to_have_text('0')
+            expect(page.locator('#pendingbatches')).to_have_text('0')
+            expect(page.locator('#pendingbytes')).to_have_text('0 B')
             assert not any('/api/projects' in url or '/api/sessions?' in url for url in requests)
             name = 'Agent <b>demo</b>'
             page.locator('#apikeyname').fill(name)
@@ -67,6 +72,38 @@ with tempfile.TemporaryDirectory(prefix='agentlog-api-keys-') as directory:
             metrics = page.request.get(base+'/api/metrics',headers={'Authorization':'Bearer '+key})
             assert metrics.status==200 and metrics.json()['events']==0
             assert page.request.get(base+'/api/settings/api-keys',headers={'Authorization':'Bearer '+key}).status==403
+            # Keep the view writer busy while real records enter the durable inbox.
+            with closing(sqlite3.connect(directory+'/test.db')) as writer:
+                writer.execute('BEGIN IMMEDIATE')
+                records = [{'eventName':'codex.user_prompt','timeUnixNano':'1794736800000000000',
+                            'attributes':[{'key':'session.id','value':{'stringValue':'pending-settings'}},
+                                          {'key':'prompt','value':{'stringValue':'Queued record '+str(i)}}]} for i in range(3)]
+                payload = {'resourceLogs':[{'resource':{'attributes':[{'key':'service.name','value':{'stringValue':'codex'}}]},
+                                          'scopeLogs':[{'logRecords':records}]}]}
+                req = urllib.request.Request(base+'/v1/logs',json.dumps(payload).encode(),
+                    headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'})
+                with urllib.request.urlopen(req,timeout=5) as response:
+                    assert response.status==200
+                page.locator('.api-key-name input').fill('Unsaved draft')
+                page.locator('#refreshingestion').click()
+                expect(page.locator('#pendingrecords')).to_have_text('3')
+                expect(page.locator('#pendingbatches')).to_have_text('1')
+                expect(page.locator('#pendingbytes')).not_to_have_text('0 B')
+                expect(page.locator('.api-key-name input')).to_have_value('Unsaved draft')
+                writer.rollback()
+            # Automatic refresh observes the completed batch without a page reload.
+            expect(page.locator('#pendingrecords')).to_have_text('0',timeout=12000)
+            expect(page.locator('#pendingbatches')).to_have_text('0')
+            expect(page.locator('#pendingbytes')).to_have_text('0 B')
+            page.route('**/api/metrics',lambda route:route.fulfill(status=500,body='Synthetic metrics failure'))
+            page.locator('#refreshingestion').click()
+            expect(page.locator('#ingestionerror')).to_contain_text('Synthetic metrics failure')
+            expect(page.locator('#pendingrecords')).to_have_text('—')
+            expect(page.locator('.api-key-name input')).to_have_value('Unsaved draft')
+            page.unroute('**/api/metrics')
+            page.locator('#refreshingestion').click()
+            expect(page.locator('#pendingrecords')).to_have_text('0')
+            expect(page.locator('#ingestionerror')).to_be_empty()
             page.locator('.api-key-name input').fill('分析エージェント')
             page.locator('.api-key-name button').click()
             expect(page.locator('#settingsstatus')).to_have_text('Name saved')
@@ -75,7 +112,7 @@ with tempfile.TemporaryDirectory(prefix='agentlog-api-keys-') as directory:
             assert page.request.get(base+'/api/settings/api-keys').json()['keys'][0]['key']==key
             output = Path(os.getenv('AGENTLOG_SCREENSHOT_DIR','/tmp/agentlog-settings-shots'))
             output.mkdir(parents=True,exist_ok=True)
-            for width in (1440,768,390,360):
+            for width in (1440,768,390,360,320):
                 page.set_viewport_size({'width':width,'height':900})
                 page.evaluate('document.activeElement?.blur()')
                 assert page.evaluate('document.documentElement.scrollWidth<=innerWidth'),width
@@ -95,4 +132,4 @@ with tempfile.TemporaryDirectory(prefix='agentlog-api-keys-') as directory:
     finally:
         process.terminate()
         process.wait(timeout=20)
-print('PASS: Settings create/rename/reveal/copy/delete, placeholder curl discovery, read-only keys, reload persistence, owner login/logout and four widths')
+print('PASS: Settings create/rename/reveal/copy/delete, placeholder curl discovery, read-only keys, reload persistence, owner login/logout, pending records/batches/bytes, automatic refresh, metrics error/recovery, unsaved edits and five widths')
