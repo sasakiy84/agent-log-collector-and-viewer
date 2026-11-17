@@ -44,16 +44,19 @@ summary flags. Counts can read those indexes without loading card/detail rows;
 it does not add a separate full-history index. Visible logical positions are
 resolved in one bounded query, and count statements are reused within each
 request. No derived counter cache or new backfill job is needed.
+Unfiltered Diagnostics pages reuse the existing catalog total instead of
+counting every timeline entry again.
 
 The local prepared fixture has 556 conversation entries and 276,466 processing
 entries. Warm HTTP medians across five reads after the first request were:
 
 | Request | Before | After |
 | --- | ---: | ---: |
-| Latest conversation page, all origins | 78.88 ms | 47.76 ms |
-| First conversation page | 101.08 ms | 62.83 ms |
-| Latest conversation page, OTEL | 156.17 ms | 45.67 ms |
-| Latest conversation page, imported | 186.08 ms | 57.04 ms |
+| Latest conversation page, all origins | 65.91 ms | 40.15 ms |
+| First conversation page | 92.91 ms | 52.04 ms |
+| Latest conversation page, OTEL | 111.04 ms | 49.59 ms |
+| Latest conversation page, imported | 172.00 ms | 48.09 ms |
+| Latest unfiltered Diagnostics page | 29.92 ms | 1.90 ms |
 
 Complete responses, including gap counts, error counts, ordering and origin
 selection, matched the baseline. Chromium verified initial rendering, opening
