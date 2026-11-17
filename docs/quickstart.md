@@ -120,6 +120,8 @@ cat "$HOME/agentlog/.env"
 
 Nginxは`127.0.0.1:4318`へ中継します。ホームディレクトリへのアクセス権は不要です。ネイティブOTELも送る場合の設定は[CLI設定](senders.md)を参照してください。
 
+Codex/Claude Codeでプロジェクト名を固定する場合は、送信先を`https://agents.example.com/v1/logs?project=shop`のように指定します。トレース・メトリクスにも対応するURLで同じ`?project=shop`を付けます。Copilotは`telemetry.resourceAttributes`で指定します。[CLIごとの設定例](senders.md#codex-cli)。明示的なResource属性がある場合はそちらが優先されます。フォルダ監視の場合は上記の`config.json`の`project`を使います。
+
 ## 設定変更・ログ・停止
 
 ```sh

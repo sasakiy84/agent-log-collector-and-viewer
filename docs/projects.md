@@ -60,7 +60,9 @@ https://agents.example.com/v1/traces?project=shop&tag=backend&tag=go
 https://agents.example.com/v1/metrics?project=shop&tag=backend&tag=go
 ```
 
-For Codex, set the first two URLs in the `exporter` and `trace_exporter` endpoint values in `~/.codex/config.toml`. Explicit resource labels take precedence over query defaults. These parameters are an Agentlog extension, not an OTLP standard. Use full per-signal URLs; generic base-endpoint query handling varies by CLI.
+For Codex, set the first two URLs in the `exporter` and `trace_exporter` endpoint values in `~/.codex/config.toml`. For Claude Code, use `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`, `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` and `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` in `env`. [Complete CLI settings and project URL examples](senders.md). Copilot uses `telemetry.resourceAttributes` as shown above; keep its `telemetry.endpoint` as the base URL.
+
+Explicit `service.namespace` or `project.name` resource attributes take precedence over query defaults. These parameters are an Agentlog extension, not an OTLP standard. Use full per-signal URLs; generic base-endpoint query handling varies by CLI.
 
 OTEL resource attributes apply to the process/resource, not automatically to a repository. Fixed labels in global or machine-wide settings apply to all sessions using them. For live per-project labels, use the CLI's supported launch environment or separate configurations; managed policy may override local values. For historical imports, use `--cwd`, `--project` and `--tag` as described in [Import](import.md).
 

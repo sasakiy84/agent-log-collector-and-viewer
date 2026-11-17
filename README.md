@@ -53,6 +53,8 @@ Keep port 4318 on loopback and put an HTTPS reverse proxy in front. [Nginx confi
 
 Examples include conversation and tool content. [Paths and complete settings](docs/senders.md). Copilot managed settings require administrator access.
 
+For Codex/Claude Code, append `?project=shop` to each full signal URL, e.g. `https://agents.example.com/v1/logs?project=shop`, to label a project. Copilot uses `telemetry.resourceAttributes`. [CLI-specific settings](docs/senders.md#codex-cli) · [Tags and attribute priority](docs/projects.md#endpoint-query).
+
 ### 4. Import or watch session folders
 
 Local collection and viewer, without CLI telemetry configuration or HTTPS:
