@@ -64,6 +64,11 @@ func validateStorage(ctx context.Context, db *sql.DB) error {
 // DDL and its history entry commit together. SQL files are immutable: an edited,
 // missing or future migration is an error, never an invitation to rebuild data.
 func migrate(ctx context.Context, db *sql.DB, plan []migration) error {
+	return migrateWithSQL(ctx, db, plan, nil)
+}
+
+// Compatibility adapters change execution, not the immutable history checksum.
+func migrateWithSQL(ctx context.Context, db *sql.DB, plan []migration, adapt func(migration) string) error {
 	for i, m := range plan {
 		if m.version != i+1 {
 			return fmt.Errorf("invalid migration plan at version %d", m.version)
@@ -106,7 +111,11 @@ func migrate(ctx context.Context, db *sql.DB, plan []migration) error {
 		}
 		for _, m := range plan[applied:] {
 			log.Printf("Database migration %04d: %s", m.version, m.name)
-			if _, err := tx.ExecContext(ctx, m.sql); err != nil {
+			statement := m.sql
+			if adapt != nil {
+				statement = adapt(m)
+			}
+			if _, err := tx.ExecContext(ctx, statement); err != nil {
 				return fmt.Errorf("migration %04d %s: %w", m.version, m.name, err)
 			}
 			if _, err := tx.ExecContext(ctx, "INSERT INTO schema_migrations(version,name,checksum,applied_at) VALUES(?,?,?,strftime('%Y-%m-%dT%H:%M:%fZ','now'))", m.version, m.name, fmt.Sprintf("%x", sha256.Sum256([]byte(m.sql)))); err != nil {
