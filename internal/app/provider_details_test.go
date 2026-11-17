@@ -1,10 +1,8 @@
 package app
 
 import (
-	"context"
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"testing"
 )
 
@@ -157,72 +155,6 @@ func TestCopilotMultipleSkillInvocationsAndAgentTotalsAreNotDuplicated(t *testin
 	if p.Uses != 2 {
 		t.Fatal("replay counted", p)
 	}
-	// Reindex nested reports on invoke_agent spans, not only model/tool rows.
-	if _, err := a.DB.Exec("DELETE FROM skill_events; UPDATE maintenance_jobs SET cursor='',complete=0 WHERE name=?", skillsJob); err != nil {
-		t.Fatal(err)
-	}
-	if err := a.runMaintenance(context.Background(), skillsJob, backfillSkills, 0); err != nil {
-		t.Fatal(err)
-	}
-	getJSON(t, a, "/api/skills", &p)
-	if p.Uses != 2 {
-		t.Fatal("history lost nested skill reports", p)
-	}
-
-}
-func TestProviderRepairIsResumableAndKeepsOriginals(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "upgrade.db")
-	a, err := Open(context.Background(), path, token)
-	if err != nil {
-		t.Fatal(err)
-	}
-	events := copilotRecordedTrace(t)
-	save(t, a, events...)
-	original := map[string]string{}
-	rows, err := a.DB.Query("SELECT id,CAST(raw AS TEXT) FROM events")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for rows.Next() {
-		var id, raw string
-		if err = rows.Scan(&id, &raw); err != nil {
-			t.Fatal(err)
-		}
-		original[id] = raw
-	}
-	rows.Close()
-	if _, err = a.DB.Exec("DELETE FROM skill_events; UPDATE event_cards SET activity=1,prompt_title=''; UPDATE maintenance_jobs SET cursor='',complete=0,processed=0 WHERE name='providers.v1'"); err != nil {
-		t.Fatal(err)
-	}
-	if err = a.runMaintenance(context.Background(), "providers.v1", backfillProviders, 0); err != nil {
-		t.Fatal(err)
-	}
-	var processed int
-	if err = a.DB.QueryRow("SELECT processed FROM maintenance_jobs WHERE name='providers.v1'").Scan(&processed); err != nil || processed != 6 {
-		t.Fatal(processed, err)
-	}
-	for id, want := range original {
-		var got string
-		if err = a.DB.QueryRow("SELECT CAST(raw AS TEXT) FROM events WHERE id=?", id).Scan(&got); err != nil || got != want {
-			t.Fatal("original changed", id, err)
-		}
-	}
-	a.Close()
-	a, err = Open(context.Background(), path, token)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer a.Close()
-	var again int
-	a.DB.QueryRow("SELECT processed FROM maintenance_jobs WHERE name='providers.v1'").Scan(&again)
-	if again != processed {
-		t.Fatal("repair repeated", again)
-	}
-	var p skillCatalogPage
-	getJSON(t, a, "/api/skills", &p)
-	if p.Uses != 1 || p.Reads != 0 {
-		t.Fatal(p)
-	}
 }
 
 func TestCopilotTraceSubagentsUseInstancesNotDefinitionNames(t *testing.T) {
@@ -247,7 +179,7 @@ func TestCopilotTraceSubagentsUseInstancesNotDefinitionNames(t *testing.T) {
 	for _, event := range p.Events {
 		if event.Detail.Kind == "agent" {
 			var title string
-			a.DB.QueryRow("SELECT prompt_title FROM event_cards WHERE id=?", event.ID).Scan(&title)
+			a.DB.QueryRow("SELECT prompt_title FROM record_facts WHERE id=?", event.ID).Scan(&title)
 			if title != "" {
 				t.Fatal("subagent prompt became session title", title)
 			}

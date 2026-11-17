@@ -34,7 +34,7 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-Existing databases build session and full-text indexes once on first startup; the upgrade is logged and interrupted upgrades resume.
+Existing v0.23.0 databases require the offline [Python migration](docs/storage-migration.md) before starting this version. New-schema databases start without rebuilding historical indexes.
 
 Open http://127.0.0.1:4318. Authentication is disabled when `AGENTLOG_TOKEN` is unset or empty. To require authentication, set a secret of at least 16 characters in `.env` and sign in with it. SQLite data persists in a named volume across container recreation; `docker compose down --volumes` deletes it.
 

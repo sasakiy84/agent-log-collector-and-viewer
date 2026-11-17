@@ -15,7 +15,6 @@ type App struct {
 	Version            string
 	startedAt          time.Time
 	inbox              *ingestQueue
-	maintenancePause   time.Duration
 	initialized        chan struct{}
 	maintained         chan struct{}
 	startupErr         error

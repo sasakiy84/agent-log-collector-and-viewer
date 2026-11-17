@@ -33,7 +33,7 @@ func TestServerMetricsUseOriginalAndLogicalCounters(t *testing.T) {
 	if _, err := time.Parse(time.RFC3339Nano, metrics.StartedAt); err != nil || metrics.UptimeSeconds < 0 {
 		t.Fatal(metrics.StartedAt, err)
 	}
-	if _, err := a.DB.Exec("DELETE FROM events WHERE id=?", other.ID); err != nil {
+	if _, err := a.DB.Exec("DELETE FROM records WHERE id=?", other.ID); err != nil {
 		t.Fatal(err)
 	}
 	save(t, a)
@@ -42,7 +42,7 @@ func TestServerMetricsUseOriginalAndLogicalCounters(t *testing.T) {
 		t.Fatal(metrics)
 	}
 	// Partial historical metadata is unknown, never a misleading zero or a raw scan.
-	if _, err := a.DB.Exec("INSERT INTO archive_stats_pending VALUES('legacy')"); err != nil {
+	if _, err := a.DB.Exec("INSERT OR IGNORE INTO work_items(kind,scope,key) VALUES('storage','legacy','')"); err != nil {
 		t.Fatal(err)
 	}
 	a.maintained = make(chan struct{})

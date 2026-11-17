@@ -98,7 +98,7 @@ def fixture(binary, database, records, skewed=False):
  i AS sequence,CASE WHEN i%3=0 THEN 'import' ELSE 'otel' END AS origin,
  {conversation} AS conversation, {kind} AS kind,
  i%31<>0 AS activity,i%17003=0 AND NOT ({conversation}) AS is_error FROM n {join}""", values)
-        db.execute("""INSERT INTO events(id,session,parent,source,signal,time,name,trace,span,parent_span,raw,sequence,origin,kind,tool_name)
+        db.execute("""INSERT INTO records(id,session,parent,source,signal,time,name,trace,span,parent_span,raw,sequence,origin,kind,tool_name)
  SELECT id,:session,'','codex','logs',time,kind,'','','',
  CAST(json_object('resource',json_object('attributes',json_array(
  json_object('key','service.name','value',json_object('stringValue','codex')),
@@ -109,27 +109,28 @@ def fixture(binary, database, records, skewed=False):
                     'blocks': [{'label': 'Details', 'text': 'Synthetic runtime metadata ' + 'x' * 400}],
                     'fields': [], 'attributes': {}, 'cwd': '/work/large'}
         values['metadata'] = json.dumps(metadata)
-        db.execute("""INSERT INTO event_cards(id,session,origin,source,parent,time,sequence,is_user,signal,trace,span,parent_span,
+        db.execute("""INSERT INTO record_facts(id,session,origin,source,parent,time,sequence,is_user,signal,trace,span,parent_span,
  detail,prompt_title,activity,kind,is_error,turn,presentation_ready,conversation,has_skill)
  SELECT id,:session,origin,'codex','',time,sequence,kind='user','logs','','','',
  CAST(CASE WHEN conversation=0 THEN :metadata ELSE json_object('name',kind,'kind',kind,'title',kind,
  'blocks',json_array(json_object('label',CASE WHEN kind='user' THEN 'Request' ELSE 'Response' END,
  'text','Synthetic conversation '||sequence)), 'fields',json('[]'),'attributes',json('{}'),'cwd','/work/large') END AS BLOB),
  '',activity,kind,is_error,'',1,conversation,0 FROM fixture""", values)
-        db.execute("""INSERT INTO timeline_entries(id,session,source,parent,time,end,sequence,is_user,import_id,otel_id,
+        db.execute("""INSERT INTO logical_events(id,session,source,parent,time,end,sequence,is_user,import_id,otel_id,
  activity,kind,is_error,conversation,has_skill)
  SELECT id,:session,'codex','',time,time,sequence,kind='user',CASE WHEN origin='import' THEN id ELSE '' END,
  CASE WHEN origin='otel' THEN id ELSE '' END,activity,kind,is_error,conversation,0 FROM fixture""", values)
         db.execute('INSERT INTO timeline_counts SELECT :session,COUNT(*) FROM fixture', values)
         db.execute("INSERT INTO card_counts SELECT :session,origin,'codex','',COUNT(*) FROM fixture GROUP BY origin", values)
-        db.execute("""INSERT INTO session_catalog(session,source,parent,count,start,end,import_count,import_start,import_end,
+        db.execute("""INSERT INTO sessions(session,source,parent,count,start,end,import_count,import_start,import_end,
  otel_count,otel_start,otel_end,preview)
  SELECT :session,'codex','',COUNT(*),MIN(time),MAX(time),SUM(origin='import'),MIN(time),MAX(time),
  SUM(origin='otel'),MIN(time),MAX(time),:metadata FROM fixture""", values)
-        db.execute('INSERT INTO folder_dirty VALUES(?)', (SESSION,))
-        if db.execute("SELECT 1 FROM sqlite_master WHERE name='processing_buckets'").fetchone():
-            db.execute('DELETE FROM processing_buckets')
-            db.execute("UPDATE maintenance_jobs SET cursor='',complete=0,processed=0 WHERE name IN('processing.cards.v1','processing.timeline.v1')")
+        db.execute("INSERT OR IGNORE INTO work_items VALUES('projects',?,'')", (SESSION,))
+        db.execute("UPDATE sessions SET project_directory='/work/large',project_key='name:large'")
+        db.execute('DELETE FROM processing_buckets')
+        db.execute("INSERT INTO processing_buckets SELECT session,origin,substr(time,1,16),COUNT(*),SUM(activity),SUM(is_error) FROM record_facts WHERE conversation=0 GROUP BY session,origin,substr(time,1,16)")
+        db.execute("INSERT INTO processing_buckets SELECT session,'',substr(time,1,16),COUNT(*),SUM(activity),SUM(is_error) FROM logical_events WHERE conversation=0 GROUP BY session,substr(time,1,16)")
         for _, sql in triggers:
             db.execute(sql)
 
@@ -193,16 +194,17 @@ def measure(binary, source, directory, label, browser):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--binary', default=os.getenv('AGENTLOG_BIN', './agentlog'))
-    parser.add_argument('--baseline')
+    parser.add_argument('--baseline', help='Optional previous storage-generation-2 binary')
     parser.add_argument('--records', type=int, default=277022)
     parser.add_argument('--browser', action='store_true')
+    parser.add_argument('--skewed', action='store_true', help='Concentrate most processing logs between the final messages')
     args = parser.parse_args()
     if args.records < 2000:
         parser.error('--records must be at least 2000')
     with tempfile.TemporaryDirectory(prefix='agentlog-session-perf-') as temporary:
         directory = Path(temporary)
         source = directory / 'fixture.db'
-        fixture(args.baseline or args.binary, source, args.records)
+        fixture(args.baseline or args.binary, source, args.records, skewed=args.skewed)
         previous = measure(args.baseline, source, directory, 'baseline', args.browser) if args.baseline else None
         current = measure(args.binary, source, directory, 'current', args.browser)
         if previous is not None:

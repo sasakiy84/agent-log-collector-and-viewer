@@ -59,7 +59,7 @@ func TestSessionCountCacheMatchesListVisibilityAndFilters(t *testing.T) {
 	}
 	// Pending externally written lock changes must fall back until the derived
 	// counts have been published, rather than serving a stale total.
-	if _, err := a.DB.Exec("INSERT INTO archives(id,status,created_at,cutoff) VALUES('count-lock','ready','',''); INSERT INTO archive_locks VALUES(?,'count-lock')", one.Session); err != nil {
+	if _, err := a.DB.Exec("INSERT INTO archive_jobs(id,status,created_at,cutoff) VALUES('count-lock','ready','',''); INSERT INTO archive_locks VALUES(?,'count-lock')", one.Session); err != nil {
 		t.Fatal(err)
 	}
 	check("", 2, false)

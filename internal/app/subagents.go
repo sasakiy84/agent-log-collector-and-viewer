@@ -263,7 +263,7 @@ func attachSubagents(ctx context.Context, tx *sql.Tx, events []TimelineEvent) er
 
 // Copilot keeps runtime agents inside one session. Read their indexed logical
 // cards without loading original JSON or changing the collector's session IDs.
-const agentTimelineIDs = `SELECT DISTINCT COALESCE((SELECT id FROM timeline_entries t WHERE t.otel_id=a.event_id AND t.import_id<>'' AND t.otel_id<>''),a.event_id) FROM agent_activity a WHERE a.session=? AND a.agent=?`
+const agentTimelineIDs = `SELECT DISTINCT COALESCE((SELECT id FROM logical_events t WHERE t.otel_id=a.event_id AND t.import_id<>'' AND t.otel_id<>''),a.event_id) FROM agent_activity a WHERE a.session=? AND a.agent=?`
 
 func (a *App) subagent(w http.ResponseWriter, r *http.Request) {
 	session, agent := r.URL.Query().Get("session"), r.URL.Query().Get("agent")
@@ -291,7 +291,7 @@ func (a *App) subagent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var source string
-	err = tx.QueryRowContext(r.Context(), "SELECT source FROM session_catalog WHERE session=?", session).Scan(&source)
+	err = tx.QueryRowContext(r.Context(), "SELECT source FROM sessions WHERE session=?", session).Scan(&source)
 	if errors.Is(err, sql.ErrNoRows) {
 		http.NotFound(w, r)
 		return
@@ -324,8 +324,8 @@ func (a *App) subagent(w http.ResponseWriter, r *http.Request) {
 		page.Offset = max(0, page.Count-1) / page.Limit * page.Limit
 	}
 	rows, err := tx.QueryContext(r.Context(), `SELECT p.id,`+qualifiedCardColumns("c")+` FROM
- (SELECT id,time,sequence,import_id,otel_id FROM timeline_entries WHERE id IN (`+idsQuery+`) ORDER BY time,sequence,id LIMIT ? OFFSET ?) p
- JOIN event_cards c ON c.id=p.import_id OR c.id=p.otel_id ORDER BY p.time,p.sequence,p.id,c.origin,c.id`, append(append([]any{}, idsArgs...), page.Limit, page.Offset)...)
+ (SELECT id,time,sequence,import_id,otel_id FROM logical_events WHERE id IN (`+idsQuery+`) ORDER BY time,sequence,id LIMIT ? OFFSET ?) p
+ JOIN record_facts c ON c.id=p.import_id OR c.id=p.otel_id ORDER BY p.time,p.sequence,p.id,c.origin,c.id`, append(append([]any{}, idsArgs...), page.Limit, page.Offset)...)
 	if err == nil {
 		page.Events, err = decodeTimeline(rows)
 	}
@@ -355,10 +355,10 @@ func (a *App) subagent(w http.ResponseWriter, r *http.Request) {
 // ancestry identifies each invocation exactly, including repeated same-name
 // agents, and never crosses a session or trace. This path runs only on preview.
 const traceAgentTimelineIDs = `WITH RECURSIVE trace_events AS MATERIALIZED (
- SELECT e.id,e.span,e.parent_span,c.kind FROM events e JOIN event_cards c ON c.id=e.id
+ SELECT e.id,e.span,e.parent_span,c.kind FROM records e JOIN record_facts c ON c.id=e.id
  WHERE e.source='copilot' AND e.session=? AND e.trace=? AND e.span<>''
 ), branch(span) AS (
  SELECT span FROM trace_events WHERE span=? AND parent_span<>'' AND kind='agent'
  UNION SELECT e.span FROM trace_events e JOIN branch b ON e.parent_span=b.span
-) SELECT DISTINCT COALESCE((SELECT id FROM timeline_entries t WHERE t.otel_id=e.id AND t.import_id<>'' AND t.otel_id<>''),e.id)
+) SELECT DISTINCT COALESCE((SELECT id FROM logical_events t WHERE t.otel_id=e.id AND t.import_id<>'' AND t.otel_id<>''),e.id)
  FROM trace_events e JOIN branch b ON e.span=b.span`

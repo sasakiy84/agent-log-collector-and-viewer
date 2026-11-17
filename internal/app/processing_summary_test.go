@@ -9,14 +9,6 @@ import (
 	"time"
 )
 
-func finishProcessingHistory(t *testing.T, a *App) {
-	t.Helper()
-	for _, step := range []struct{ table, job string }{{"timeline_entries", processingTimelineJob}, {"event_cards", processingCardsJob}} {
-		if err := a.runMaintenance(context.Background(), step.job, backfillProcessing(step.table), 0); err != nil {
-			t.Fatal(err)
-		}
-	}
-}
 func assertProcessingBuckets(t *testing.T, a *App) {
 	t.Helper()
 	type key struct{ session, origin, minute string }
@@ -41,15 +33,14 @@ func assertProcessingBuckets(t *testing.T, a *App) {
 		return out
 	}
 	actual := read("SELECT session,origin,minute,count,activity,errors FROM processing_buckets")
-	expected := read(`SELECT session,'',substr(time,1,16),COUNT(*),SUM(activity),SUM(is_error) FROM timeline_entries WHERE conversation=0 GROUP BY session,substr(time,1,16)
- UNION ALL SELECT session,origin,substr(time,1,16),COUNT(*),SUM(activity),SUM(is_error) FROM event_cards WHERE conversation=0 GROUP BY session,origin,substr(time,1,16)`)
+	expected := read(`SELECT session,'',substr(time,1,16),COUNT(*),SUM(activity),SUM(is_error) FROM logical_events WHERE conversation=0 GROUP BY session,substr(time,1,16)
+ UNION ALL SELECT session,origin,substr(time,1,16),COUNT(*),SUM(activity),SUM(is_error) FROM record_facts WHERE conversation=0 GROUP BY session,origin,substr(time,1,16)`)
 	if !reflect.DeepEqual(actual, expected) {
 		t.Fatalf("processing buckets: got %v; want %v", actual, expected)
 	}
 }
 func TestProcessingSummariesRetainExactRangesAndOrigins(t *testing.T) {
 	a := setup(t)
-	finishProcessingHistory(t, a)
 	var events []Event
 	base := time.Date(2026, 11, 16, 23, 58, 0, 0, time.UTC)
 	for i := 0; i < 24; i++ {
@@ -110,63 +101,9 @@ func TestProcessingSummariesRetainExactRangesAndOrigins(t *testing.T) {
 	two.Time = base.Add(48 * time.Hour).Format("2006-01-02T15:04:05.000000000Z")
 	save(t, a, two)
 	assertProcessingBuckets(t, a)
-	if _, err := a.DB.Exec("DELETE FROM events WHERE session='codex:buckets'"); err != nil {
+	if _, err := a.DB.Exec("DELETE FROM records WHERE session='codex:buckets'"); err != nil {
 		t.Fatal(err)
 	}
 	save(t, a)
-	assertProcessingBuckets(t, a)
-}
-func TestProcessingBackfillResumesWithConcurrentChanges(t *testing.T) {
-	a := setup(t)
-	finishProcessingHistory(t, a)
-	var events []Event
-	for i := 0; i < 1005; i++ {
-		events = append(events, recorded(t, fmt.Sprintf("a%04d", i), "otel", "codex", "rebuild", "runtime_event", nil))
-	}
-	save(t, a, events...)
-	// Reproduce an upgrade: counters are absent and both cursors start before
-	// historical rows. The API uses exact indexed counts until a scope is ready.
-	if _, err := a.DB.Exec("DELETE FROM processing_buckets; UPDATE maintenance_jobs SET cursor='',complete=0,processed=0 WHERE name IN(?,?)", processingCardsJob, processingTimelineJob); err != nil {
-		t.Fatal(err)
-	}
-	if err := inTransaction(context.Background(), a.DB, func(tx *sql.Tx) error {
-		next, n, err := backfillProcessing("timeline_entries")(context.Background(), tx, "")
-		if err != nil {
-			return err
-		}
-		if n != 1000 {
-			t.Fatal(n)
-		}
-		_, err = tx.Exec("UPDATE maintenance_jobs SET cursor=?,processed=? WHERE name=?", next, n, processingTimelineJob)
-		return err
-	}); err != nil {
-		t.Fatal(err)
-	}
-	var partial SessionPage
-	getJSON(t, a, "/api/session?id=codex:rebuild&view=conversation", &partial)
-	if len(partial.Processing) != 1 || partial.Processing[0].Count != 1005 {
-		t.Fatal("partial history leaked into navigation", partial.Processing)
-	}
-	save(t, a, recorded(t, "a0500-late", "otel", "codex", "rebuild", "runtime_event", nil), recorded(t, "z-late", "otel", "codex", "rebuild", "runtime_event", nil))
-	moved := events[0]
-	moved.Session = "codex:moved"
-	moved.Time = "2026-11-17T01:00:00.000000000Z"
-	save(t, a, moved)
-	changed := recorded(t, "a1002", "otel", "codex", "rebuild", "gen_ai.user.message", map[string]any{"prompt": "human question"})
-	save(t, a, changed)
-	if _, err := a.DB.Exec("DELETE FROM events WHERE id IN('a0001','a1004')"); err != nil {
-		t.Fatal(err)
-	}
-	save(t, a)
-	finishProcessingHistory(t, a)
-	assertProcessingBuckets(t, a)
-	// A subsequent restart must preserve completed counters and checkpoints.
-	var count int
-	if err := a.DB.QueryRow("SELECT COUNT(*) FROM processing_buckets").Scan(&count); err != nil || count < 1 {
-		t.Fatal(count, err)
-	}
-	if err := a.startProcessingIndexer(); err != nil {
-		t.Fatal(err)
-	}
 	assertProcessingBuckets(t, a)
 }

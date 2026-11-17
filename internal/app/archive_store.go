@@ -52,7 +52,7 @@ func scanArchive(row scanner) (ArchiveJob, error) {
 	return j, err
 }
 func (a *App) archiveJob(ctx context.Context, id string) (ArchiveJob, error) {
-	return scanArchive(a.readers.QueryRowContext(ctx, "SELECT "+archiveColumns+" FROM archives WHERE id=?", id))
+	return scanArchive(a.readers.QueryRowContext(ctx, "SELECT "+archiveColumns+" FROM archive_jobs WHERE id=?", id))
 }
 func activeArchive(status string) bool {
 	return status == "preparing" || status == "ready" || status == "deleting" || status == "compacting"
@@ -67,7 +67,7 @@ func archiveCutoff(now time.Time) time.Time {
 func timestamp(t time.Time) string { return t.UTC().Format("2006-01-02T15:04:05.000000000Z") }
 
 const inactiveSessions = `SELECT s.session,s.source,s.end AS last_activity,a.records,a.raw_bytes,COALESCE(json_extract(s.preview,'$.cwd'),'') AS folder
- FROM session_catalog s JOIN archive_stats a ON a.session=s.session
+ FROM sessions s JOIN record_totals a ON a.session=s.session
  WHERE s.end<? AND s.archive_start>'1970-01-01T00:00:00.000000000Z'`
 
 func (a *App) archivePath(id string, partial bool) string {
@@ -95,7 +95,7 @@ func (a *App) initArchives(path string) error {
 		a.archiveDir = filepath.Join(filepath.Dir(abs), "archives")
 	}
 	a.archiveWake = make(chan struct{}, 1)
-	rows, err := a.DB.QueryContext(a.ctx, "SELECT id FROM archives WHERE status='preparing'")
+	rows, err := a.DB.QueryContext(a.ctx, "SELECT id FROM archive_jobs WHERE status='preparing'")
 	if err != nil {
 		return err
 	}
@@ -112,7 +112,7 @@ func (a *App) initArchives(path string) error {
 	if err != nil || rowErr != nil {
 		return errors.Join(err, rowErr)
 	}
-	if _, err = a.DB.ExecContext(a.ctx, "UPDATE archives SET status='failed',error='Archive creation was interrupted; create a new archive.' WHERE status='preparing'"); err != nil {
+	if _, err = a.DB.ExecContext(a.ctx, "UPDATE archive_jobs SET status='failed',error='Archive creation was interrupted; create a new archive.' WHERE status='preparing'"); err != nil {
 		return err
 	}
 	for _, id := range interrupted {
@@ -145,17 +145,17 @@ func (a *App) createFolderArchive(ctx context.Context, cutoff string, all bool, 
 	}
 	defer tx.Rollback()
 	var active int
-	if err = tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM archives WHERE status IN ('preparing','ready','deleting','compacting')").Scan(&active); err != nil {
+	if err = tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM archive_jobs WHERE status IN ('preparing','ready','deleting','compacting')").Scan(&active); err != nil {
 		return ArchiveJob{}, err
 	}
 	if active > 0 {
 		return ArchiveJob{}, errArchiveConflict
 	}
-	_, err = tx.ExecContext(ctx, "INSERT INTO archives(id,status,created_at,cutoff) VALUES(?,'preparing',?,?)", id, timestamp(time.Now()), cutoff)
+	_, err = tx.ExecContext(ctx, "INSERT INTO archive_jobs(id,status,created_at,cutoff) VALUES(?,'preparing',?,?)", id, timestamp(time.Now()), cutoff)
 	if err != nil {
 		return ArchiveJob{}, err
 	}
-	query := "INSERT INTO archive_sessions(archive_id,session,source,revision,records,raw_bytes,last_activity,folder) SELECT ?,s.session,s.source,COALESCE(r.revision,0),s.records,s.raw_bytes,s.last_activity,s.folder FROM (" + inactiveSessions + ") s LEFT JOIN session_revisions r ON r.session=s.session"
+	query := "INSERT INTO archive_sessions(archive_id,session,source,revision,records,raw_bytes,last_activity,folder) SELECT ?,s.session,s.source,COALESCE(r.revision,0),s.records,s.raw_bytes,s.last_activity,s.folder FROM (" + inactiveSessions + ") s LEFT JOIN session_versions r ON r.session=s.session"
 	args := []any{id, cutoff}
 	if len(folders) > 0 {
 		query += " WHERE s.folder IN (" + strings.TrimRight(strings.Repeat("?,", len(folders)), ",") + ")"
@@ -195,7 +195,7 @@ func (a *App) createFolderArchive(ctx context.Context, cutoff string, all bool, 
 			return ArchiveJob{}, errArchiveStale
 		}
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE archives SET session_count=?,record_count=(SELECT SUM(records) FROM archive_sessions WHERE archive_id=?),raw_bytes=(SELECT SUM(raw_bytes) FROM archive_sessions WHERE archive_id=?) WHERE id=?`, count, id, id, id)
+	_, err = tx.ExecContext(ctx, `UPDATE archive_jobs SET session_count=?,record_count=(SELECT SUM(records) FROM archive_sessions WHERE archive_id=?),raw_bytes=(SELECT SUM(raw_bytes) FROM archive_sessions WHERE archive_id=?) WHERE id=?`, count, id, id, id)
 	if err != nil {
 		return ArchiveJob{}, err
 	}
@@ -212,6 +212,6 @@ var errArchiveStale = errors.New("selected sessions changed; refresh the list an
 
 func snapshotsCurrent(ctx context.Context, tx *sql.Tx, id string) (bool, error) {
 	var changed int
-	err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM archive_sessions s LEFT JOIN session_revisions r ON r.session=s.session WHERE s.archive_id=? AND COALESCE(r.revision,0)<>s.revision`, id).Scan(&changed)
+	err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM archive_sessions s LEFT JOIN session_versions r ON r.session=s.session WHERE s.archive_id=? AND COALESCE(r.revision,0)<>s.revision`, id).Scan(&changed)
 	return changed == 0, err
 }

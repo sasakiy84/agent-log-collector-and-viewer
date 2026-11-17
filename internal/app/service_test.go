@@ -163,60 +163,6 @@ func TestQueueCapacityRejectsWithoutAcknowledgingOrDropping(t *testing.T) {
 	}
 }
 
-func TestIncompleteMaintenanceKeepsViewsAndQueuedData(t *testing.T) {
-	ctx := context.Background()
-	path := filepath.Join(t.TempDir(), "service.db")
-	a, err := Open(ctx, path, token)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if w := request(a, "/v1/logs", logBody("codex", "existing", "", ""), token); w.Code != 200 {
-		t.Fatal(w.Code)
-	}
-	// Simulate a failing historical batch while the previously committed view
-	// is still valid. The checkpoint must remain resumable after correction.
-	if _, err = a.DB.Exec(`UPDATE maintenance_jobs SET cursor='',processed=0,complete=0 WHERE name='usage.v1';
- CREATE TRIGGER fixture_maintenance_failure BEFORE UPDATE ON maintenance_jobs
- WHEN NEW.name='usage.v1' BEGIN SELECT RAISE(ABORT,'fixture maintenance failure');END;`); err != nil {
-		t.Fatal(err)
-	}
-	a.Close()
-	a, err = Start(ctx, path, token)
-	if err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case <-a.maintained:
-	case <-time.After(5 * time.Second):
-		a.Close()
-		t.Fatal("maintenance did not reach the failing batch")
-	}
-	if a.startupErr != nil || a.maintenanceErr == nil {
-		t.Fatal("failure was not isolated to historical preparation", a.startupErr, a.maintenanceErr)
-	}
-	var sessions []SessionSummary
-	getJSON(t, a, "/api/sessions", &sessions)
-	if len(sessions) != 1 || sessions[0].ID != "codex:existing" {
-		t.Fatal("existing views disappeared", sessions)
-	}
-	if w := request(a, "/v1/logs", logBody("codex", "retained", "", ""), token); w.Code != 200 {
-		t.Fatal("maintenance failure disabled reception", w.Code)
-	}
-	if _, err = a.DB.Exec("DROP TRIGGER fixture_maintenance_failure"); err != nil {
-		t.Fatal(err)
-	}
-	a.Close()
-	a, err = Start(ctx, path, token)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer a.Close()
-	serviceSettled(t, a)
-	if countEvents(t, a) != 2 {
-		t.Fatal("queued ACK was lost during failed maintenance")
-	}
-}
-
 func TestBulkImportsReserveSpaceForLiveOTLP(t *testing.T) {
 	a, err := newApp(context.Background(), token)
 	if err != nil {
@@ -292,5 +238,44 @@ func TestPendingIngestionOnlyBlocksItsOwnArchive(t *testing.T) {
 	w = archiveReq(a, "POST", "/api/archives/"+job.ID+"/cancel", `{}`)
 	if w.Code != 200 {
 		t.Fatal("pending ingestion blocked cancellation", w.Code, w.Body.String())
+	}
+}
+
+func TestRestartPreservesMaterializedViewsAndStartsNewIngestion(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "service.db")
+	a, err := Open(ctx, path, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := request(a, "/v1/logs", logBody("codex", "existing", "", ""), token); w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	// A restart must consume persisted invalidations only. This fixture refuses
+	// any historical reclassification of the already-published old session.
+	if _, err = a.DB.Exec(`CREATE TRIGGER fixture_no_history_rewrite BEFORE UPDATE ON record_facts
+ WHEN OLD.session='codex:existing' BEGIN SELECT RAISE(ABORT,'unexpected historical rewrite'); END`); err != nil {
+		t.Fatal(err)
+	}
+	if err = a.Close(); err != nil {
+		t.Fatal(err)
+	}
+	a, err = Start(ctx, path, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	serviceSettled(t, a)
+	var sessions []SessionSummary
+	getJSON(t, a, "/api/sessions", &sessions)
+	if len(sessions) != 1 || sessions[0].ID != "codex:existing" {
+		t.Fatal("restart changed materialized history", sessions)
+	}
+	if w := request(a, "/v1/logs", logBody("codex", "new", "", ""), token); w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	serviceSettled(t, a)
+	if countEvents(t, a) != 2 {
+		t.Fatal("new ingestion did not start", countEvents(t, a))
 	}
 }

@@ -76,13 +76,13 @@ func TestWatchLocalLifecycle(t *testing.T) {
 	count := func(want int) func() bool {
 		return func() bool {
 			var n int
-			err := db.DB.QueryRow("SELECT COUNT(*) FROM events").Scan(&n)
+			err := db.DB.QueryRow("SELECT COUNT(*) FROM records").Scan(&n)
 			return err == nil && n == want
 		}
 	}
 	eventually(t, count(1))
 	var raw string
-	if err := db.DB.QueryRow("SELECT raw FROM events LIMIT 1").Scan(&raw); err != nil || !strings.Contains(raw, "store") || !strings.Contains(raw, "backend") {
+	if err := db.DB.QueryRow("SELECT raw FROM records LIMIT 1").Scan(&raw); err != nil || !strings.Contains(raw, "store") || !strings.Contains(raw, "backend") {
 		t.Fatal(err, raw)
 	}
 	// An unchanged file is never resent across several polling cycles.
@@ -120,7 +120,7 @@ func TestWatchRetriesWithoutFileChange(t *testing.T) {
 	}})
 	eventually(t, func() bool {
 		var n int
-		db.DB.QueryRow("SELECT COUNT(*) FROM events").Scan(&n)
+		db.DB.QueryRow("SELECT COUNT(*) FROM records").Scan(&n)
 		return n == 1 && attempts.Load() == 2
 	})
 }
@@ -132,7 +132,7 @@ func TestWatchCopilotJournalDependency(t *testing.T) {
 	startWatcher(t, importer.Options{Dirs: []string{dir}, Sink: db.IngestLogs})
 	archive := file(t, dir, "events.1.jsonl", `{"type":"session.start","data":{"sessionId":"journal"}}`+"\n"+`{"type":"user.message","id":"a","data":{"content":"archive"}}`+"\n")
 	count := func(want int) func() bool {
-		return func() bool { var n int; db.DB.QueryRow("SELECT COUNT(*) FROM events").Scan(&n); return n == want }
+		return func() bool { var n int; db.DB.QueryRow("SELECT COUNT(*) FROM records").Scan(&n); return n == want }
 	}
 	eventually(t, count(1))
 	appendFile(t, archive, `{"type":"assistant.message","id":"b","data":{"content":"changed predecessor"}}`+"\n")
@@ -171,7 +171,7 @@ func TestCodexLateCanonicalMessages(t *testing.T) {
 			t.Fatal(err)
 		}
 		var n int
-		db.DB.QueryRow("SELECT COUNT(*) FROM events").Scan(&n)
+		db.DB.QueryRow("SELECT COUNT(*) FROM records").Scan(&n)
 		if n != want {
 			t.Fatalf("got %d events, want %d", n, want)
 		}
@@ -226,7 +226,7 @@ func TestWatchRootCreatedAfterStart(t *testing.T) {
 	file(t, dir, "nested/session.jsonl", claudeLine("created", "created after watch start"))
 	eventually(t, func() bool {
 		var n int
-		err := db.DB.QueryRow("SELECT COUNT(*) FROM events").Scan(&n)
+		err := db.DB.QueryRow("SELECT COUNT(*) FROM records").Scan(&n)
 		return err == nil && n == 1
 	})
 }
@@ -247,7 +247,7 @@ func TestWatchSymlinkRootTargetAppearsAndChanges(t *testing.T) {
 	count := func(want int) func() bool {
 		return func() bool {
 			var n int
-			err := db.DB.QueryRow("SELECT COUNT(*) FROM events").Scan(&n)
+			err := db.DB.QueryRow("SELECT COUNT(*) FROM records").Scan(&n)
 			return err == nil && n == want
 		}
 	}

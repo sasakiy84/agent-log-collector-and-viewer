@@ -36,43 +36,28 @@ def ready():
     raise RuntimeError('Compose startup stopped progressing:\n'+logs)
 
 def large_history(cid):
- # Seed only synthetic rows. A long history must not exhaust the 64 MiB /tmp
- # mount while SQLite materializes timeline groups and preview selection.
- run('stop','agentlog')
- docker=['docker']
- with tempfile.TemporaryDirectory() as tmp:
-  database=pathlib.Path(tmp)/'agentlog.db'
-  subprocess.run([*docker,'cp',cid+':/data/agentlog.db',str(database)],check=True)
-  # Seed a fresh raw-history database. Derived accounting triggers use
-  # collector functions, so offline fixture creation starts with storage DDL.
-  with sqlite3.connect(database) as db:
-   storage=[db.execute('SELECT sql FROM sqlite_master WHERE type=? AND name=?',('table',name)).fetchone()[0] for name in ['events','event_keys']]
-  database.unlink()
-  for suffix in ['-wal','-shm']:pathlib.Path(str(database)+suffix).unlink(missing_ok=True)
-  with sqlite3.connect(database) as db:
-   # Match a new collector database so archive deletion can reclaim disk pages.
-   db.execute('PRAGMA auto_vacuum=INCREMENTAL')
-   db.execute('PRAGMA foreign_keys=ON')
-   for schema in storage:db.execute(schema)
-   def rows():
-    for session in range(500):
-     sid='codex:scale-'+f'{session:060d}'
-     raw=json.dumps({'resource':{'attributes':[{'key':'service.name','value':{'stringValue':'codex'}}]},'record':{'eventName':'gen_ai.user.message','attributes':[{'key':'session.id','value':{'stringValue':sid}},{'key':'agentlog.origin','value':{'stringValue':'import'}},{'key':'prompt','value':{'stringValue':'Synthetic scale fixture'}}]}}).encode()
-     for sequence in range(300):
-      yield ('import:'+f'{session*300+sequence:064x}',sid,'','codex','logs','2025-01-01T00:00:00.000000000Z','gen_ai.user.message','','','',raw,sequence,'import','user','')
-   db.executemany('INSERT INTO events(id,session,parent,source,signal,time,name,trace,span,parent_span,raw,sequence,origin,kind,tool_name) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',rows())
-  db.close()
-  # docker cp writes as root; this disposable fixture must remain writable by
-  # the image's unprivileged user inside the private test volume.
-  database.chmod(0o666)
-  subprocess.run([*docker,'cp',str(database),cid+':/data/agentlog.db'],check=True)
- run('start','agentlog')
- assert ready()=={'events':150000,'sessions':500}
- summaries=request('/api/sessions',timeout=30)
+ # Exercise the real ingestion/projection path, rather than constructing an
+ # obsolete raw-only database and relying on startup repair.
+ retained = request('/api/stats')
+ for session in range(500):
+  records=[]
+  for sequence in range(300):
+   values={'session.id':'scale-'+f'{session:060d}', 'agentlog.origin':'import',
+           'agentlog.import.id':f'docker-scale|{session}|{sequence}',
+           'agentlog.import.sequence':str(sequence), 'prompt':'Synthetic scale fixture'}
+   records.append({'eventName':'gen_ai.user.message',
+                   'timeUnixNano':str(1735689600000000000+sequence*1000000),
+                   'attributes':[{'key':key,'value':{'stringValue':value}} for key,value in values.items()]})
+  request('/v1/logs',{'resourceLogs':[{'resource':{'attributes':[
+   {'key':'service.name','value':{'stringValue':'codex'}},
+   {'key':'service.namespace','value':{'stringValue':'docker-scale'}}]},
+   'scopeLogs':[{'logRecords':records}]}]},timeout=90)
+ assert ready()=={'events':retained['events']+150000,'sessions':retained['sessions']+500}
+ summaries=request('/api/sessions?project=name%3Adocker-scale',timeout=30)
  assert len(summaries)==201 and all(s['count']==300 for s in summaries)
  page=request('/api/session?id='+summaries[0]['id'],timeout=30)
  assert page['count']==300 and len(page['events'])==201
- print('PASS: 150,000 records with a read-only root and 64 MiB /tmp; SQLite temporary files use the data volume.')
+ print('PASS: 150,000 received records with a read-only root and 64 MiB /tmp; no startup history rebuild.')
  # Exercise the same archive worker under the production read-only image.
  archive=request('/api/archives',{'all':True,'cutoff':'2025-02-01T00:00:00Z'},timeout=30)
  def wait(status):
@@ -87,7 +72,7 @@ def large_history(cid):
    if progress!=previous:deadline=time.monotonic()+180;previous=progress
    time.sleep(.2)
   raise RuntimeError('Archive stopped progressing: '+str(job))
- job=wait('ready');assert request('/api/stats')['events']==150000
+ job=wait('ready');assert request('/api/stats')['events']==retained['events']+150000
  with tempfile.TemporaryDirectory() as tmp:
   output=pathlib.Path(tmp)/'archive.zip'
   req=urllib.request.Request(base()+'/api/archives/'+archive['id']+'/download',headers={'Authorization':'Bearer '+token})
@@ -101,7 +86,7 @@ def large_history(cid):
    assert len([name for name in zipped.namelist() if name.startswith('sessions/')])==500
   request('/api/archives/'+archive['id']+'/delete',{'confirmation':'DOWNLOADED'})
   done=wait('deleted');assert done['deleted_records']==150000 and not done['compaction_error'],done
- assert request('/api/stats')=={'events':0,'sessions':0}
+ assert request('/api/stats')==retained
  print('PASS: ZIP streaming, SHA/CRC, explicit deletion, reclamation for 150,000 synthetic records in Docker.')
 
 

@@ -2,10 +2,10 @@ package app
 
 import (
 	"context"
+	"database/sql"
 	"net/url"
 	"strings"
 	"testing"
-	"time"
 )
 
 func skillReport(t *testing.T, id, origin, session, name, turn, plugin string) Event {
@@ -43,7 +43,7 @@ func TestSkillsReportedUsesReferencesAndExactFiltering(t *testing.T) {
 	if catalog.Total != 1 || catalog.Skills[0].Uses != 2 {
 		t.Fatal("path search changed whole-skill totals", catalog)
 	}
-	if _, err := a.DB.Exec("DELETE FROM events WHERE session='codex:root'"); err != nil {
+	if _, err := a.DB.Exec("DELETE FROM records WHERE session='codex:root'"); err != nil {
 		t.Fatal(err)
 	}
 	save(t, a)
@@ -76,37 +76,69 @@ func TestSkillReferenceExtractionIsConservative(t *testing.T) {
 		t.Fatal("bounded skill injection header", facts)
 	}
 }
-func TestSkillHistoryUsesOriginalsAndResumes(t *testing.T) {
+
+// The overview must choose invocation evidence before newer reads, keep plugin
+// groups separate, and resolve OTEL IDs to their merged import counterpart.
+func TestSessionSkillsRepresentativeEvidenceAndOrigins(t *testing.T) {
 	a := setup(t)
-	deadline := time.Now().Add(3 * time.Second)
-	for {
-		var ready bool
-		if err := a.DB.QueryRow("SELECT complete FROM maintenance_jobs WHERE name=?", skillsJob).Scan(&ready); err != nil {
+	imported := recorded(t, "merged", "import", "codex", "root", "gen_ai.user.message", map[string]any{"message_id": "shared", "prompt": "hello"})
+	native := recorded(t, "native", "otel", "codex", "root", "gen_ai.user.message", map[string]any{"message_id": "shared", "prompt": "hello"})
+	recent := recorded(t, "recent", "otel", "codex", "root", "gen_ai.user.message", map[string]any{"prompt": "later"})
+	recent.Time = "2026-11-15T00:00:00.000000000Z"
+	native.Origin, recent.Origin = "otel", "otel"
+	save(t, a, imported, native, recent)
+	err := inTransaction(context.Background(), a.DB, func(tx *sql.Tx) error {
+		for _, f := range []struct {
+			event    Event
+			evidence SkillEvidence
+			group    string
+		}{
+			{native, SkillEvidence{Name: "review", Evidence: "reported"}, "invocation"},
+			{recent, SkillEvidence{Name: "review", Evidence: "read"}, "read"},
+			{recent, SkillEvidence{Name: "review", Plugin: "plugin-a", Evidence: "read"}, "plugin-read"},
+		} {
+			if err := insertSkillFact(context.Background(), tx, f.event, f.evidence, f.group); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, origin := range []string{"", "otel", "import"} {
+		tx, err := a.readers.BeginTx(context.Background(), nil)
+		if err != nil {
 			t.Fatal(err)
 		}
-		if ready {
-			break
+		rows, err := sessionSkills(context.Background(), tx, "codex:root", origin)
+		tx.Rollback()
+		if err != nil {
+			t.Fatal(err)
 		}
-		if time.Now().After(deadline) {
-			t.Fatal("empty history indexing never finished")
+		if origin == "import" {
+			if len(rows) != 0 {
+				t.Fatal("evidence leaked across origins", rows)
+			}
+			continue
 		}
-		time.Sleep(time.Millisecond)
-	}
-	read := recorded(t, "read", "import", "codex", "root", "gen_ai.tool.start", map[string]any{"tool_name": "Read", "arguments": `{"file_path":"/work/skills/review-core/SKILL.md"}`})
-	save(t, a, read, skillReport(t, "native", "otel", "root", "reported", "turn", ""))
-	if _, err := a.DB.Exec("DELETE FROM skill_events; DELETE FROM skill_read_inputs; UPDATE maintenance_jobs SET cursor='',complete=0 WHERE name='skills.reads.v2'"); err != nil {
-		t.Fatal(err)
-	}
-	if err := a.runMaintenance(context.Background(), skillsJob, backfillSkills, 0); err != nil {
-		t.Fatal(err)
-	}
-	var catalog struct {
-		Skills []SkillSummary `json:"skills"`
-		Total  int            `json:"total"`
-		Ready  bool           `json:"ready"`
-	}
-	getJSON(t, a, "/api/skills", &catalog)
-	if !catalog.Ready || catalog.Total != 2 {
-		t.Fatal(catalog)
+		if len(rows) != 2 {
+			t.Fatal(rows)
+		}
+		for _, row := range rows {
+			if row.Plugin == "plugin-a" {
+				if row.Event != recent.ID || row.Reads != 1 || row.Uses != 0 {
+					t.Fatal(row)
+				}
+				continue
+			}
+			want := imported.ID
+			if origin == "otel" {
+				want = native.ID
+			}
+			if row.Event != want || row.Uses != 1 || row.Reads != 1 || row.Last != recent.Time {
+				t.Fatal(row)
+			}
+		}
 	}
 }

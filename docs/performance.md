@@ -1,215 +1,53 @@
-# Session-view performance
+# Performance validation
 
-## Skewed conversations and list totals (v0.22.1)
+The storage-generation-2 runtime starts from materialized records/facts/logical events and exact summaries. It does not interpret old schema layouts or rebuild all original histories on startup. Convert the stopped v0.23.0 directory with [the Python tool](storage-migration.md) before using this runtime.
 
-A navigation HAR showed 6.93 seconds waiting for the session API and 1.36
-seconds waiting for the list API. A session with 650,962 events returned only
-58 conversation messages, but first counted 418,601 collapsed processing logs.
-Uniform event spacing in the earlier benchmark missed this concentration.
+## Current measurements
 
-Processing totals now use compact per-minute counters. Only the two partial
-boundary minutes read chronological flags directly; complete minutes use the
-counters. Counts, errors, ordering and import/OTEL semantics remain exact.
-Counters and their backfill checkpoints update in the same write transaction,
-including late arrivals, merged records, reclassification, moves and deletion.
-The one-time historical build reads metadata in background batches after
-startup. Existing indexed counts remain available until that scope is complete.
-Completed jobs (`processing.timeline.v1` and `processing.cards.v1`) do not run
-again on restart. Original JSON is not reparsed or changed by these jobs.
+Synthetic local development measurements, with the current Go binary and headless Chromium. These are not production latency guarantees or percentage improvements over the old schema.
 
-Unfiltered/project/agent list totals reuse the existing visible-root project
-summaries. Searches and time/origin/type filters retain their indexed catalog
-count. Pending external edits fall back to that count. A partial recent-root
-index also avoids sorting or examining hidden/child rows when fetching a page.
+| Workload | Result |
+|---|---|
+| 650,962 records, most processing logs between the final messages | Latest conversation API first 37.5ms, subsequent median 9.31ms |
+| Same skewed session | Browser initial display 312ms |
+| 277,022 records with the real API | Session HTTP approximately 106ms, response-to-frames approximately 110ms |
+| Same 200-card display, advertised totals 2k/20k/277k | 4,225 DOM nodes in each case; total history does not expand initial DOM |
+| 20 explicitly expanded processing pages | 1,000 cards bound in batches of 50; old cards are not reinitialized |
 
-Local same-database medians, three reads following the first request, compared
-with v0.22.0. The synthetic fixture has 650,962 events, 858 conversation messages,
-13,085 sessions and a heavily concentrated latest page:
+The initial conversation request contains at most one page and bounded parsed previews, never every original JSON. Processing details fetch only when expanded. Full original data loads when inspected or exported. Minute counters and exact indexed edge ranges avoid traversing every collapsed log on initial conversation reads.
 
-| Request | v0.22.0 | Current |
-| --- | ---: | ---: |
-| Latest conversation, all origins | 170.90 ms | 9.65 ms |
-| Latest conversation, OTEL | 143.75 ms | 12.06 ms |
-| Latest conversation, imported | 78.04 ms | 7.42 ms |
-| First conversation page | 37.75 ms | 16.72 ms |
-| First session-list page | 19.95 ms | 5.66 ms |
+The session list uses materialized session previews and visible-root project counts. Project sidebar queries are independent of main-result rendering and errors. Full-text searches use FTS postings; identifiers use exact indexes, without morphological analysis. Per-session skill summaries use a set query rather than one query per skill.
 
-Every complete JSON response matched the baseline, including collapsed counts.
-The fixture produces 28,980 compact counter rows across the logical and two
-origin views. Chromium navigation to the latest messages measured 475 → 311 ms;
-processing bodies and original JSON remained unloaded. A separate 4,000-event
-mixed import/OTEL append took 6.87 → 6.91 seconds, including durable ingestion
-and indexing. These are local workload-specific measurements, not production
-latency guarantees.
+## Reproduce
 
-```sh
-python3 scripts/navigation_performance_test.py --binary ./agentlog --baseline /path/to/v0.22.0/agentlog --browser
-```
-
-The script uses synthetic content and upgrades one disposable database in place,
-avoiding multiple multi-GB copies. The earlier uniform-distribution and frontend
-benchmarks below remain useful for their separate workloads.
-
-
-The folder overview reads cached per-folder/source summaries instead of decoding and adding every session's usage on each GET. In a local synthetic fixture with 20,000 sessions, 20 folders and rich usage reports, warm HTTP medians were **1,472 ms → 1.63 ms** versus v0.10.2. Reusing browser number/date formatters reduced rendering 200 session rows from **57.9 ms → 8.3 ms**. Responses, counts, ordering and exact usage values matched the baseline. These measurements are fixture-specific, not deployment guarantees.
-
-Folder membership, exact decimal totals, coverage and latest activity update in the ingestion transaction. Updates subtract the previous contribution before adding the replacement; archive locks remove contributions before deletion begins. Folder/source/diagnostic filters use the cached groups. Search and skill filters still aggregate their selected sessions. Initial upgrade populates the cache from session summaries in resumable batches of 200; it does not read original logs. The 20,000-session upgrade took 3.75 seconds in this run. Normal startup does not repeat completed work.
-
-```sh
-python3 scripts/overview_performance_test.py --binary ./agentlog --baseline /path/to/v0.10.2/agentlog --browser
-```
-
-Measured locally with 150,000 synthetic imported records, 500 sessions, and 2 KiB prompt payloads per record. Medians are three reads following the first request, on the same machine and fixture; they are not deployment guarantees.
-
-| API | Before | After | Response before → after |
-| --- | ---: | ---: | ---: |
-| Session list | 3,423 ms | 2.6 ms | 897,467 → 116,180 bytes |
-| Session detail | 1,256 ms | 14.2 ms | 1,418,489 → 526,383 bytes |
-
-The first detail read after upgrade was 158 ms. The one-time upgrade took 56 seconds in this run. The benchmark checks identical session counts, ordering and event identities between binaries.
+Build the current binary, then choose the checks relevant to a change:
 
 ```sh
 go build -o agentlog ./cmd/agentlog
-python3 scripts/performance_check.py --binary ./agentlog --baseline /path/to/previous/agentlog
+
+python3 scripts/session_performance_test.py \
+  --binary ./agentlog --records 650962 --skewed --browser
+
+python3 scripts/frontend_performance_test.py \
+  --binary ./agentlog --real-api
+
+python3 scripts/navigation_performance_test.py \
+  --binary ./agentlog --records 650962 --sessions 13085 --browser
+
+python3 scripts/overview_performance_test.py \
+  --binary ./agentlog --sessions 20000 --browser
+
+AGENTLOG_BIN=./agentlog python3 scripts/usage_performance_test.py
+AGENTLOG_BIN=./agentlog python3 scripts/startup_ingestion_test.py
 ```
 
-The benchmark creates isolated synthetic databases and removes them afterward. It needs several GiB of temporary disk space at the default size. `--records`, `--sessions` and `--payload-bytes` adjust the fixture.
+Read-performance fixtures insert prepared synthetic rows and their summaries to isolate SQL/rendering costs. They are not an ingestion benchmark. The usage benchmark sends real reverse-ordered delta metrics through HTTP. The startup test exercises accepted ingestion with the main writer blocked, SIGKILL/restart, persistent watch checkpoints and concurrent reads. Docker smoke's optional scale mode also uses real HTTP ingestion.
 
-Indexed session summaries and bounded card presentations are maintained in the same transaction as ingestion. Counts use delta updates; time boundaries use index endpoints. Mixed imported/OTEL updates recalculate only the affected shared-ID component, including former neighbors when identifiers change. Read-only WAL connections keep UI reads independent of the ingestion connection.
-
-List/detail requests read their page from these indexes. Full attributes and original JSON load through `/api/event` only when a card is opened; the browser retains at most the latest full card. Search uses a separate FTS5 inverted index; only exports and explicit event inspection read original records. There are no periodic browser requests; Reloading the browser updates the current screen; **Latest** loads the newest timeline page.
-
-The service accepts durable ingestion before preparing the view database. Browsing
-starts after schema initialization, while historical presentation work continues
-in resumable background batches. These derived tables require additional disk
-space; original records remain intact. See [startup and the inbox](startup.md).
-
-## Large conversation sessions
-
-Initial conversation pages also summarize the collapsed processing gaps. On a
-277,022-event fixture, those summaries dominated CPU time: every gap repeated
-position queries and SQL preparation, and its counts visited the full card rows.
-
-Migration 0020 extends the existing chronological paging indexes with the three
-summary flags. Counts can read those indexes without loading card/detail rows;
-it does not add a separate full-history index. Visible logical positions are
-resolved in one bounded query, and count statements are reused within each
-request. No derived counter cache or new backfill job is needed.
-Unfiltered Diagnostics pages reuse the existing catalog total instead of
-counting every timeline entry again.
-
-The local prepared fixture has 556 conversation entries and 276,466 processing
-entries. Warm HTTP medians across five reads after the first request were:
-
-| Request | Before | After |
-| --- | ---: | ---: |
-| Latest conversation page, all origins | 65.91 ms | 40.15 ms |
-| First conversation page | 92.91 ms | 52.04 ms |
-| Latest conversation page, OTEL | 111.04 ms | 49.59 ms |
-| Latest conversation page, imported | 172.00 ms | 48.09 ms |
-| Latest unfiltered Diagnostics page | 29.92 ms | 1.90 ms |
-
-Complete responses, including gap counts, error counts, ordering and origin
-selection, matched the baseline. Chromium verified initial rendering, opening
-at the bottom and the absence of processing/original requests before expansion.
-These synthetic timings do not include production network or storage latency.
-The two enlarged indexes added approximately 2.3 MiB on this fixture. Updating
-an existing database rebuilds these indexes once during schema preparation.
+The optional baseline arguments on materialized fixture benchmarks compare generation-2 binaries. Cross-generation compatibility is tested separately by converting a real v0.23.0 database and comparing 60 API responses:
 
 ```sh
-python3 scripts/session_performance_test.py --binary ./agentlog \
-  --baseline /path/to/previous/agentlog --records 277022 --browser
+uv run --python '>=3.14' scripts/storage_migration_api_test.py \
+  --baseline /path/to/v0.23.0/agentlog --binary ./agentlog
 ```
 
-This test seeds prepared synthetic rows in disposable databases, separating
-session read latency from import/backfill throughput. Omit `--browser` to run
-only the API comparison. Use `performance_check.py` for the separate historical
-import and overview workload.
-
-## Browser rendering and incremental loading
-
-Chromium at 1440×1000 was tested with 2,000, 20,000 and 277,022 total events.
-To isolate browser scaling from API work and different page contents, the
-controlled comparison supplies the same 200 conversation cards, 600 Japanese
-characters per card and 201 collapsed processing groups at every size. Only
-the total event count and gap counts change. Medians across five fresh pages:
-
-| Total events | `renderEvents` JavaScript | Response end → two animation frames | DOM nodes |
-| --- | ---: | ---: | ---: |
-| 2,000 | 26.0 ms | 311.8 ms | 4,195 |
-| 20,000 | 30.3 ms | 325.6 ms | 4,195 |
-| 277,022 | 28.5 ms | 321.0 ms | 4,195 |
-
-Initial browser work does not grow with the total history in this comparison.
-Laying out 200 long messages still takes about 0.3 seconds locally; that cost
-depends on visible content, viewport and device. The animation-frame metric
-includes parsing the response, JavaScript and layout scheduling; it is not a
-hardware paint measurement or an end-to-end production latency guarantee.
-Mock-response HTTP times are not server benchmarks.
-
-A separate real-API check uses the prepared database fixture above. Its latest
-pages contain 4, 40 and 156 conversation cards respectively, so those browser
-times also reflect different amounts of visible content. At 277,022 events,
-the session HTTP request took 71.6 ms, `renderEvents` took 12.8 ms and the
-response-to-frames interval was 70.1 ms. Every scenario opened on the latest
-conversation, rendered at most 200 cards and made no processing-log or original
-JSON request before expansion. Project/skill/subagent-heavy headers and slower
-devices are separate workloads, not covered by these fixtures.
-
-Explicit processing-log expansion remains incremental at 50 cards per request.
-Appending previously rebound handlers on every loaded card and retained complete
-event objects just to count them. It now initializes only the new fragment and
-retains the count. Across twenty 50-card pages this reduces initialized cards
-from 10,500 to 1,000. Already opened DOM cards remain until the timeline or filter
-is replaced; this change does not virtualize an arbitrarily expanded log group.
-
-```sh
-python3 scripts/frontend_performance_test.py --binary ./agentlog --real-api
-```
-
-The controlled comparison and append check run by default. `--real-api` also
-creates disposable prepared databases up to 277,022 events. Playwright and
-Chromium at `/usr/bin/chromium` are required. Timing values are reported without
-flaky wall-clock thresholds; bounded DOM size, lazy requests and page-local
-handler initialization are asserted.
-
-## Other read paths and earlier measurements
-
-Watched files still reparse when changed to preserve canonical-message and
-journal relationships. Acknowledged record hashes now suppress unchanged
-deliveries in bounded 200-record batches. A 1,000-record fixture plus one
-appended record sends one additional record across watcher restarts, rather
-than replaying all 1,001. This reduces delivery/queue work, not the asymptotic
-cost of parsing the changed source file. Hash metadata adds storage to the
-checkpoint DB without retaining source bodies.
-
-Session JSON and filtered ZIP downloads have a separate two-connection read
-pool and admission limit. Paused exports cannot exhaust the four navigation
-connections. A 30-second per-write deadline bounds stalled clients while
-allowing progressing downloads to exceed the ordinary total write timeout.
-Active snapshots still retain WAL pages until they end.
-
-The related-agent header is also bounded to 20 child links, with keyset pages
-loaded on demand. Its state and requests are owned separately from timeline
-rendering. The controlled event-count benchmark above has no child links;
-the child-page API/browser regression separately checks 47 children.
-
-Session lists are ordered by latest activity. Shared numbered pagination shows the current range and total, first/last pages, nearby pages with ellipses, and a validated page-number field. The compact bar stays visible while scrolling. Lists count only indexed session summaries; filtered totals and rows share one read transaction (`X-Total-Count` and `X-Page-Offset`). Stale offsets clamp to the last valid page.
-
-Timelines use fixed 200-entry pages from the oldest event. They open on the last page, ordered oldest to newest, with the newest event visible at the bottom. The last page uses a descending index read bounded to its actual size, rather than skipping the history. **Latest** returns to that page. Historical page links retain their page/origin on reload; reloading an older page preserves its page selection. Appending events does not shift previous page boundaries.
-
-The default page shows sessions with a persistent project sidebar. Explicit project names take precedence; actual exported working-directory paths provide a fallback, and absent metadata stays Unassigned. Project totals update transactionally during ingestion, so loading navigation does not aggregate every session's usage. A 20,000-session synthetic fixture measured warm local medians of 0.82 ms for projects and 24.94 ms for a 200-row session page with rich accounting data. The retained `/api/folders` endpoint groups full directory paths and preserves its cached accounting summaries.
-
-A partial directory-candidate index supplies the earliest user event with known metadata, then falls back to other known events. Existing databases populate the summary directories once at startup; only legacy paths clipped at 512 bytes need one original-record lookup. Directory identities accept strings up to 32 KiB; larger values and other types appear under Folder unavailable and remain unchanged in original records. Folder reads never read original payloads.
-
-```sh
-python3 scripts/performance_check.py --binary ./agentlog --folders
-```
-
-Usage summaries are maintained incrementally from normalized reporting groups. With the same 150,000-record/500-session/20-folder synthetic fixture, warm medians after adding accounting were 2.90 ms for session lists, 7.55 ms for details and 2.82 ms for folders. Session counts, order and event identities matched v0.6.0. Reverse-order OTEL delta batches of 1k/2k/4k/10k records took 1.35/3.13/5.83/16.36 seconds including ingestion and full-text indexing; accounting uses an exact integer RTree rather than a suffix scan per interval. These local measurements are fixture-specific.
-
-Subagent links use one batched lookup for visible cards and indexed lookups for actual launch calls. In a synthetic 10,000-tool-record history, warm HTTP medians across 12 reads were 6.93 ms for the session detail (v0.7.2: 7.78 ms) and 1.12 ms for a 45-event runtime-agent preview. The one-time subagent index upgrade took 0.51 s. Preview pages contain at most 40 cached cards and do not fetch original JSON.
-
-Tool input/output lookup reuses phase-scoped call-ID keys and reads only a bounded counterpart card. Skill summaries read a separate evidence index; historical skill recovery runs in background batches after HTTP startup. With a 10k-tool Codex fixture, local warm medians were 0.67 ms for session lists and 8.78 ms for details (v0.8.0: 0.53 / 7.25 ms). The updated server began listening after 0.054 s against that existing database; skill history continued in the background.
-
-Versioned migrations move missing-card/search discovery out of ordinary startup. With 10,000 unresolved Codex traces retained in identical ready databases, local median startup was 20.86 ms (v0.9.0: 41.89 ms); unrelated single-log ingestion was 3.42 ms (v0.9.0: 24.97 ms). The initial migration took 73.76 ms. These are warm, local synthetic measurements, not a large-production-DB estimate. `scripts/lifecycle_performance.py` reproduces this workload. Changed trace identities are queued transactionally, so unrelated appends no longer revisit all unresolved spans.
+Measurements need room for the synthetic DB, WAL and fixture copies. Offline conversion additionally validates the original and destination bytes and indexes; its resource use is separate from runtime performance. Current reviewed limitations are recorded in [storage-v2-review.md](storage-v2-review.md).

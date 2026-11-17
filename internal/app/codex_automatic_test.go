@@ -86,7 +86,7 @@ func TestRealMessageOverridesAutomaticConversationClassification(t *testing.T) {
 		t.Fatal("real prompt did not restore the session and title", sessions)
 	}
 	if err := inTransaction(context.Background(), a.DB, func(tx *sql.Tx) error {
-		if _, err := tx.Exec("DELETE FROM events WHERE id=?", human.ID); err != nil {
+		if _, err := tx.Exec("DELETE FROM records WHERE id=?", human.ID); err != nil {
 			return err
 		}
 		return refreshProjections(context.Background(), tx)
@@ -96,49 +96,5 @@ func TestRealMessageOverridesAutomaticConversationClassification(t *testing.T) {
 	getJSON(t, a, "/api/sessions", &sessions)
 	if len(sessions) != 0 {
 		t.Fatal("removed real message kept automatic session visible")
-	}
-}
-
-func TestAutomaticSessionUpgradeWaitsForHumanEvidenceAcrossPages(t *testing.T) {
-	a := setup(t)
-	ctx := context.Background()
-	save(t, a, recorded(t, "000-auto", "otel", "codex", "mixed", "codex.user_prompt", map[string]any{"prompt": automaticSuggestion}))
-	for i := 0; i < 200; i++ {
-		save(t, a, recorded(t, fmt.Sprintf("padding-%03d", i), "otel", "claude", "unrelated", "user_prompt", map[string]any{"prompt": "synthetic"}))
-	}
-	save(t, a, recorded(t, "zzz-human", "otel", "codex", "mixed", "codex.user_prompt", map[string]any{"prompt": "hello"}))
-	// Reproduce old persisted evidence and the old auto-generated title.
-	if _, err := a.DB.Exec("DELETE FROM codex_session_facts;UPDATE session_catalog SET internal=0"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := a.DB.Exec("UPDATE event_cards SET prompt_title=? WHERE id='000-auto'", strings.Split(automaticSuggestion, "\n")[0]); err != nil {
-		t.Fatal(err)
-	}
-	var cursor string
-	if err := inTransaction(ctx, a.DB, func(tx *sql.Tx) error {
-		var err error
-		cursor, _, err = backfillCodexAutomaticSessions(ctx, tx, "")
-		return err
-	}); err != nil {
-		t.Fatal(err)
-	}
-	var hidden bool
-	if err := a.DB.QueryRow("SELECT internal FROM session_catalog WHERE session='codex:mixed'").Scan(&hidden); err != nil || hidden {
-		t.Fatal("upgrade hid a real conversation before later pages were scanned", hidden, err)
-	}
-	if _, err := a.DB.Exec("UPDATE maintenance_jobs SET complete=0,cursor=? WHERE name=?", cursor, codexAutomaticJob); err != nil {
-		t.Fatal(err)
-	}
-	if err := a.runMaintenance(ctx, codexAutomaticJob, backfillCodexAutomaticSessions, 0); err != nil {
-		t.Fatal(err)
-	}
-	if err := a.drainBatches(ctx, "session visibility", refreshSessionVisibilityBatch); err != nil {
-		t.Fatal(err)
-	}
-	if err := a.DB.QueryRow("SELECT internal FROM session_catalog WHERE session='codex:mixed'").Scan(&hidden); err != nil || hidden {
-		t.Fatal("upgrade ignored real user evidence", hidden, err)
-	}
-	if got := previewTitle(t, a, "codex:mixed", ""); got != "hello" {
-		t.Fatal("upgrade kept automatic prompt as title", got)
 	}
 }

@@ -107,7 +107,7 @@ func storeCard(ctx context.Context, tx *sql.Tx, e Event, d Detail, doc document)
 	if err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO event_cards(id,session,origin,source,parent,time,sequence,is_user,signal,trace,span,parent_span,detail,prompt_title,activity,kind,is_error,turn,presentation_ready,conversation,has_skill) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,EXISTS(SELECT 1 FROM skill_events WHERE event_id=?)) ON CONFLICT(id) DO UPDATE SET
+	_, err = tx.ExecContext(ctx, `INSERT INTO record_facts(id,session,origin,source,parent,time,sequence,is_user,signal,trace,span,parent_span,detail,prompt_title,activity,kind,is_error,turn,presentation_ready,conversation,has_skill) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,EXISTS(SELECT 1 FROM skill_events WHERE event_id=?)) ON CONFLICT(id) DO UPDATE SET
  session=excluded.session,origin=excluded.origin,source=excluded.source,parent=excluded.parent,time=excluded.time,sequence=excluded.sequence,
  is_user=excluded.is_user,signal=excluded.signal,trace=excluded.trace,span=excluded.span,parent_span=excluded.parent_span,detail=excluded.detail,prompt_title=excluded.prompt_title,activity=excluded.activity,kind=excluded.kind,is_error=excluded.is_error,turn=excluded.turn,presentation_ready=1,conversation=excluded.conversation,has_skill=excluded.has_skill`,
 		e.ID, e.Session, e.Origin, e.Source, e.Parent, e.Time, e.Sequence, d.Kind == "user", e.Signal, e.Trace, e.Span, e.ParentSpan, presentation, promptTitle(e.Source, d), detailActivity(d), d.Kind, d.Error, d.Turn, detailConversation(d, e.Source), e.ID)
@@ -118,7 +118,7 @@ func storeCard(ctx context.Context, tx *sql.Tx, e Event, d Detail, doc document)
 		err = storeModelFact(ctx, tx, e, doc, d)
 	}
 	if err == nil {
-		_, err = tx.ExecContext(ctx, "DELETE FROM cards_dirty WHERE id=?", e.ID)
+		_, err = tx.ExecContext(ctx, "DELETE FROM work_items WHERE kind='records' AND (scope,key) IN(SELECT id,'' FROM pending_records WHERE id=?)", e.ID)
 	}
 	return err
 }
@@ -131,7 +131,7 @@ func refreshCards(ctx context.Context, tx *sql.Tx) error {
 	}
 }
 func refreshCardsBatch(ctx context.Context, tx *sql.Tx) (int, error) {
-	batch, err := loadEventBatch(ctx, tx, "SELECT "+qualifiedColumns("e")+" FROM cards_dirty d JOIN events e ON e.id=d.id LIMIT 200")
+	batch, err := loadEventBatch(ctx, tx, "SELECT "+qualifiedColumns("e")+" FROM pending_records d JOIN records e ON e.id=d.id LIMIT 200")
 	if err != nil {
 		return 0, err
 	}
@@ -150,37 +150,8 @@ func refreshCardsBatch(ctx context.Context, tx *sql.Tx) (int, error) {
 	return len(batch), nil
 }
 
-func (a *App) prepareReadModel(ctx context.Context) error {
-	if err := a.drainBatches(ctx, "session cards", refreshCardsBatch); err != nil {
-		return err
-	}
-	if err := inTransaction(ctx, a.DB, func(tx *sql.Tx) error { return clearChangedTimelineEntries(ctx, tx) }); err != nil {
-		return err
-	}
-	var err error
-	// Timeline upgrades also commit one session at a time. Completed sessions
-	// leave the durable dirty queue, so a restart does not repeat the entire job.
-	for {
-		var session string
-		err = a.DB.QueryRowContext(ctx, "SELECT session FROM read_model_dirty d WHERE NOT EXISTS(SELECT 1 FROM archive_locks l WHERE l.session=d.session) LIMIT 1").Scan(&session)
-		if errors.Is(err, sql.ErrNoRows) {
-			return inTransaction(ctx, a.DB, func(tx *sql.Tx) error { return refreshUsage(ctx, tx) })
-		}
-		if err != nil {
-			return err
-		}
-		err = inTransaction(ctx, a.DB, func(tx *sql.Tx) error { return refreshTimeline(ctx, tx, session) })
-		if err == nil {
-			err = a.pauseMaintenance(ctx)
-		}
-		if err != nil {
-			return err
-		}
-	}
-}
-
 func refreshTimelines(ctx context.Context, tx *sql.Tx) error {
-	rows, err := tx.QueryContext(ctx, "SELECT DISTINCT d.session FROM read_model_dirty d WHERE NOT EXISTS(SELECT 1 FROM archive_locks l WHERE l.session=d.session)")
+	rows, err := tx.QueryContext(ctx, "SELECT DISTINCT d.session FROM pending_timeline d WHERE NOT EXISTS(SELECT 1 FROM archive_locks l WHERE l.session=d.session)")
 	if err != nil {
 		return err
 	}
@@ -211,7 +182,7 @@ func refreshTimelines(ctx context.Context, tx *sql.Tx) error {
 }
 
 func clearChangedTimelineEntries(ctx context.Context, tx *sql.Tx) error {
-	_, err := tx.ExecContext(ctx, "DELETE FROM timeline_entries WHERE id IN (SELECT d.id FROM read_model_dirty d WHERE NOT EXISTS(SELECT 1 FROM archive_locks l WHERE l.session=d.session))")
+	_, err := tx.ExecContext(ctx, "DELETE FROM logical_events WHERE id IN (SELECT d.id FROM pending_timeline d WHERE NOT EXISTS(SELECT 1 FROM archive_locks l WHERE l.session=d.session))")
 	return err
 }
 func refreshTimeline(ctx context.Context, tx *sql.Tx, session string) error {
@@ -220,15 +191,15 @@ func refreshTimeline(ctx context.Context, tx *sql.Tx, session string) error {
 	err := tx.QueryRowContext(ctx, `SELECT
  COALESCE((SELECT SUM(count) FROM card_counts WHERE session=? AND origin='import'),0),
  COALESCE((SELECT SUM(count) FROM card_counts WHERE session=? AND origin='otel'),0),
- COALESCE((SELECT time FROM event_cards WHERE session=? AND origin='import' ORDER BY time LIMIT 1),''),
- COALESCE((SELECT time FROM event_cards WHERE session=? AND origin='import' ORDER BY time DESC LIMIT 1),''),
- COALESCE((SELECT time FROM event_cards WHERE session=? AND origin='otel' ORDER BY time LIMIT 1),''),
- COALESCE((SELECT time FROM event_cards WHERE session=? AND origin='otel' ORDER BY time DESC LIMIT 1),'')`, session, session, session, session, session, session).Scan(&imports, &otel, &iStart, &iEnd, &oStart, &oEnd)
+ COALESCE((SELECT time FROM record_facts WHERE session=? AND origin='import' ORDER BY time LIMIT 1),''),
+ COALESCE((SELECT time FROM record_facts WHERE session=? AND origin='import' ORDER BY time DESC LIMIT 1),''),
+ COALESCE((SELECT time FROM record_facts WHERE session=? AND origin='otel' ORDER BY time LIMIT 1),''),
+ COALESCE((SELECT time FROM record_facts WHERE session=? AND origin='otel' ORDER BY time DESC LIMIT 1),'')`, session, session, session, session, session, session).Scan(&imports, &otel, &iStart, &iEnd, &oStart, &oEnd)
 	if err != nil {
 		return err
 	}
 	var wasMixed bool
-	err = tx.QueryRowContext(ctx, "SELECT import_count>0 AND otel_count>0 FROM session_catalog WHERE session=?", session).Scan(&wasMixed)
+	err = tx.QueryRowContext(ctx, "SELECT import_count>0 AND otel_count>0 FROM sessions WHERE session=?", session).Scan(&wasMixed)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
@@ -238,19 +209,19 @@ func refreshTimeline(ctx context.Context, tx *sql.Tx, session string) error {
 		// partners. Follow the complete shared-ID component; unrelated events in a
 		// long mixed session never need to be regrouped.
 		_, err = tx.ExecContext(ctx, `WITH RECURSIVE affected(id) AS (
-   SELECT id FROM read_model_dirty WHERE session=? UNION
-   SELECT neighbor.event_id FROM affected a CROSS JOIN events center ON center.id=a.id
-   CROSS JOIN event_keys own ON own.event_id=a.id CROSS JOIN event_keys neighbor ON neighbor.key=own.key
-   CROSS JOIN events e ON e.id=neighbor.event_id WHERE e.session=? AND e.source=center.source
-  ) INSERT INTO read_model_dirty SELECT ?,id FROM affected WHERE true ON CONFLICT DO NOTHING`, session, session, session)
+   SELECT id FROM pending_timeline WHERE session=? UNION
+   SELECT neighbor.event_id FROM affected a CROSS JOIN records center ON center.id=a.id
+   CROSS JOIN record_keys own ON own.event_id=a.id CROSS JOIN record_keys neighbor ON neighbor.key=own.key
+   CROSS JOIN records e ON e.id=neighbor.event_id WHERE e.session=? AND e.source=center.source
+  ) INSERT OR IGNORE INTO work_items(kind,scope,key) SELECT 'timeline',?,id FROM affected WHERE true ON CONFLICT DO NOTHING`, session, session, session)
 		if err != nil {
 			return err
 		}
-		if _, err = tx.ExecContext(ctx, "DELETE FROM timeline_entries WHERE id IN (SELECT e.id FROM read_model_dirty d CROSS JOIN timeline_entries e ON e.id=d.id WHERE d.session=? AND e.session=?)", session, session); err != nil {
+		if _, err = tx.ExecContext(ctx, "DELETE FROM logical_events WHERE id IN (SELECT e.id FROM pending_timeline d CROSS JOIN logical_events e ON e.id=d.id WHERE d.session=? AND e.session=?)", session, session); err != nil {
 			return err
 		}
 		query := componentCTE +
-			`INSERT INTO timeline_entries(id,session,source,parent,time,end,sequence,is_user,import_id,otel_id) SELECT t.id,t.session,t.source,t.parent,t.time,t.end,t.sequence,t.is_user,
+			`INSERT INTO logical_events(id,session,source,parent,time,end,sequence,is_user,import_id,otel_id) SELECT t.id,t.session,t.source,t.parent,t.time,t.end,t.sequence,t.is_user,
     COALESCE(MAX(CASE WHEN m.origin='import' THEN m.id END),''),COALESCE(MAX(CASE WHEN m.origin='otel' THEN m.id END),'')
     FROM timeline t JOIN members m ON m.view_id=t.id GROUP BY t.id`
 		args := []any{session, session}
@@ -261,38 +232,43 @@ func refreshTimeline(ctx context.Context, tx *sql.Tx, session string) error {
 	} else {
 		// The usual single-source append updates only changed rows, rather than
 		// repeatedly rebuilding the entire session during a historical import.
-		if _, err = tx.ExecContext(ctx, "DELETE FROM timeline_entries WHERE id IN (SELECT e.id FROM read_model_dirty d CROSS JOIN timeline_entries e ON e.id=d.id WHERE d.session=? AND e.session=?)", session, session); err != nil {
+		if _, err = tx.ExecContext(ctx, "DELETE FROM logical_events WHERE id IN (SELECT e.id FROM pending_timeline d CROSS JOIN logical_events e ON e.id=d.id WHERE d.session=? AND e.session=?)", session, session); err != nil {
 			return err
 		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO timeline_entries(id,session,source,parent,time,end,sequence,is_user,import_id,otel_id) SELECT c.id,c.session,c.source,c.parent,c.time,c.time,c.sequence,c.is_user,
+		_, err = tx.ExecContext(ctx, `INSERT INTO logical_events(id,session,source,parent,time,end,sequence,is_user,import_id,otel_id) SELECT c.id,c.session,c.source,c.parent,c.time,c.time,c.sequence,c.is_user,
    CASE WHEN c.origin='import' THEN c.id ELSE '' END,CASE WHEN c.origin='otel' THEN c.id ELSE '' END
-   FROM read_model_dirty d CROSS JOIN event_cards c ON c.id=d.id WHERE d.session=? AND c.session=?`, session, session)
+   FROM pending_timeline d CROSS JOIN record_facts c ON c.id=d.id WHERE d.session=? AND c.session=?`, session, session)
 		if err != nil {
 			return err
 		}
 	}
 	if imports+otel == 0 {
-		_, err = tx.ExecContext(ctx, "DELETE FROM session_catalog WHERE session=?", session)
+		_, err = tx.ExecContext(ctx, "DELETE FROM sessions WHERE session=?", session)
 	} else {
 		detail, e := catalogPreview(ctx, tx, session)
 		if e != nil {
 			return e
 		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO session_catalog(session,source,parent,count,start,end,import_count,import_start,import_end,otel_count,otel_start,otel_end,preview) SELECT ?,MAX(source),MAX(parent),
+		var preview Detail
+		if err := json.Unmarshal(detail, &preview); err != nil {
+			return err
+		}
+		directory, project := sessionProject(preview)
+		_, err = tx.ExecContext(ctx, `INSERT INTO sessions(session,source,parent,count,start,end,import_count,import_start,import_end,otel_count,otel_start,otel_end,preview,project_directory,project_key) SELECT ?,MAX(source),MAX(parent),
  (SELECT count FROM timeline_counts WHERE session=?),
- (SELECT time FROM timeline_entries WHERE session=? ORDER BY time LIMIT 1),
- (SELECT end FROM timeline_entries WHERE session=? ORDER BY end DESC LIMIT 1),?,?,?,?,?,?,? FROM card_counts WHERE session=?
+ (SELECT time FROM logical_events WHERE session=? ORDER BY time LIMIT 1),
+ (SELECT end FROM logical_events WHERE session=? ORDER BY end DESC LIMIT 1),?,?,?,?,?,?,?,?,? FROM card_counts WHERE session=?
  ON CONFLICT(session) DO UPDATE SET source=excluded.source,parent=excluded.parent,count=excluded.count,start=excluded.start,end=excluded.end,
- import_count=excluded.import_count,import_start=excluded.import_start,import_end=excluded.import_end,otel_count=excluded.otel_count,otel_start=excluded.otel_start,otel_end=excluded.otel_end,preview=excluded.preview`,
-			session, session, session, session, imports, iStart, iEnd, otel, oStart, oEnd, detail, session)
+ import_count=excluded.import_count,import_start=excluded.import_start,import_end=excluded.import_end,otel_count=excluded.otel_count,otel_start=excluded.otel_start,otel_end=excluded.otel_end,preview=excluded.preview,project_directory=excluded.project_directory,project_key=excluded.project_key`,
+			session, session, session, session, imports, iStart, iEnd, otel, oStart, oEnd, detail, directory, project, session)
 	}
 	if err == nil {
 		_, err = tx.ExecContext(ctx, `INSERT OR IGNORE INTO timeline_errors
- SELECT t.id,t.session FROM read_model_dirty d CROSS JOIN timeline_entries t ON t.id=d.id
+ SELECT t.id,t.session FROM pending_timeline d CROSS JOIN logical_events t ON t.id=d.id
  WHERE d.session=? AND EXISTS(SELECT 1 FROM event_errors WHERE id IN(t.import_id,t.otel_id))`, session)
 	}
 	if err == nil {
-		_, err = tx.ExecContext(ctx, "DELETE FROM read_model_dirty WHERE session=?", session)
+		_, err = tx.ExecContext(ctx, "DELETE FROM work_items WHERE kind='timeline' AND (scope,key) IN(SELECT session,id FROM pending_timeline WHERE session=?)", session)
 	}
 	return err
 }
@@ -330,13 +306,13 @@ func readFilteredTimeline(ctx context.Context, tx *sql.Tx, session, origin strin
 	var rows *sql.Rows
 	var err error
 	if origin != "" {
-		query := "SELECT id," + cardColumns + " FROM event_cards WHERE session=? AND origin=?" + filter.predicate("") + " ORDER BY " + order + " LIMIT ? OFFSET ?"
+		query := "SELECT id," + cardColumns + " FROM record_facts WHERE session=? AND origin=?" + filter.predicate("") + " ORDER BY " + order + " LIMIT ? OFFSET ?"
 		if mode == timelineLatest {
 			query = "SELECT * FROM (" + query + ") ORDER BY time,sequence,id"
 		}
 		rows, err = tx.QueryContext(ctx, query, session, origin, limit, off)
 	} else {
-		rows, err = tx.QueryContext(ctx, `SELECT p.id,`+qualifiedCardColumns("c")+` FROM (SELECT id,time,sequence,import_id,otel_id FROM timeline_entries WHERE session=?`+filter.predicate("")+` ORDER BY `+order+` LIMIT ? OFFSET ?) p JOIN event_cards c ON c.id=p.import_id OR c.id=p.otel_id ORDER BY p.time,p.sequence,p.id,c.origin,c.id`, session, limit, off)
+		rows, err = tx.QueryContext(ctx, `SELECT p.id,`+qualifiedCardColumns("c")+` FROM (SELECT id,time,sequence,import_id,otel_id FROM logical_events WHERE session=?`+filter.predicate("")+` ORDER BY `+order+` LIMIT ? OFFSET ?) p JOIN record_facts c ON c.id=p.import_id OR c.id=p.otel_id ORDER BY p.time,p.sequence,p.id,c.origin,c.id`, session, limit, off)
 	}
 	if err != nil {
 		return nil, err

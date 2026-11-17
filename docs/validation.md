@@ -1,3 +1,7 @@
+# Storage generation 2
+
+Offline Python migration, the new schema/runtime boundaries, independent P1–P3 reviews and current validation are recorded in [storage-v2-review.md](storage-v2-review.md). The following sections retain historical validation; old automatic-upgrade behavior does not apply to generation 2.
+
 # Reported usage (current)
 
 - Incremental, exact-decimal accounting groups repeated responses and cumulative epochs, rejects overlapping delta intervals and conflicting reports, and caches per-session/origin totals. Folder reads combine those caches. Error counts follow logical timeline reconciliation and archive deletion.

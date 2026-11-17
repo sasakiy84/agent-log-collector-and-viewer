@@ -15,7 +15,7 @@ type childrenPage struct {
 
 func readChildren(ctx context.Context, tx *sql.Tx, session, after string) (childrenPage, error) {
 	page := childrenPage{Children: []string{}}
-	rows, err := tx.QueryContext(ctx, "SELECT session FROM session_catalog WHERE parent=? AND session>? ORDER BY session LIMIT ?", session, after, childrenPageSize+1)
+	rows, err := tx.QueryContext(ctx, "SELECT session FROM sessions WHERE parent=? AND session>? ORDER BY session LIMIT ?", session, after, childrenPageSize+1)
 	if err != nil {
 		return page, err
 	}

@@ -1,8 +1,6 @@
 package app
 
 import (
-	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"testing"
@@ -63,7 +61,7 @@ func TestSkillReadsCountRepeatedCallsPairLateAndDeduplicateOrigins(t *testing.T)
 	if s := skillCounts(t, a, ""); s.Reads != 1 || s.Failed != 1 {
 		t.Fatal(s)
 	}
-	if _, err := a.DB.Exec("DELETE FROM events WHERE id=?", failed.ID); err != nil {
+	if _, err := a.DB.Exec("DELETE FROM records WHERE id=?", failed.ID); err != nil {
 		t.Fatal(err)
 	}
 	save(t, a)
@@ -153,33 +151,11 @@ func TestSkillScriptRequiresInnerSuccessAndReadToolsRequireResult(t *testing.T) 
 		t.Fatal(s)
 	}
 }
-func TestSkillHistoryRebuildUsesUnclippedRawAndCommitsCheckpoints(t *testing.T) {
+func TestSkillReadCountsAcrossLargeBatch(t *testing.T) {
 	a := setup(t)
 	for i := 0; i < 130; i++ {
 		input, output := skillReadEvents(t, fmt.Sprintf("read-%03d", i), "import", "codex", "root", "exec_command", `{"cmd":"cd /work/skills/review && cat SKILL.md"}`, nil)
 		save(t, a, input, output)
-	}
-	if _, err := a.DB.Exec("DELETE FROM skill_events; DELETE FROM skill_read_inputs; UPDATE event_cards SET detail='{}'; UPDATE maintenance_jobs SET cursor='',complete=0,processed=0 WHERE name=?", skillsJob); err != nil {
-		t.Fatal(err)
-	}
-	var cursor string
-	if err := inTransaction(context.Background(), a.DB, func(tx *sql.Tx) error {
-		var n int
-		var err error
-		cursor, n, err = backfillSkills(context.Background(), tx, "")
-		if n != 128 {
-			t.Fatal(n)
-		}
-		if err != nil {
-			return err
-		}
-		_, err = tx.Exec("UPDATE maintenance_jobs SET cursor=?,processed=? WHERE name=?", cursor, n, skillsJob)
-		return err
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := a.runMaintenance(context.Background(), skillsJob, backfillSkills, 0); err != nil {
-		t.Fatal(err)
 	}
 	s := skillCounts(t, a, "")
 	if s.Reads != 130 || s.Pending != 0 || s.Uses != 0 {

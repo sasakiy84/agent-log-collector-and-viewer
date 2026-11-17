@@ -41,17 +41,6 @@ func TestSubagentLaunchAcrossPagesAndLateResult(t *testing.T) {
 	if first.Events[0].Subagents[0].Session != "codex:revised" {
 		t.Fatal(first.Events[0].Subagents)
 	}
-	// Existing histories build the same bounded index on upgrade/restart.
-	if _, err := a.DB.Exec("DELETE FROM agent_calls; UPDATE maintenance_jobs SET cursor='',complete=0 WHERE name='agents.v1'"); err != nil {
-		t.Fatal(err)
-	}
-	if err := a.runMaintenance(context.Background(), agentsJob, backfillAgents, 0); err != nil {
-		t.Fatal(err)
-	}
-	getJSON(t, a, "/api/session?id=codex:parent&limit=1", &first)
-	if first.Events[0].Subagents[0].Session != "codex:revised" {
-		t.Fatal("backfill lost link")
-	}
 }
 
 func TestSubagentScopeAndClaudeResult(t *testing.T) {
@@ -128,7 +117,7 @@ func TestSubagentCopilotInlinePaginationAndDedup(t *testing.T) {
 			}
 		}
 	}
-	if _, err := a.DB.ExecContext(context.Background(), "DELETE FROM events"); err != nil {
+	if _, err := a.DB.ExecContext(context.Background(), "DELETE FROM records"); err != nil {
 		t.Fatal(err)
 	}
 	var n int

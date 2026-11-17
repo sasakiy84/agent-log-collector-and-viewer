@@ -1,109 +1,56 @@
-# Database and delivery maintenance
+# Storage and development
 
-The HTTP API, static UI, import identities and original event payloads are unchanged by the database lifecycle refactor.
+The service uses Go and SQLite. HTTP payloads and UI behavior are independent of table names. Original JSON bytes and public event/session IDs remain stable.
 
-## Schema changes
+## Storage generation 2
 
-`internal/app/migrations/*.sql` is the schema history, embedded in the binary. Files apply in numeric order. `schema_migrations` records each filename, SHA-256 checksum and application time. Pending SQL and ledger entries commit atomically; failure rolls back the pending set. An edited migration, a gap or a newer schema is rejected instead of attempting a downgrade.
+`internal/app/schema.sql` is the complete, immutable generation-2 baseline, shared by the Go binary and the standalone Python converter. The main database identifies itself with `application_id=0x414C4732` and `user_version=1`. `schema_migrations` records the baseline SHA-256 and application time. Future additive changes append entries to `migrations()`; do not edit a shipped baseline. DDL and history commit together, and missing/edited/future history is rejected.
 
-Add the next numbered SQL file for every schema change. Never edit a migration that has shipped. The baseline is the complete v0.9.0 schema; adoption preserves existing data and independently recorded usage, subagent and skill checkpoints. The old `PRAGMA user_version` was only a folder-index flag and is not interpreted as a schema version.
+The service does not adopt the old schema. Convert a stopped v0.23.0 data directory using [the Python migration](storage-migration.md). The converter transfers original and prepared data, SQLite indexes, pending accepted ingestion, watch checkpoints and archive files. A migrated database is immediately usable; startup does not rerun historical extraction jobs.
 
-Missing cards/search documents are discovered once during adoption. Subsequent ingestion maintains durable dirty queues in the same transaction as the original event. Ordinary startup processes pending queues rather than auditing all original records. Direct manual edits to derived tables are unsupported; a repair should be an explicit migration or a versioned backfill.
+The main database has 40 application tables, including FTS5 and R-tree virtual tables but excluding SQLite shadow tables. Thirteen typed, read-only `pending_*` views expose the single durable `work_items(kind,scope,key)` table. They do not add duplicated queue storage. The views allow each projection to name its own fields while queue writes have one storage owner.
 
-## Data backfills
+## Write and read boundaries
 
-`maintenance_jobs` is independent of schema history. A job name includes its algorithm version (`usage.v1`, `agents.v1`, `skills.v1`, `directories.v1`, `titles.v1`). When the extraction logic changes, schedule a new name in a new migration. Do not reset a shipped checkpoint implicitly.
+- `analysis.go` interprets records and computes correlation keys and full-text terms before acquiring the single SQLite writer. Analyzer output does not depend on database state or localized display labels.
+- `store.go` checks deletion tombstones and stable import identities, persists changed originals, facts and search documents, then invokes `refreshProjections` before committing.
+- `projection.go` defines dependency order and attaches stage names to failures. Every ordinary ingestion batch publishes its related views atomically. Trace reassignment and archive deletion share this projection path.
+- `record_batch.go` bounds original payloads loaded for explicit pending repairs. There are no old-format backfill jobs in the service.
+- `records` contains original OTEL-shaped JSON. `record_facts` caches per-origin parsed presentations and indexed classifications. `logical_events` links imported and OTEL counterparts conservatively. Do not collapse per-origin evidence into merged state.
+- `sessions` stores project identity separately from its UI preview. Project and directory summaries remain incremental so sidebar/list requests do not decode whole histories.
+- `session_usage` keeps accounting basis, coverage and exact decimal strings. Logs, traces, cumulative metrics and overlapping delta intervals cannot simply be summed.
+- SQL triggers preserve transaction-local invalidations, counters, foreign-key cleanup and archive guards. No-op updates are gated where dependencies are unchanged. Do not bypass these invariants in normal application writes.
 
-`runMaintenance` commits a bounded batch and its cursor together. Empty batches mark completion, non-advancing cursors fail, and errors retain the last committed checkpoint. The HTTP service opens its independent durable inbox first. Schema migrations then initialize the view database and read pool; historical jobs run in the background with pauses between committed batches. Historical skill recovery also remains a background job. Logs report progress. Restart resumes failed/incomplete work; the last error is retained until a successful batch.
+`service.go` opens the independent durable inbox, initializes storage/read pools, recovers only persisted invalidations and starts FIFO consumption. An acknowledged inbox batch survives a crash; a crash after publication but before queue deletion replays stable IDs without duplicate data. Watch checkpoints live in the inbox database.
 
-For operational diagnosis, open the database read-only and inspect:
+WAL readers use read-only connections separate from the writer and export pool. Foreign keys, busy timeout and transaction settings are connection properties, including replacement connections. Export snapshots are concurrency-limited. Archive deletion records tombstones, checks user confirmation and proceeds in batches; native incremental vacuum reclaims pages without rebuilding history.
+
+Useful read-only diagnostics:
 
 ```sql
 SELECT version,name,applied_at FROM schema_migrations ORDER BY version;
-SELECT name,complete,processed,updated_at,error FROM maintenance_jobs ORDER BY name;
+SELECT kind,COUNT(*) FROM work_items GROUP BY kind;
+SELECT SUM(records),SUM(raw_bytes) FROM record_totals;
 ```
 
-`refreshProjections` defines write dependency order: trace ownership, cards, full-text search, timelines, activity metadata, per-call statistics, and overview summaries. The background startup path commits resumable card/session batches and flushes usage totals before consuming the durable inbox. Readers can access committed views after schema initialization; archive operations wait for preparation, and archive creation/deletion also checks pending ingestion for the selected sessions, without blocking unrelated archives or recovery actions. Changed trace identities use `trace_dirty`; identities containing archive-locked sessions stay queued until the locks are released.
-
-Archive listings join indexed session timestamps with `archive_stats` record/byte counters maintained by event triggers. `archive_stats_pending` is the resumable upgrade queue; no ordinary archive-list request reads original payloads. Eligibility uses the original per-origin timestamps, including unknown times hidden by imported/OTEL card pairing. Folder membership is frozen in the archive snapshot. Running-job updates use an authenticated SSE stream notified after committed state changes, without browser polling.
-
-Database URI construction applies foreign keys, busy timeout and writer transaction settings to every connection, including replacements. WAL readers and archive snapshots use read-only connections.
-
-## Runtime boundaries
-
-- `service.go` owns startup/readiness and connects the durable queue to `Save`.
-  `ingest_queue.go` owns the inbox connection, capacity, FIFO replay and watch
-  checkpoints. Archive checks and status queries use that boundary rather than
-  knowing the inbox schema. Shutdown stops workers before closing connections.
-- `sqlSelection` keeps a selection's driving tables, conditions and parameters
-  together. Session search, analysis and conversation navigation reuse those
-  parts without extracting conditions from already-rendered SQL strings.
-- Downloads share response/deadline preparation in `download.go`. Session JSON
-  and filtered ZIP exports stream originals rather than materializing sessions;
-  failed streams abort without a valid closing JSON/ZIP delimiter.
-- Archive deletion checkpoints are passive between batches, so a concurrent
-  export snapshot does not block the writer after each batch. Final compaction
-  retains its separate space-reclamation and reader coordination rules.
+The inbox has a separate schema history. Inspect `ingest_size`, `ingest_batches`, `watch_files` and `watch_records` in `agentlog.db.ingest.db`.
 
 ## Validation
 
-Build and release with Go 1.27.4 or a newer patched 1.27 release; the Docker builder is pinned to 1.27.4. Behavioral Go tests copy a closed, immutable empty database into each test's private directory. Migration and upgrade tests still exercise schema creation and historical versions directly, without sharing a writable database.
-
 ```sh
-bash scripts/check-static.sh
-go test -race ./...
+go test ./...
 go vet ./...
-govulncheck ./...
-go build ./cmd/agentlog
-bash scripts/test-upgrade.sh
+bash scripts/check-static.sh
+uv run scripts/migrate_db_test.py
 ```
 
-The upgrade check downloads the Linux v0.9.0 release with a pinned SHA-256, builds a synthetic database with all three agents and archived data, and compares established API fields before/after upgrade and restart (allowing the new optional presentation metadata). It verifies unchanged original identities/payloads, foreign keys, archive replay suppression and unchanged completed checkpoints. To use an existing baseline binary:
+The Python tests need no Go toolchain. They use a frozen v0.23.0 synthetic fixture and cover raw bytes, committed WAL, FTS positions, interval row IDs, API keys, tombstones, queue/watch state, archives and failed publication. Compare a published v0.23.0 binary with the current binary through the actual APIs:
 
 ```sh
-AGENTLOG_BASELINE_BIN=/path/to/v0.9.0/agentlog bash scripts/test-upgrade.sh
+uv run --python '>=3.14' scripts/storage_migration_api_test.py \
+  --baseline /path/to/v0.23.0/agentlog --binary ./agentlog
 ```
 
-The optional lifecycle benchmark compares identical ready databases containing unresolved internal traces:
+Performance fixtures separate materialized read performance from real ingestion. `frontend_performance_test.py --real-api` checks initial DOM, lazy requests and append work for 2k/20k/277k events. `session_performance_test.py --records 650962 --skewed --browser` includes uneven processing ranges. The optional `--baseline` on the latter compares two generation-2 binaries; use the migration API harness for cross-generation behavior checks. Docker smoke's scale mode ingests through OTLP rather than constructing a legacy raw-only database.
 
-```sh
-python3 scripts/lifecycle_performance.py --binary ./agentlog --baseline /path/to/v0.9.0/agentlog
-```
-
-Use `AGENTLOG_BIN=./agentlog python3 scripts/startup_ingestion_test.py` for the real-process blocked-migration, ACK/SIGKILL/restart, checkpoint and concurrent-read contract. Integration scripts use `test_support.settled_urlopen` when they need derived results after uploads; queue latency/crash tests deliberately use raw urllib requests.
-
-When transcript normalization changes, bump `watchParserVersion` so persistent unchanged-file checkpoints are reconsidered with the new parser.
-
-Use the browser flows for affected features. `AGENTLOG_BIN=./agentlog python3 scripts/activity_projects_browser_test.py` checks project navigation and Activity/Diagnostics pagination on desktop and mobile.
-
-## Docker builds
-
-The BuildKit stages cache downloaded Go modules and compiled packages separately.
-Source edits reuse dependency compilation; test sources and `testdata` do not enter
-the production build context. `VERSION` affects compilation, not dependency download.
-Only the static binary, public CA bundle, writable data directory and licenses
-enter the scratch runtime image. TLS termination remains on the host's Nginx;
-the container receives HTTP. The CA bundle supports outbound HTTPS imports.
-
-```sh
-docker compose build
-python3 scripts/docker_smoke.py
-```
-
-The smoke test uses the selected Docker context or `DOCKER_HOST`, and creates and
-removes its own project and volume. It waits for database preparation after every
-restart before checking persisted data, Japanese search and the large-history
-archive flow. `--skip-scale` omits the 150,000-record import/archive scenario.
-
-## Local checks and releases
-
-Run checks locally according to the changed behavior. The commands above cover Go/static checks and database upgrades. Use watcher, search, accounting, overview, browser or Docker scripts when the change affects those paths. There is no CI workflow or CI-artifact requirement for merging or releasing.
-
-Write PR titles and descriptions in Japanese, include relevant local validation, and merge through the PR. Create release tags from merged commits.
-
-Pushing a `v*` tag starts the Release workflow. It builds and packages the tag's source for the supported platforms and publishes the GitHub release. It does not run tests or look up CI runs or validation artifacts.
-
-```sh
-git tag -a vX.Y.Z MERGED_COMMIT -m 'Agentlog vX.Y.Z'
-git push origin refs/tags/vX.Y.Z
-```
+Run checks appropriate to the changed risks. There is no CI-artifact requirement for merging or releasing. PR titles and descriptions are Japanese; merge through a PR and create release tags from merged commits. The Release workflow packages `v*` tags; it does not deploy the production server.

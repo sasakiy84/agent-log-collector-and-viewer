@@ -217,7 +217,7 @@ func skillReadStatus(input Detail, result Detail, r skillRead) string {
 
 func refreshSkillReads(ctx context.Context, tx *sql.Tx) error {
 	for {
-		rows, err := tx.QueryContext(ctx, `SELECT i.event_id,i.facts,i.start_key,i.result_key FROM skill_reads_dirty d JOIN skill_read_inputs i ON i.event_id=d.event_id LIMIT 128`)
+		rows, err := tx.QueryContext(ctx, `SELECT i.event_id,i.facts,i.start_key,i.result_key FROM pending_skill_reads d JOIN skill_read_inputs i ON i.event_id=d.event_id LIMIT 128`)
 		if err != nil {
 			return err
 		}
@@ -246,7 +246,7 @@ func refreshSkillReads(ctx context.Context, tx *sql.Tx) error {
 			return nil
 		}
 		for _, i := range batch {
-			e, err := scanEvent(tx.QueryRowContext(ctx, "SELECT "+eventColumns+" FROM events WHERE id=?", i.id))
+			e, err := scanEvent(tx.QueryRowContext(ctx, "SELECT "+eventColumns+" FROM records WHERE id=?", i.id))
 			if err != nil {
 				return err
 			}
@@ -268,7 +268,7 @@ func refreshSkillReads(ctx context.Context, tx *sql.Tx) error {
 					return err
 				}
 				if len(starts) == 1 && len(outputs) == 1 {
-					other, err := scanEvent(tx.QueryRowContext(ctx, "SELECT "+eventColumns+" FROM events WHERE id=?", outputs[0]))
+					other, err := scanEvent(tx.QueryRowContext(ctx, "SELECT "+eventColumns+" FROM records WHERE id=?", outputs[0]))
 					if err != nil {
 						return err
 					}
@@ -302,7 +302,7 @@ func refreshSkillReads(ctx context.Context, tx *sql.Tx) error {
 					logical = starts[0]
 				}
 			}
-			err = tx.QueryRowContext(ctx, `SELECT id FROM timeline_entries WHERE id=? OR (otel_id=? AND import_id<>'') LIMIT 1`, logical, logical).Scan(&logical)
+			err = tx.QueryRowContext(ctx, `SELECT id FROM logical_events WHERE id=? OR (otel_id=? AND import_id<>'') LIMIT 1`, logical, logical).Scan(&logical)
 			if err != nil && err != sql.ErrNoRows {
 				return err
 			}
@@ -323,7 +323,7 @@ func refreshSkillReads(ctx context.Context, tx *sql.Tx) error {
 					return err
 				}
 			}
-			if _, err = tx.ExecContext(ctx, `DELETE FROM skill_reads_dirty WHERE event_id=?`, e.ID); err != nil {
+			if _, err = tx.ExecContext(ctx, `DELETE FROM work_items WHERE kind='skill_reads' AND (scope,key) IN(SELECT event_id,'' FROM pending_skill_reads WHERE event_id=?)`, e.ID); err != nil {
 				return err
 			}
 		}
@@ -353,7 +353,7 @@ func storeSkillReadInput(ctx context.Context, tx *sql.Tx, e Event, d Detail) err
 	if _, err = tx.ExecContext(ctx, `INSERT OR REPLACE INTO skill_read_inputs VALUES(?,?,?,?,?,?)`, e.ID, e.Session, e.Source, start, result, facts); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, `INSERT OR IGNORE INTO skill_reads_dirty VALUES(?)`, e.ID); err != nil {
+	if _, err = tx.ExecContext(ctx, `INSERT OR IGNORE INTO work_items(kind,scope,key) VALUES('skill_reads',?,'')`, e.ID); err != nil {
 		return err
 	}
 	for _, r := range reads {

@@ -58,7 +58,7 @@ func TestProjectCountsMatchVisibleSessionsAndRecency(t *testing.T) {
 	check("", 2, root.Time)
 	// Removing the newest visible root leaves child data but no phantom count.
 	if err := inTransaction(context.Background(), a.DB, func(tx *sql.Tx) error {
-		if _, err := tx.Exec("DELETE FROM events WHERE id='root'"); err != nil {
+		if _, err := tx.Exec("DELETE FROM records WHERE id='root'"); err != nil {
 			return err
 		}
 		return refreshProjections(context.Background(), tx)

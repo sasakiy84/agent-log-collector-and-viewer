@@ -33,9 +33,9 @@ type timelinePosition struct {
 
 func timelineTable(origin string) string {
 	if origin != "" {
-		return "event_cards"
+		return "record_facts"
 	}
-	return "timeline_entries"
+	return "logical_events"
 }
 
 func timelineScope(session, origin string) (string, []any) {
@@ -196,10 +196,6 @@ func conversationGroups(ctx context.Context, tx *sql.Tx, page SessionPage, origi
 		}
 		return stmt.QueryRowContext(ctx, args...).Scan(values...)
 	}
-	ready, err := processingSummaryReady(ctx, tx, origin)
-	if err != nil {
-		return nil, err
-	}
 	var after *timelinePosition
 	if len(page.Events) > 0 {
 		first := positions[page.Events[0].ID]
@@ -227,7 +223,7 @@ func conversationGroups(ctx context.Context, tx *sql.Tx, page SessionPage, origi
 			query, args = positionBound(query, args, "<", *before)
 		}
 		from := " FROM " + timelineTable(origin) + " WHERE " + query
-		countSQL, countArgs := processingCountSQL(page.ID, origin, after, before, ready)
+		countSQL, countArgs := processingCountSQL(page.ID, origin, after, before, true)
 		err := count(countSQL, countArgs, &group.Count, &group.Activity, &group.Errors)
 		if err == nil && matchPredicate != "" && group.Count > 0 {
 			err = count("SELECT COUNT(*)"+from+matchPredicate, append(args, matchArgs...), &group.Matches)
@@ -268,7 +264,7 @@ func (a *App) processing(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 	var locked bool
-	err = tx.QueryRowContext(r.Context(), "SELECT EXISTS(SELECT 1 FROM archive_locks WHERE session=?) FROM session_catalog WHERE session=?", session, session).Scan(&locked)
+	err = tx.QueryRowContext(r.Context(), "SELECT EXISTS(SELECT 1 FROM archive_locks WHERE session=?) FROM sessions WHERE session=?", session, session).Scan(&locked)
 	if errors.Is(err, sql.ErrNoRows) {
 		http.NotFound(w, r)
 		return
@@ -320,9 +316,9 @@ func (a *App) processing(w http.ResponseWriter, r *http.Request) {
 	const size = 50
 	var rows *sql.Rows
 	if origin != "" {
-		rows, err = tx.QueryContext(r.Context(), "SELECT id,"+cardColumns+" FROM event_cards WHERE "+query+" ORDER BY time,sequence,id LIMIT ?", append(args, size+1)...)
+		rows, err = tx.QueryContext(r.Context(), "SELECT id,"+cardColumns+" FROM record_facts WHERE "+query+" ORDER BY time,sequence,id LIMIT ?", append(args, size+1)...)
 	} else {
-		rows, err = tx.QueryContext(r.Context(), "SELECT p.id,"+qualifiedCardColumns("c")+" FROM (SELECT id,time,sequence,import_id,otel_id FROM timeline_entries WHERE "+query+" ORDER BY time,sequence,id LIMIT ?) p JOIN event_cards c ON c.id=p.import_id OR c.id=p.otel_id ORDER BY p.time,p.sequence,p.id,c.origin,c.id", append(args, size+1)...)
+		rows, err = tx.QueryContext(r.Context(), "SELECT p.id,"+qualifiedCardColumns("c")+" FROM (SELECT id,time,sequence,import_id,otel_id FROM logical_events WHERE "+query+" ORDER BY time,sequence,id LIMIT ?) p JOIN record_facts c ON c.id=p.import_id OR c.id=p.otel_id ORDER BY p.time,p.sequence,p.id,c.origin,c.id", append(args, size+1)...)
 	}
 	if err != nil {
 		databaseError(w, r, err)

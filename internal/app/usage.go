@@ -287,7 +287,7 @@ func usageMeasurement(e Event, doc document, p Detail) *usagePoint {
 }
 
 func storeUsage(ctx context.Context, tx *sql.Tx, e Event, doc document, p Detail) error {
-	if _, err := tx.ExecContext(ctx, "DELETE FROM usage_points WHERE id=?", e.ID); err != nil {
+	if _, err := tx.ExecContext(ctx, "DELETE FROM usage_samples WHERE id=?", e.ID); err != nil {
 		return err
 	}
 	if u := usageMeasurement(e, doc, p); u != nil {
@@ -295,7 +295,7 @@ func storeUsage(ctx context.Context, tx *sql.Tx, e Event, doc document, p Detail
 		if err != nil {
 			return err
 		}
-		if _, err = tx.ExecContext(ctx, "INSERT INTO usage_points VALUES(?,?,?,?,?,?,?,?,?,?,?)", e.ID, e.Session, e.Origin, u.Basis, u.Key, u.Series, u.Start, u.End, e.Time, e.Sequence, string(values)); err != nil {
+		if _, err = tx.ExecContext(ctx, "INSERT INTO usage_samples VALUES(?,?,?,?,?,?,?,?,?,?,?)", e.ID, e.Session, e.Origin, u.Basis, u.Key, u.Series, u.Start, u.End, e.Time, e.Sequence, string(values)); err != nil {
 			return err
 		}
 		if err = storeInterval(ctx, tx, e, u); err != nil {
@@ -316,14 +316,14 @@ func storeUsage(ctx context.Context, tx *sql.Tx, e Event, doc document, p Detail
 		return nil
 	}
 	// Also used during upgrades, when timeline entries already exist.
-	_, err = tx.ExecContext(ctx, `DELETE FROM timeline_errors WHERE id IN (SELECT id FROM timeline_entries WHERE id=? UNION ALL SELECT id FROM timeline_entries WHERE otel_id=? AND import_id<>'' AND otel_id<>'');
- INSERT OR IGNORE INTO timeline_errors SELECT id,session FROM timeline_entries WHERE (id=? OR id IN (SELECT id FROM timeline_entries WHERE otel_id=? AND import_id<>'' AND otel_id<>''))
+	_, err = tx.ExecContext(ctx, `DELETE FROM timeline_errors WHERE id IN (SELECT id FROM logical_events WHERE id=? UNION ALL SELECT id FROM logical_events WHERE otel_id=? AND import_id<>'' AND otel_id<>'');
+ INSERT OR IGNORE INTO timeline_errors SELECT id,session FROM logical_events WHERE (id=? OR id IN (SELECT id FROM logical_events WHERE otel_id=? AND import_id<>'' AND otel_id<>''))
  AND EXISTS(SELECT 1 FROM event_errors WHERE id IN (import_id,otel_id))`, e.ID, e.ID, e.ID, e.ID)
 	return err
 }
 
 func refreshUsage(ctx context.Context, tx *sql.Tx) error {
-	rows, err := tx.QueryContext(ctx, "SELECT session,origin,basis,group_key FROM usage_dirty")
+	rows, err := tx.QueryContext(ctx, "SELECT session,origin,basis,group_key FROM pending_usage")
 	if err != nil {
 		return err
 	}
@@ -346,7 +346,7 @@ func refreshUsage(ctx context.Context, tx *sql.Tx) error {
 			return err
 		}
 		var values, series, eventID, latestTime string
-		err = tx.QueryRowContext(ctx, "SELECT values_json,series,id,time FROM usage_points WHERE session=? AND origin=? AND basis=? AND group_key=? ORDER BY time DESC,sequence DESC,id DESC LIMIT 1", k.session, k.origin, k.basis, k.key).Scan(&values, &series, &eventID, &latestTime)
+		err = tx.QueryRowContext(ctx, "SELECT values_json,series,id,time FROM usage_samples WHERE session=? AND origin=? AND basis=? AND group_key=? ORDER BY time DESC,sequence DESC,id DESC LIMIT 1", k.session, k.origin, k.basis, k.key).Scan(&values, &series, &eventID, &latestTime)
 		if errors.Is(err, sql.ErrNoRows) {
 			continue
 		}
@@ -354,7 +354,7 @@ func refreshUsage(ctx context.Context, tx *sql.Tx) error {
 			return err
 		}
 		if k.basis == "logs" || k.basis == "traces" {
-			reports, e := tx.QueryContext(ctx, "SELECT values_json,time,sequence FROM usage_points WHERE session=? AND origin=? AND basis=? AND group_key=? ORDER BY time DESC,sequence DESC,id DESC", k.session, k.origin, k.basis, k.key)
+			reports, e := tx.QueryContext(ctx, "SELECT values_json,time,sequence FROM usage_samples WHERE session=? AND origin=? AND basis=? AND group_key=? ORDER BY time DESC,sequence DESC,id DESC", k.session, k.origin, k.basis, k.key)
 			if e != nil {
 				return e
 			}
@@ -411,7 +411,7 @@ func refreshUsage(ctx context.Context, tx *sql.Tx) error {
 		}
 		if (k.basis == "metric-delta" || k.basis == "metric-cumulative") && series != "" {
 			var conflict bool
-			if err = tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM usage_points WHERE session=? AND origin=? AND basis=? AND group_key=? AND time=? AND values_json<>?)", k.session, k.origin, k.basis, k.key, latestTime, values).Scan(&conflict); err != nil {
+			if err = tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM usage_samples WHERE session=? AND origin=? AND basis=? AND group_key=? AND time=? AND values_json<>?)", k.session, k.origin, k.basis, k.key, latestTime, values).Scan(&conflict); err != nil {
 				return err
 			}
 			if conflict {
@@ -422,7 +422,7 @@ func refreshUsage(ctx context.Context, tx *sql.Tx) error {
 			return err
 		}
 	}
-	if _, err = tx.ExecContext(ctx, "DELETE FROM usage_dirty"); err != nil {
+	if _, err = tx.ExecContext(ctx, "DELETE FROM work_items WHERE kind='usage'"); err != nil {
 		return err
 	}
 	return refreshUsageSummaries(ctx, tx)

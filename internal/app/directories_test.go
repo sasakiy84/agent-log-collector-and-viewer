@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -84,7 +83,7 @@ func TestFolderMetadataFallbackAndIncrementalChanges(t *testing.T) {
 	if p.Total != 1 || p.Folders[0].Path != "/work/preferred" {
 		t.Fatal(p)
 	}
-	if _, err := a.DB.Exec("DELETE FROM events WHERE id=?", changed.ID); err != nil {
+	if _, err := a.DB.Exec("DELETE FROM records WHERE id=?", changed.ID); err != nil {
 		t.Fatal(err)
 	}
 	save(t, a)
@@ -92,50 +91,13 @@ func TestFolderMetadataFallbackAndIncrementalChanges(t *testing.T) {
 	if p.Folders[0].Path != "/work/fallback" {
 		t.Fatal(p)
 	}
-	if _, err := a.DB.Exec("DELETE FROM events"); err != nil {
+	if _, err := a.DB.Exec("DELETE FROM records"); err != nil {
 		t.Fatal(err)
 	}
 	save(t, a)
 	getJSON(t, a, "/api/folders?offset=9999", &p)
 	if p.Total != 0 || p.Offset != 0 || len(p.Folders) != 0 {
 		t.Fatal("empty folder survived deletion", p)
-	}
-}
-
-func TestFolderUpgradeRecoversExactLongPathsAndMetadataFallback(t *testing.T) {
-	a := setup(t)
-	prefix := "/work/" + strings.Repeat("nested/", 90)
-	for _, suffix := range []string{"one", "two"} {
-		e := recorded(t, suffix, "import", "codex", suffix, "user_prompt", map[string]any{"cwd": prefix + suffix, "prompt": "long directory"})
-		save(t, a, e)
-	}
-	// Simulate v0.5.3's truncated card metadata and old catalog summaries.
-	if _, err := a.DB.Exec("UPDATE event_cards SET detail=json_set(detail,'$.cwd',?); UPDATE session_catalog SET preview=json_remove(preview,'$.cwd'); PRAGMA user_version=0; UPDATE maintenance_jobs SET cursor='',complete=0 WHERE name='directories.v1'", clip(prefix, 512)); err != nil {
-		t.Fatal(err)
-	}
-	dbPath := a.dbPath
-	a.Close()
-	b, err := Open(context.Background(), dbPath, token)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer b.Close()
-	var p folderPage
-	getJSON(t, b, "/api/folders", &p)
-	if p.Total != 2 {
-		t.Fatal(p)
-	}
-	for _, folder := range p.Folders {
-		if folder.Path != prefix+"one" && folder.Path != prefix+"two" {
-			t.Fatal("clipped paths used as identities", folder.Path)
-		}
-	}
-	var original []byte
-	if err = b.DB.QueryRow("SELECT raw FROM events WHERE id='import:one'").Scan(&original); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(original), prefix+"one") || !json.Valid(original) {
-		t.Fatal("original changed during upgrade")
 	}
 }
 

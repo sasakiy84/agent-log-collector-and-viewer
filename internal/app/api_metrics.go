@@ -43,13 +43,13 @@ func (a *App) metrics(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 	var pending bool
-	if err = tx.QueryRowContext(r.Context(), "SELECT EXISTS(SELECT 1 FROM archive_stats_pending)").Scan(&pending); err != nil {
+	if err = tx.QueryRowContext(r.Context(), "SELECT EXISTS(SELECT 1 FROM pending_storage)").Scan(&pending); err != nil {
 		databaseError(w, r, err)
 		return
 	}
 	if !pending {
 		var events, sessions, bytes int64
-		if err = tx.QueryRowContext(r.Context(), "SELECT COALESCE(SUM(records),0),COUNT(*),COALESCE(SUM(raw_bytes),0) FROM archive_stats").Scan(&events, &sessions, &bytes); err != nil {
+		if err = tx.QueryRowContext(r.Context(), "SELECT COALESCE(SUM(records),0),COUNT(*),COALESCE(SUM(raw_bytes),0) FROM record_totals").Scan(&events, &sessions, &bytes); err != nil {
 			databaseError(w, r, err)
 			return
 		}

@@ -719,6 +719,11 @@ async function refresh(scrollMode) {
   const controller = new AbortController();
   activeRequest = controller;
   const serial = ++requestSerial;
+  // Navigation facets have their own result/error state. A slow sidebar must
+  // never hold the session/skill results behind an unrelated aggregate query.
+  const projectRequest = !settingsMode && !selected
+    ? projectNavigation.load(controller.signal).then(() => null, (error) => error)
+    : Promise.resolve(null);
   $("#workspace").setAttribute("aria-busy", "true");
   for (const pager of [sessionPager, eventPager, skillsPager])
     pager.setLoading(true);
@@ -728,10 +733,7 @@ async function refresh(scrollMode) {
     if(settingsMode){
  await refreshSettings(controller.signal);
     } else if (skillsMode) {
-      await Promise.all([
-        refreshSkills(controller.signal),
-        projectNavigation.load(controller.signal),
-      ]);
+      await refreshSkills(controller.signal);
       if (!controller.signal.aborted && scrollMode === "top")
         window.scrollTo({ top: 0, behavior: "instant" });
     } else if (selected) {
@@ -760,10 +762,7 @@ async function refresh(scrollMode) {
       const params = listParameters();
       params.set("offset", sessionOffset);
       if (folder !== null) params.set("folder", folder);
-      const [response] = await Promise.all([
-          apiResponse("/api/sessions?" + params, controller.signal),
-          projectNavigation.load(controller.signal),
-        ]),
+      const response = await apiResponse("/api/sessions?" + params, controller.signal),
         data = await response.json();
       if (controller.signal.aborted) return;
       sessionOffset = Number(response.headers.get("X-Page-Offset"));
@@ -840,6 +839,17 @@ async function refresh(scrollMode) {
       listState();
       projectNavigation.render();
     }
+    if (!selected && !settingsMode && (skillsMode ? skillsData : sessionData) && $("#login").hidden) {
+      // The results above restored their last successful scope. Discard any
+      // sidebar response from the rejected scope, even if it arrived first.
+      controller.abort();
+      $("#projectlist").replaceChildren();
+      $("#projectstatus").textContent = "Loading projects…";
+      void projectNavigation.load().catch((error) => {
+        if (serial === requestSerial && error.name !== "AbortError")
+          $("#projectstatus").textContent = error.message;
+      });
+    }
     $("#error").textContent = e.message;
     if ($("#login").hidden) {
       $("#workspace").hidden = false;
@@ -849,6 +859,12 @@ async function refresh(scrollMode) {
     $("#settingspage").hidden = !settingsMode;
       }
   } finally {
+    // Register after the main render, which can redraw the sidebar's status.
+    // The promise already handles rejection, including while results load.
+    void projectRequest.then((error) => {
+      if (!controller.signal.aborted && serial === requestSerial && error && error.name !== "AbortError")
+        $("#projectstatus").textContent = error.message;
+    });
     if (serial === requestSerial) {
       $("#workspace").removeAttribute("aria-busy");
       for (const pager of [sessionPager, eventPager, skillsPager])

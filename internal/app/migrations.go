@@ -4,15 +4,21 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	"embed"
+	_ "embed"
 	"fmt"
 	"log"
-	"strconv"
-	"strings"
 )
 
-//go:embed migrations/*.sql
-var migrationFiles embed.FS
+//go:embed schema.sql
+var storageSchema string
+
+const storageApplicationID = 1095518002 // ALG2
+
+// Generation 2 has one complete baseline. Future changes append migrations;
+// released baselines remain immutable and independently verifiable by Python.
+func migrations() ([]migration, error) {
+	return []migration{{1, "0001_storage_v2", storageSchema}}, nil
+}
 
 type migration struct {
 	version int
@@ -20,25 +26,30 @@ type migration struct {
 	sql     string
 }
 
-func migrations() ([]migration, error) {
-	files, err := migrationFiles.ReadDir("migrations")
-	if err != nil {
-		return nil, err
+// Check identity before writing any DDL or changing journal mode. The offline
+// Python tool owns conversion of old databases; the service never guesses.
+func validateStorage(ctx context.Context, db *sql.DB) error {
+	var applicationID, objects int
+	if err := db.QueryRowContext(ctx, "PRAGMA application_id").Scan(&applicationID); err != nil {
+		return err
 	}
-	out := make([]migration, 0, len(files))
-	for _, file := range files {
-		prefix, _, _ := strings.Cut(file.Name(), "_")
-		version, err := strconv.Atoi(prefix)
-		if err != nil || version != len(out)+1 {
-			return nil, fmt.Errorf("invalid migration sequence: %s", file.Name())
+	if applicationID == storageApplicationID {
+		var generation int
+		if err := db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&generation); err != nil {
+			return err
 		}
-		body, err := migrationFiles.ReadFile("migrations/" + file.Name())
-		if err != nil {
-			return nil, err
+		if generation != 1 {
+			return fmt.Errorf("unsupported storage generation %d", generation)
 		}
-		out = append(out, migration{version, file.Name(), string(body)})
+		return nil
 	}
-	return out, nil
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'").Scan(&objects); err != nil {
+		return err
+	}
+	if applicationID == 0 && objects == 0 {
+		return nil
+	}
+	return fmt.Errorf("unsupported database format: migrate the stopped v0.23.0 database with uv run scripts/migrate_db.py before starting this version")
 }
 
 // DDL and its history entry commit together. SQL files are immutable: an edited,

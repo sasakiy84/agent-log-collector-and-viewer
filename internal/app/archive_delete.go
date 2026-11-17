@@ -16,7 +16,7 @@ func (a *App) deleteArchive(ctx context.Context, job ArchiveJob) error {
 	defer a.notifyArchive()
 	// Verification is persisted before unlinking so interrupted, confirmed deletions can resume.
 	var verified string
-	if err := a.DB.QueryRowContext(ctx, "SELECT verified_at FROM archives WHERE id=?", job.ID).Scan(&verified); err != nil {
+	if err := a.DB.QueryRowContext(ctx, "SELECT verified_at FROM archive_jobs WHERE id=?", job.ID).Scan(&verified); err != nil {
 		return err
 	}
 	if file, err := os.Open(a.archivePath(job.ID, false)); err == nil {
@@ -29,7 +29,7 @@ func (a *App) deleteArchive(ctx context.Context, job ArchiveJob) error {
 		if size != job.ArchiveBytes || hex.EncodeToString(digest.Sum(nil)) != job.SHA256 {
 			return fmt.Errorf("archive integrity verification failed")
 		}
-		if _, err = a.DB.ExecContext(ctx, "UPDATE archives SET verified_at=? WHERE id=?", timestamp(time.Now()), job.ID); err != nil {
+		if _, err = a.DB.ExecContext(ctx, "UPDATE archive_jobs SET verified_at=? WHERE id=?", timestamp(time.Now()), job.ID); err != nil {
 			return err
 		}
 		if err = os.Remove(a.archivePath(job.ID, false)); err != nil {
@@ -41,7 +41,7 @@ func (a *App) deleteArchive(ctx context.Context, job ArchiveJob) error {
 
 	for {
 		var session string
-		err := a.DB.QueryRowContext(ctx, "SELECT l.session FROM archive_locks l WHERE l.archive_id=? AND EXISTS(SELECT 1 FROM events e WHERE e.session=l.session) LIMIT 1", job.ID).Scan(&session)
+		err := a.DB.QueryRowContext(ctx, "SELECT l.session FROM archive_locks l WHERE l.archive_id=? AND EXISTS(SELECT 1 FROM records e WHERE e.session=l.session) LIMIT 1", job.ID).Scan(&session)
 		if errors.Is(err, sql.ErrNoRows) {
 			break
 		}
@@ -52,7 +52,7 @@ func (a *App) deleteArchive(ctx context.Context, job ArchiveJob) error {
 		if err != nil {
 			return err
 		}
-		rows, err := tx.QueryContext(ctx, "SELECT id,raw,name,origin,source FROM events WHERE session=? LIMIT 200", session)
+		rows, err := tx.QueryContext(ctx, "SELECT id,raw,name,origin,source FROM records WHERE session=? LIMIT 200", session)
 		if err != nil {
 			tx.Rollback()
 			return err
@@ -93,26 +93,26 @@ func (a *App) deleteArchive(ctx context.Context, job ArchiveJob) error {
 			return errors.Join(err, rowErr)
 		}
 		for _, record := range records {
-			if _, err = tx.ExecContext(ctx, "INSERT OR IGNORE INTO archived_records(id_hash,raw_hash) VALUES(?,?)", record.idHash[:], record.rawHash[:]); err != nil {
+			if _, err = tx.ExecContext(ctx, "INSERT OR IGNORE INTO record_tombstones(id_hash,raw_hash) VALUES(?,?)", record.idHash[:], record.rawHash[:]); err != nil {
 				break
 			}
 			if record.legacyHash != nil {
-				if _, err = tx.ExecContext(ctx, "INSERT OR IGNORE INTO archived_records(id_hash,raw_hash) VALUES(?,?)", record.idHash[:], record.legacyHash); err != nil {
+				if _, err = tx.ExecContext(ctx, "INSERT OR IGNORE INTO record_tombstones(id_hash,raw_hash) VALUES(?,?)", record.idHash[:], record.legacyHash); err != nil {
 					break
 				}
 				// Legacy projections from usage-aware archives only suppress an
 				// exact old-format replay. New-format counter/response-ID edits
 				// are compared against their complete current-format hash.
-				if _, err = tx.ExecContext(ctx, "INSERT OR IGNORE INTO archived_usage_records VALUES(?,?),(?,?)", record.idHash[:], record.rawHash[:], record.idHash[:], record.legacyHash); err != nil {
+				if _, err = tx.ExecContext(ctx, "INSERT OR IGNORE INTO usage_tombstones VALUES(?,?),(?,?)", record.idHash[:], record.rawHash[:], record.idHash[:], record.legacyHash); err != nil {
 					break
 				}
 			}
-			if _, err = tx.ExecContext(ctx, "DELETE FROM events WHERE id=?", record.id); err != nil {
+			if _, err = tx.ExecContext(ctx, "DELETE FROM records WHERE id=?", record.id); err != nil {
 				break
 			}
 		}
 		if err == nil {
-			_, err = tx.ExecContext(ctx, "UPDATE archives SET deleted_records=deleted_records+? WHERE id=?", len(records), job.ID)
+			_, err = tx.ExecContext(ctx, "UPDATE archive_jobs SET deleted_records=deleted_records+? WHERE id=?", len(records), job.ID)
 		}
 		if err != nil {
 			tx.Rollback()
@@ -140,7 +140,7 @@ func (a *App) deleteArchive(ctx context.Context, job ArchiveJob) error {
 	if err = refreshProjections(ctx, tx); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, "UPDATE archives SET status='compacting' WHERE id=?", job.ID); err != nil {
+	if _, err = tx.ExecContext(ctx, "UPDATE archive_jobs SET status='compacting' WHERE id=?", job.ID); err != nil {
 		return err
 	}
 	if err = tx.Commit(); err != nil {

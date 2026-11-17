@@ -43,7 +43,7 @@ func (a *App) folders(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback()
 	if selection.usesFolderCache() {
 		var pending bool
-		if err = tx.QueryRowContext(r.Context(), "SELECT EXISTS(SELECT 1 FROM folder_dirty)").Scan(&pending); err != nil {
+		if err = tx.QueryRowContext(r.Context(), "SELECT EXISTS(SELECT 1 FROM pending_projects)").Scan(&pending); err != nil {
 			databaseError(w, r, err)
 			return
 		}
@@ -104,7 +104,7 @@ func (a *App) folders(w http.ResponseWriter, r *http.Request) {
 	write(w, map[string]any{"folders": out, "total": total, "offset": off})
 }
 
-const directoryCandidates = `SELECT id,json_extract(detail,'$.cwd') FROM event_cards
+const directoryCandidates = `SELECT id,json_extract(detail,'$.cwd') FROM record_facts
  WHERE session=? AND json_type(detail,'$.cwd')='text' AND json_extract(detail,'$.cwd')<>''
  ORDER BY is_user DESC,time,sequence,id LIMIT 1`
 
@@ -124,7 +124,7 @@ func sessionDirectory(ctx context.Context, tx *sql.Tx, session string) (string, 
 		// Old presentations clipped metadata at 512 bytes. Recover only the
 		// selected record, without re-reading the session's original history.
 		if len(folder) >= 512 && len(folder) <= 515 && strings.HasSuffix(folder, "…") {
-			e, eErr := scanEvent(tx.QueryRowContext(ctx, "SELECT "+qualifiedColumns("e")+" FROM events e WHERE id=?", id))
+			e, eErr := scanEvent(tx.QueryRowContext(ctx, "SELECT "+qualifiedColumns("e")+" FROM records e WHERE id=?", id))
 			if eErr != nil {
 				return "", eErr
 			}
@@ -136,7 +136,7 @@ func sessionDirectory(ctx context.Context, tx *sql.Tx, session string) (string, 
 		}
 		clean := directoryPath(folder)
 		if clean != stored {
-			if _, err = tx.ExecContext(ctx, "UPDATE event_cards SET detail=json_set(detail,'$.cwd',?) WHERE id=?", clean, id); err != nil {
+			if _, err = tx.ExecContext(ctx, "UPDATE record_facts SET detail=json_set(detail,'$.cwd',?) WHERE id=?", clean, id); err != nil {
 				return "", err
 			}
 		}
@@ -148,33 +148,3 @@ func sessionDirectory(ctx context.Context, tx *sql.Tx, session string) (string, 
 }
 
 // Backfill folder summaries in bounded, resumable session-key batches.
-func backfillDirectories(ctx context.Context, tx *sql.Tx, cursor string) (string, int, error) {
-	rows, err := tx.QueryContext(ctx, "SELECT session FROM session_catalog WHERE session>? ORDER BY session LIMIT 128", cursor)
-	if err != nil {
-		return cursor, 0, err
-	}
-	sessions := []string{}
-	for rows.Next() {
-		var session string
-		if err = rows.Scan(&session); err != nil {
-			break
-		}
-		sessions = append(sessions, session)
-	}
-	rowErr := rows.Err()
-	rows.Close()
-	if err != nil || rowErr != nil {
-		return cursor, 0, errors.Join(err, rowErr)
-	}
-	for _, session := range sessions {
-		folder, err := sessionDirectory(ctx, tx, session)
-		if err != nil {
-			return cursor, 0, err
-		}
-		if _, err = tx.ExecContext(ctx, "UPDATE session_catalog SET preview=json_set(preview,'$.cwd',?) WHERE session=?", folder, session); err != nil {
-			return cursor, 0, err
-		}
-		cursor = session
-	}
-	return cursor, len(sessions), nil
-}

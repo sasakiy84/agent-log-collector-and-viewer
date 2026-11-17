@@ -1,9 +1,6 @@
 package app
 
 import (
-	"context"
-	"database/sql"
-	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -53,41 +50,6 @@ func TestCodexToolTimingIsNotOutput(t *testing.T) {
 	}
 	check()
 
-	// Simulate v0.20.0 after its conversation/Guardian job has completed. Its
-	// timing span was falsely merged into the imported output using the call ID.
-	doc, _ := decodeDocument(span.Raw)
-	old := describe(span, doc)
-	old.Kind, old.Title, old.ToolPhase, old.Diagnostic = "tool", "exec", "tool.result", false
-	old.Blocks = []Block{{Label: "Details", Text: "Tool content not exported"}}
-	encoded, _ := json.Marshal(cardDetail(old))
-	if err := inTransaction(context.Background(), a.DB, func(tx *sql.Tx) error {
-		if _, err := tx.Exec("UPDATE event_cards SET kind='tool',activity=1,detail=? WHERE id=?", encoded, span.ID); err != nil {
-			return err
-		}
-		if _, err := tx.Exec("INSERT INTO event_keys VALUES(?,'tool.call',?)", span.ID, identityKey("", "tool.result", "tool.call", "fixture-call")); err != nil {
-			return err
-		}
-		if _, err := tx.Exec("INSERT OR IGNORE INTO read_model_dirty VALUES(?,?),(?,?)", span.Session, span.ID, result.Session, result.ID); err != nil {
-			return err
-		}
-		return refreshProjections(context.Background(), tx)
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if p := page(t, a, span.Session, "", 0); p.Count != 2 {
-		t.Fatal("old false merge not reproduced", p.Count)
-	}
-	if _, err := a.DB.Exec("UPDATE maintenance_jobs SET cursor='',complete=0,processed=0 WHERE name=?", toolTimingJob); err != nil {
-		t.Fatal(err)
-	}
-	if err := a.runMaintenance(context.Background(), toolTimingJob, backfillToolTiming, 0); err != nil {
-		t.Fatal(err)
-	}
-	check()
-	var raw []byte
-	if err := a.DB.QueryRow("SELECT raw FROM events WHERE id=?", span.ID).Scan(&raw); err != nil || string(raw) != string(span.Raw) {
-		t.Fatal("repair changed original data", err)
-	}
 }
 
 func TestCodexToolTimingKeepsContentFailuresAndOtherProviders(t *testing.T) {

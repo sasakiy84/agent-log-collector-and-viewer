@@ -53,7 +53,7 @@ with tempfile.TemporaryDirectory() as directory:
     def fingerprint():
         digest = hashlib.sha256()
         with sqlite3.connect('file:' + database + '?mode=ro', uri=True) as db:
-            for row in db.execute('SELECT id,session,raw FROM events ORDER BY id'):
+            for row in db.execute('SELECT id,session,raw FROM records ORDER BY id'):
                 for value in row:
                     digest.update(value if isinstance(value, bytes) else value.encode())
         return digest.hexdigest()

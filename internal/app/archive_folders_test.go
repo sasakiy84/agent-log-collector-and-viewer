@@ -1,14 +1,10 @@
 package app
 
 import (
-	"context"
-	"database/sql"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 )
@@ -28,7 +24,7 @@ func TestArchiveStatsTrackChangesAndFolderSelection(t *testing.T) {
 	checkStats := func() {
 		t.Helper()
 		var wrong int
-		err := a.DB.QueryRow(`SELECT COUNT(*) FROM (SELECT session,COUNT(*) AS records,SUM(length(raw)) AS raw_bytes FROM events GROUP BY session) e LEFT JOIN archive_stats a ON a.session=e.session WHERE a.session IS NULL OR a.records<>e.records OR a.raw_bytes<>e.raw_bytes`).Scan(&wrong)
+		err := a.DB.QueryRow(`SELECT COUNT(*) FROM (SELECT session,COUNT(*) AS records,SUM(length(raw)) AS raw_bytes FROM records GROUP BY session) e LEFT JOIN record_totals a ON a.session=e.session WHERE a.session IS NULL OR a.records<>e.records OR a.raw_bytes<>e.raw_bytes`).Scan(&wrong)
 		if err != nil || wrong != 0 {
 			t.Fatal(wrong, err)
 		}
@@ -156,7 +152,7 @@ func TestArchiveEligibilityKeepsUnknownOriginalTimestampsExcluded(t *testing.T) 
 
 func TestArchiveProgressStreamTerminalAndAuthorization(t *testing.T) {
 	a := setup(t)
-	if _, err := a.DB.Exec("INSERT INTO archives(id,status,created_at,cutoff) VALUES('terminal','ready','','')"); err != nil {
+	if _, err := a.DB.Exec("INSERT INTO archive_jobs(id,status,created_at,cutoff) VALUES('terminal','ready','','')"); err != nil {
 		t.Fatal(err)
 	}
 	server := httptest.NewServer(a.Handler())
@@ -194,35 +190,5 @@ func TestArchiveProgressStreamTerminalAndAuthorization(t *testing.T) {
 	}
 	if a.archiveChanges() == changes {
 		t.Fatal("notification channel not renewed")
-	}
-}
-
-func TestArchiveMetadataRebuildIsResumable(t *testing.T) {
-	a := setup(t)
-	e := oldEvent(t, "metadata", "session")
-	save(t, a, e)
-	if _, err := a.DB.Exec("DELETE FROM archive_stats;INSERT INTO archive_stats_pending VALUES(?)", e.Session); err != nil {
-		t.Fatal(err)
-	}
-	if err := inTransaction(context.Background(), a.DB, func(tx *sql.Tx) error {
-		n, err := backfillArchiveStats(context.Background(), tx)
-		if err == nil && n != 1 {
-			return fmt.Errorf("processed %d sessions", n)
-		}
-		return err
-	}); err != nil {
-		t.Fatal(err)
-	}
-	var records, bytes int64
-	if err := a.DB.QueryRow("SELECT records,raw_bytes FROM archive_stats WHERE session=?", e.Session).Scan(&records, &bytes); err != nil {
-		t.Fatal(err)
-	}
-	if records != 1 || bytes != int64(len(e.Raw)) {
-		t.Fatal(records, bytes)
-	}
-	var p struct{ Folders []ArchiveFolder }
-	getJSON(t, a, "/api/archive?group=folders&offset="+url.QueryEscape("999"), &p)
-	if len(p.Folders) != 1 {
-		t.Fatal(p)
 	}
 }

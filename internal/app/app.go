@@ -116,7 +116,7 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("GET /api/status", a.status)
 	mux.HandleFunc("GET /api/stats", func(w http.ResponseWriter, r *http.Request) {
 		var n, s int
-		if err := a.readers.QueryRowContext(r.Context(), "SELECT COUNT(*),COUNT(DISTINCT session) FROM events").Scan(&n, &s); err != nil {
+		if err := a.readers.QueryRowContext(r.Context(), "SELECT COALESCE(SUM(records),0),COUNT(*) FROM record_totals").Scan(&n, &s); err != nil {
 			databaseError(w, r, err)
 			return
 		}

@@ -8,8 +8,8 @@ import (
 	"time"
 )
 
-// Start opens the durable inbox before preparing the view database. HTTP can
-// acknowledge committed batches even while migrations or historical jobs run.
+// Start opens the durable inbox before validating the view database. HTTP can
+// acknowledge committed batches while schema initialization is in progress.
 func Start(ctx context.Context, path, token string) (*App, error) {
 	a, err := newApp(ctx, token)
 	if err != nil {
@@ -17,7 +17,6 @@ func Start(ctx context.Context, path, token string) (*App, error) {
 	}
 	a.initialized = make(chan struct{})
 	a.maintained = make(chan struct{})
-	a.maintenancePause = 10 * time.Millisecond
 	if a.inbox, err = openIngestQueue(a.ctx, path); err != nil {
 		a.Close()
 		return nil, err
@@ -37,12 +36,6 @@ func Start(ctx context.Context, path, token string) (*App, error) {
 		if err == nil {
 			err = a.initArchives(path)
 		}
-		if err == nil {
-			err = a.startSkillIndexer()
-		}
-		if err == nil {
-			err = a.startProcessingIndexer()
-		}
 		a.maintenanceErr = err
 		close(a.maintained)
 		if err != nil {
@@ -51,7 +44,7 @@ func Start(ctx context.Context, path, token string) (*App, error) {
 			}
 			return
 		}
-		log.Print("Database preparation complete; processing durable inbox")
+		log.Print("Database ready; processing durable inbox")
 		a.inbox.process(a.Save)
 	}()
 	return a, nil

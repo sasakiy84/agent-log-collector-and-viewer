@@ -175,7 +175,7 @@ func (a *App) session(w http.ResponseWriter, r *http.Request) {
 	page := SessionPage{SessionSummary: SessionSummary{ID: id}, Children: []string{}}
 	var preview []byte
 	var usage string
-	err = tx.QueryRowContext(r.Context(), "SELECT source,parent,"+columns+",preview,COALESCE((SELECT summary FROM usage_summary u WHERE u.session=session_catalog.session AND u.origin=?),'{}') FROM session_catalog WHERE session=?", origin, id).Scan(&page.Source, &page.Parent, &page.Count, &page.Start, &page.End, &preview, &usage)
+	err = tx.QueryRowContext(r.Context(), "SELECT source,parent,"+columns+",preview,COALESCE((SELECT summary FROM session_usage u WHERE u.session=sessions.session AND u.origin=?),'{}') FROM sessions WHERE session=?", origin, id).Scan(&page.Source, &page.Parent, &page.Count, &page.Start, &page.End, &preview, &usage)
 	if errors.Is(err, sql.ErrNoRows) {
 		http.NotFound(w, r)
 		return
@@ -315,8 +315,8 @@ func (a *App) event(w http.ResponseWriter, r *http.Request) {
 	// Resolve its old raw ID to the current group without requiring a refresh.
 	if origin == "" {
 		var current string
-		err = tx.QueryRowContext(r.Context(), `SELECT id FROM timeline_entries WHERE id=? AND session=?
-   UNION ALL SELECT id FROM timeline_entries WHERE otel_id=? AND import_id<>'' AND otel_id<>'' AND session=? LIMIT 1`, id, session, id, session).Scan(&current)
+		err = tx.QueryRowContext(r.Context(), `SELECT id FROM logical_events WHERE id=? AND session=?
+   UNION ALL SELECT id FROM logical_events WHERE otel_id=? AND import_id<>'' AND otel_id<>'' AND session=? LIMIT 1`, id, session, id, session).Scan(&current)
 		if errors.Is(err, sql.ErrNoRows) {
 			http.NotFound(w, r)
 			return
@@ -327,13 +327,13 @@ func (a *App) event(w http.ResponseWriter, r *http.Request) {
 		}
 		id = current
 	}
-	query := "SELECT " + qualifiedColumns("e") + " FROM events e WHERE e.session=? AND "
+	query := "SELECT " + qualifiedColumns("e") + " FROM records e WHERE e.session=? AND "
 	args := []any{session}
 	if origin != "" {
 		query += "e.id=? AND e.origin=?"
 		args = append(args, id, origin)
 	} else {
-		query += `e.id IN (SELECT import_id FROM timeline_entries WHERE session=? AND id=? UNION ALL SELECT otel_id FROM timeline_entries WHERE session=? AND id=?)`
+		query += `e.id IN (SELECT import_id FROM logical_events WHERE session=? AND id=? UNION ALL SELECT otel_id FROM logical_events WHERE session=? AND id=?)`
 		args = append(args, session, id, session, id)
 	}
 	rows, err := tx.QueryContext(r.Context(), query, args...)

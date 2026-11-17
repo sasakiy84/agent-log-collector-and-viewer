@@ -3,8 +3,6 @@ package app
 import (
 	"context"
 	"database/sql"
-	"fmt"
-	"log"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -61,6 +59,9 @@ func (a *App) openDatabase(ctx context.Context, path string) error {
 	}
 	db.SetMaxOpenConns(1)
 	a.DB = db
+	if err = validateStorage(ctx, db); err != nil {
+		return err
+	}
 	if _, err = db.ExecContext(ctx, "PRAGMA auto_vacuum=INCREMENTAL; PRAGMA journal_mode=WAL"); err != nil {
 		return err
 	}
@@ -74,42 +75,11 @@ func (a *App) openDatabase(ctx context.Context, path string) error {
 	return nil
 }
 
+// prepareDatabase recovers only persisted invalidations. New-schema databases
+// are fully materialized by the Python converter; normal restarts never scan
+// originals or run historical format upgrades.
 func (a *App) prepareDatabase(ctx context.Context) error {
-	// Work and checkpoints commit in bounded transactions; the service runs
-	// this after opening readers rather than holding HTTP startup behind it.
-	steps := []struct {
-		name string
-		run  func() error
-	}{
-		{"trace ownership", func() error { return a.drainBatches(ctx, "trace ownership", reconcileTraceBatch) }},
-		{"session views", func() error { return a.prepareReadModel(ctx) }},
-		{"archive metadata", func() error { return a.drainBatches(ctx, "archive metadata", backfillArchiveStats) }},
-		{"event presentation", func() error { return a.runMaintenance(ctx, "presentation.v1", backfillPresentation, 0) }},
-		{"Claude and Copilot presentations", func() error { return a.runMaintenance(ctx, "providers.v1", backfillProviders, 0) }},
-		{"conversation and Guardian presentations", func() error { return a.runMaintenance(ctx, conversationJob, backfillConversation, 0) }},
-		{"Codex tool timing presentations", func() error { return a.runMaintenance(ctx, toolTimingJob, backfillToolTiming, 0) }},
-		{"model call ancestry", func() error {
-			return inTransaction(ctx, a.DB, func(tx *sql.Tx) error { return refreshModelCalls(ctx, tx) })
-		}},
-		{"folder summaries", func() error { return a.runMaintenance(ctx, directoriesJob, backfillDirectories, 0) }},
-		{"session titles", func() error { return a.runMaintenance(ctx, titlesJob, backfillTitles, 0) }},
-		{"Codex application message titles", func() error { return a.runMaintenance(ctx, appMessageTitlesJob, backfillAppMessageTitles, 0) }},
-		{"usage summaries", func() error { return a.runMaintenance(ctx, usageJob, backfillUsage, 0) }},
-		{"internal Codex sessions", func() error { return a.runMaintenance(ctx, codexVisibilityJob, backfillSessionVisibility, 0) }},
-		{"automatic Codex sessions", func() error { return a.runMaintenance(ctx, codexAutomaticJob, backfillCodexAutomaticSessions, 0) }},
-		{"Codex page context messages", func() error { return a.runMaintenance(ctx, appPageMessagesJob, backfillAppMessageTitles, 0) }},
-		{"session visibility", func() error { return a.drainBatches(ctx, "session visibility", refreshSessionVisibilityBatch) }},
-		{"folder overview", func() error { return a.drainBatches(ctx, "folder overview", refreshFolderBatch) }},
-		{"subagent links", func() error { return a.runMaintenance(ctx, agentsJob, backfillAgents, 0) }},
-		{"full-text search", func() error { return a.prepareSearch(ctx) }},
-	}
-	for _, step := range steps {
-		log.Printf("Database preparation: %s", step.name)
-		if err := step.run(); err != nil {
-			return fmt.Errorf("%s: %w", step.name, err)
-		}
-	}
-	return nil
+	return inTransaction(ctx, a.DB, func(tx *sql.Tx) error { return refreshProjections(ctx, tx) })
 }
 
 // Open prepares a database synchronously for embedded callers and maintenance tools.
@@ -135,12 +105,6 @@ func Open(ctx context.Context, path, token string) (*App, error) {
 		return nil, err
 	}
 	if err = a.initArchives(path); err != nil {
-		return nil, err
-	}
-	if err = a.startSkillIndexer(); err != nil {
-		return nil, err
-	}
-	if err = a.startProcessingIndexer(); err != nil {
 		return nil, err
 	}
 	ready = true

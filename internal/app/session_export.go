@@ -17,7 +17,7 @@ func (a *App) export(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid event origin", http.StatusBadRequest)
 		return
 	}
-	query := "SELECT id FROM events WHERE session=?"
+	query := "SELECT id FROM records WHERE session=?"
 	args := []any{r.URL.Query().Get("session")}
 	if origin != "" {
 		query += " AND origin=?"
@@ -27,7 +27,7 @@ func (a *App) export(w http.ResponseWriter, r *http.Request) {
 	// coroutine, and CROSS JOIN keeps it as the outer loop while originals are
 	// fetched by primary key. Raw payloads never enter SQLite's sort buffer.
 	query = "SELECT " + qualifiedColumns("e") + " FROM (" + query +
-		" ORDER BY time,sequence,id LIMIT -1) ordered CROSS JOIN events e ON e.id=ordered.id"
+		" ORDER BY time,sequence,id LIMIT -1) ordered CROSS JOIN records e ON e.id=ordered.id"
 	rows, err := a.exportReaders.QueryContext(r.Context(), query, args...)
 	if err != nil {
 		databaseError(w, r, err)

@@ -102,32 +102,12 @@ func TestFirstHumanPromptTitlesAndOrigins(t *testing.T) {
 	if got := page(t, a, "codex:title", "", 0); got.Count != 3 || !strings.Contains(got.Events[0].Detail.Blocks[0].Text, "recommended_plugins") {
 		t.Fatal("context disappeared from timeline", got.Count)
 	}
-	if _, err := a.DB.Exec("DELETE FROM events WHERE id=?", first.ID); err != nil {
+	if _, err := a.DB.Exec("DELETE FROM records WHERE id=?", first.ID); err != nil {
 		t.Fatal(err)
 	}
 	save(t, a)
 	if got := previewTitle(t, a, "codex:title", ""); got != "後の依頼" {
 		t.Fatal("deleted first prompt remained in catalog", got)
-	}
-}
-
-func TestTitleBackfillReadsFullPromptAndResumes(t *testing.T) {
-	a := setup(t)
-	text := "<recommended_plugins>\n" + strings.Repeat("shared context\n", 1000) + "</recommended_plugins>\n本当の最初の依頼"
-	event := recorded(t, "full-prompt", "import", "codex", "long", "gen_ai.user.message", map[string]any{"prompt": text})
-	save(t, a, event)
-	if _, err := a.DB.Exec("UPDATE event_cards SET prompt_title=''; UPDATE maintenance_jobs SET cursor='',complete=0 WHERE name=?", titlesJob); err != nil {
-		t.Fatal(err)
-	}
-	if err := a.runMaintenance(context.Background(), titlesJob, backfillTitles, 0); err != nil {
-		t.Fatal(err)
-	}
-	if got := previewTitle(t, a, "codex:long", ""); got != "本当の最初の依頼" {
-		t.Fatal("title was derived from truncated card", got)
-	}
-	var raw []byte
-	if err := a.DB.QueryRow("SELECT raw FROM events WHERE id=?", event.ID).Scan(&raw); err != nil || string(raw) != string(event.Raw) {
-		t.Fatal("original changed", err)
 	}
 }
 
@@ -198,46 +178,5 @@ func TestAppMessageIsPreservedButNotUsedAsSessionTitle(t *testing.T) {
 	getJSON(t, a, "/api/export?session="+auto.Session, &originals)
 	if len(originals) != 2 || string(originals[0].Raw) != string(auto.Raw) {
 		t.Fatal("automatic message was removed or changed")
-	}
-}
-
-func TestAppMessageTitleRepairUsesOriginalsAndDoesNotRepeat(t *testing.T) {
-	a := setup(t)
-	ctx := context.Background()
-	auto := appOpenPageMessage(t, `"`+strings.Repeat("x", 3000)+`"`)
-	human := recorded(t, "human", "import", "codex", "app-titles", "gen_ai.user.message", map[string]any{"prompt": "本来の最初の依頼"})
-	human.Sequence = 1
-	save(t, a, auto, human)
-	// Reproduce the old persisted title, including a closing tag beyond both
-	// title and card limits. The previous completed title job stays complete.
-	if _, err := a.DB.Exec("UPDATE event_cards SET prompt_title=? WHERE id=?", "<external_codex_apps_open_page>…", auto.ID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := a.DB.Exec("UPDATE maintenance_jobs SET cursor='',complete=0 WHERE name=?", appMessageTitlesJob); err != nil {
-		t.Fatal(err)
-	}
-	if err := inTransaction(ctx, a.DB, func(tx *sql.Tx) error {
-		preview, err := catalogPreview(ctx, tx, auto.Session)
-		if err != nil {
-			return err
-		}
-		_, err = tx.Exec("UPDATE session_catalog SET preview=? WHERE session=?", preview, auto.Session)
-		return err
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := a.runMaintenance(ctx, appMessageTitlesJob, backfillAppMessageTitles, 0); err != nil {
-		t.Fatal(err)
-	}
-	var sessions []SessionSummary
-	getJSON(t, a, "/api/sessions", &sessions)
-	if len(sessions) != 1 || sessions[0].Preview.Blocks[0].Text != "本来の最初の依頼" {
-		t.Fatal("persisted catalog was not repaired", sessions)
-	}
-	if err := a.runMaintenance(ctx, appMessageTitlesJob, func(context.Context, *sql.Tx, string) (string, int, error) {
-		t.Fatal("completed title repair repeated")
-		return "", 0, nil
-	}, 0); err != nil {
-		t.Fatal(err)
 	}
 }

@@ -27,7 +27,7 @@ Existing records are rebuilt once by a versioned, resumable background job (`sea
 With 150,000 synthetic records across 500 sessions, an indexed Japanese keyword matching one session took 1.1 ms median (previous raw search: 315 ms). A common word matching every event took 114 ms; unfiltered list/detail reads remained around 2/4 ms. Initial view-plus-search indexing took 89 seconds in that run. These are local measurements, not deployment guarantees. A separate 3 MiB unpunctuated Japanese fixture indexed through its final word with about 230 MiB peak RSS under default runtime settings.
 
 ```sh
-python3 scripts/performance_check.py --binary ./agentlog --japanese --payload-bytes 256
+AGENTLOG_BIN=./agentlog python3 scripts/search_browser_test.py
 ```
 
 Japanese IME, decoded strings, exact-ID filters, reload and mobile layout: `scripts/search_browser_test.py`. Linux peak-memory regression: `scripts/search_memory_test.py`. Both use isolated synthetic data.

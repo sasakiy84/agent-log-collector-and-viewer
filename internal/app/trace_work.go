@@ -9,22 +9,22 @@ import (
 // Ownership is unchanged: an explicit parent or one unambiguous conversation
 // owns a trace. The durable queue narrows reconciliation to changed identities.
 const traceOwner = `SELECT CASE WHEN COUNT(*)=1 THEN MIN(session) END FROM (
- SELECT DISTINCT session FROM events WHERE source=? AND trace=?
+ SELECT DISTINCT session FROM records WHERE source=? AND trace=?
  AND session NOT LIKE 'trace:%' AND session NOT LIKE 'unassigned:%' LIMIT 2)`
 
-const reconcileTrace = `UPDATE events AS e SET session=COALESCE((
- SELECT p.session FROM events p WHERE p.source=e.source AND p.trace=e.trace
+const reconcileTrace = `UPDATE records AS e SET session=COALESCE((
+ SELECT p.session FROM records p WHERE p.source=e.source AND p.trace=e.trace
  AND p.session NOT LIKE 'trace:%' AND p.session NOT LIKE 'unassigned:%'
  AND p.span=e.parent_span LIMIT 1),?)
  WHERE e.source=? AND e.trace=? AND e.trace<>'' AND e.session GLOB 'trace:*'
- AND (? IS NOT NULL OR EXISTS(SELECT 1 FROM events p WHERE p.source=e.source AND p.trace=e.trace
+ AND (? IS NOT NULL OR EXISTS(SELECT 1 FROM records p WHERE p.source=e.source AND p.trace=e.trace
  AND p.session NOT LIKE 'trace:%' AND p.session NOT LIKE 'unassigned:%'
  AND p.span=e.parent_span))`
 
 func reconcileTraceBatch(ctx context.Context, tx *sql.Tx) (int, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT d.source,d.trace FROM trace_dirty d
+	rows, err := tx.QueryContext(ctx, `SELECT d.source,d.trace FROM pending_trace d
  WHERE NOT EXISTS(SELECT 1 FROM archive_locks)
- OR NOT EXISTS(SELECT 1 FROM events e JOIN archive_locks l ON l.session=e.session
+ OR NOT EXISTS(SELECT 1 FROM records e JOIN archive_locks l ON l.session=e.session
  WHERE e.source=d.source AND e.trace=d.trace) LIMIT 200`)
 	if err != nil {
 		return 0, err
@@ -44,7 +44,7 @@ func reconcileTraceBatch(ctx context.Context, tx *sql.Tx) (int, error) {
 	}
 	for _, key := range batch {
 		var pending bool
-		if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM events
+		if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM records
  WHERE source=? AND trace=? AND trace<>'' AND session GLOB 'trace:*')`, key[0], key[1]).Scan(&pending); err != nil {
 			return 0, err
 		}
@@ -63,7 +63,7 @@ func reconcileTraceBatch(ctx context.Context, tx *sql.Tx) (int, error) {
 		}
 		// Reconciliation can enqueue the same identity via the update trigger.
 		// All changes are visible in this transaction and have just been handled.
-		if _, err = tx.ExecContext(ctx, "DELETE FROM trace_dirty WHERE source=? AND trace=?", key[0], key[1]); err != nil {
+		if _, err = tx.ExecContext(ctx, "DELETE FROM work_items WHERE kind='trace' AND (scope,key) IN(SELECT source,trace FROM pending_trace WHERE source=? AND trace=?)", key[0], key[1]); err != nil {
 			return 0, err
 		}
 	}

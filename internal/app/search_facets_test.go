@@ -181,7 +181,7 @@ func TestSkillTimeWindowKeepsDedupeWithinSelectedEvidence(t *testing.T) {
 	check(window+"&q=review+build&text_mode=all", 0, 0)
 	check(window+"&exclude=build", 1, 0)
 	// The complete skill catalog is read-only; no raw reparse is needed.
-	if _, err := a.DB.Exec("UPDATE events SET raw='not JSON' WHERE id='import:read'"); err != nil {
+	if _, err := a.DB.Exec("UPDATE records SET raw='not JSON' WHERE id='import:read'"); err != nil {
 		t.Fatal(err)
 	}
 	check(window, 2, 0)

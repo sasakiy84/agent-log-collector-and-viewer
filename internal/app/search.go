@@ -230,7 +230,14 @@ func searchableValues(ctx context.Context, value any, emit func(string) error, i
 	}
 	return nil
 }
-func storeSearch(ctx context.Context, tx *sql.Tx, event Event, doc document) error {
+
+// searchDocument is analyzer output, independent of SQL and UI labels.
+type searchDocument struct {
+	text        string
+	identifiers map[searchIdentifier]bool
+}
+
+func analyzeSearch(ctx context.Context, event Event, doc document) (searchDocument, error) {
 	var text strings.Builder
 	identifiers := map[searchIdentifier]bool{}
 	identifier := func(key string, value any) {
@@ -247,7 +254,7 @@ func storeSearch(ctx context.Context, tx *sql.Tx, event Event, doc document) err
 	}
 	for _, value := range []string{event.Source, event.Name} {
 		if err := emit(value); err != nil {
-			return err
+			return searchDocument{}, err
 		}
 	}
 	// These are numeric OTLP wire fields, not arbitrary string-valued keys
@@ -258,10 +265,22 @@ func storeSearch(ctx context.Context, tx *sql.Tx, event Event, doc document) err
 	}
 	for _, scope := range []map[string]any{doc.Resource, doc.Scope, record} {
 		if err := searchableValues(ctx, scope, emit, identifier); err != nil {
-			return err
+			return searchDocument{}, err
 		}
 	}
-	if err := storeIdentifiers(ctx, tx, event, identifiers); err != nil {
+	return searchDocument{text: text.String(), identifiers: identifiers}, nil
+}
+
+func storeSearch(ctx context.Context, tx *sql.Tx, event Event, doc document) error {
+	index, err := analyzeSearch(ctx, event, doc)
+	if err != nil {
+		return err
+	}
+	return storeSearchDocument(ctx, tx, event, index)
+}
+
+func storeSearchDocument(ctx context.Context, tx *sql.Tx, event Event, index searchDocument) error {
+	if err := storeIdentifiers(ctx, tx, event, index.identifiers); err != nil {
 		return err
 	}
 	var rowid int64
@@ -272,38 +291,14 @@ func storeSearch(ctx context.Context, tx *sql.Tx, event Event, doc document) err
 	if _, err = tx.ExecContext(ctx, "DELETE FROM event_search WHERE rowid=?", rowid); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, "INSERT INTO event_search(rowid,text) VALUES(?,?)", rowid, text.String()); err != nil {
+	if _, err = tx.ExecContext(ctx, "INSERT INTO event_search(rowid,text) VALUES(?,?)", rowid, index.text); err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, "DELETE FROM search_dirty WHERE event_id=?", event.ID)
+	_, err = tx.ExecContext(ctx, "DELETE FROM work_items WHERE kind='search' AND (scope,key) IN(SELECT event_id,'' FROM pending_search WHERE event_id=?)", event.ID)
 	return err
 }
-func (a *App) prepareSearch(ctx context.Context) error {
-	if err := a.drainBatches(ctx, "full-text search", refreshSearchBatch); err != nil {
-		return err
-	}
-	return a.runMaintenance(ctx, "search_strings.v1", backfillSearchStrings, 0)
-}
-
-func backfillSearchStrings(ctx context.Context, tx *sql.Tx, cursor string) (string, int, error) {
-	batch, err := loadEventBatch(ctx, tx, "SELECT "+eventColumns+" FROM events WHERE id>? ORDER BY id LIMIT 200", cursor)
-	if err != nil {
-		return cursor, 0, err
-	}
-	for _, event := range batch {
-		doc, err := decodeDocument(event.Raw)
-		if err != nil {
-			return cursor, 0, err
-		}
-		if err = storeSearch(ctx, tx, event, doc); err != nil {
-			return cursor, 0, err
-		}
-		cursor = event.ID
-	}
-	return cursor, len(batch), nil
-}
 func refreshSearchBatch(ctx context.Context, tx *sql.Tx) (int, error) {
-	batch, err := loadEventBatch(ctx, tx, "SELECT "+qualifiedColumns("e")+" FROM search_dirty d CROSS JOIN events e ON e.id=d.event_id LIMIT 200")
+	batch, err := loadEventBatch(ctx, tx, "SELECT "+qualifiedColumns("e")+" FROM pending_search d CROSS JOIN records e ON e.id=d.event_id LIMIT 200")
 	if err != nil {
 		return 0, err
 	}

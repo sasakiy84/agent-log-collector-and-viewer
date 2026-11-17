@@ -45,7 +45,7 @@ func TestSkillReadAttemptsNeverInventUses(t *testing.T) {
 		}
 	}
 	// Reclassification on deletion uses current evidence, without a stale cache.
-	if _, err := a.DB.Exec("DELETE FROM events WHERE id IN('report-1','retry','report-2','import:imported-report')"); err != nil {
+	if _, err := a.DB.Exec("DELETE FROM records WHERE id IN('report-1','retry','report-2','import:imported-report')"); err != nil {
 		t.Fatal(err)
 	}
 	save(t, a)

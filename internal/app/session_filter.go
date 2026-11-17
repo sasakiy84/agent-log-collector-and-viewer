@@ -107,5 +107,5 @@ func (f sessionFilter) selection(ctx context.Context) (sqlSelection, error) {
 		query += " AND " + directoryColumn + "=?"
 		args = append(args, *f.Folder)
 	}
-	return sqlSelection{from: " FROM session_catalog s", where: query, args: args}, nil
+	return sqlSelection{from: " FROM sessions s", where: query, args: args}, nil
 }

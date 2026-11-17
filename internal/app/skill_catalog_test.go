@@ -66,7 +66,7 @@ func TestSkillUsageCatalogProjectScopeAndOrdering(t *testing.T) {
 		t.Fatal(p)
 	}
 	// Archive-locked sessions contribute neither reported usage nor search metadata.
-	if _, err := a.DB.Exec("INSERT INTO archives(id,status,created_at,cutoff) VALUES('skill-test','preparing','',''); INSERT INTO archive_locks VALUES('codex:b3','skill-test')"); err != nil {
+	if _, err := a.DB.Exec("INSERT INTO archive_jobs(id,status,created_at,cutoff) VALUES('skill-test','preparing','',''); INSERT INTO archive_locks VALUES('codex:b3','skill-test')"); err != nil {
 		t.Fatal(err)
 	}
 	getJSON(t, a, "/api/skills?q=only-B", &p)

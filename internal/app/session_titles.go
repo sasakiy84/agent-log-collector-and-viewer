@@ -133,7 +133,7 @@ func userRequestBlocks(d Detail) []Block {
 // Titles read one indexed, bounded card. They never decode original histories
 // on a list request, and context-only sessions fall back to their session ID.
 func sessionPreview(ctx context.Context, tx *sql.Tx, session, origin string) (Detail, error) {
-	query := "SELECT detail,prompt_title FROM event_cards WHERE session=? AND prompt_title<>''"
+	query := "SELECT detail,prompt_title FROM record_facts WHERE session=? AND prompt_title<>''"
 	args := []any{session}
 	if origin != "" {
 		query += " AND origin=?"
@@ -185,71 +185,4 @@ func catalogPreview(ctx context.Context, tx *sql.Tx, session string) ([]byte, er
 		return nil, err
 	}
 	return json.Marshal(detail)
-}
-
-func backfillTitles(ctx context.Context, tx *sql.Tx, cursor string) (string, int, error) {
-	batch, err := loadEventBatch(ctx, tx, "SELECT "+qualifiedColumns("e")+" FROM event_cards c CROSS JOIN events e ON e.id=c.id WHERE c.id>? AND c.is_user=1 ORDER BY c.id LIMIT 200", cursor)
-	if err != nil {
-		return cursor, 0, err
-	}
-	return updatePromptTitles(ctx, tx, batch, cursor)
-}
-
-const appMessageTitlesJob = "codex_app_titles.v1"
-const appPageMessagesJob = "codex_page_messages.v1"
-
-func backfillAppMessageTitles(ctx context.Context, tx *sql.Tx, cursor string) (string, int, error) {
-	// Page through the existing user-card index in bounded transactions. Read
-	// original payloads only for candidate Codex titles. Empty titles include
-	// previously stripped page messages whose visibility facts need repair too.
-	columns := strings.Replace(qualifiedColumns("e"), "e.raw", `CASE WHEN c.source='codex' AND (c.prompt_title='' OR c.prompt_title GLOB '<external_codex_apps_open_page>*' OR c.prompt_title GLOB '<external_codex_apps_selected_page_part_*') THEN e.raw ELSE X'' END`, 1)
-	batch, err := loadEventBatch(ctx, tx, "SELECT "+columns+" FROM event_cards c CROSS JOIN events e ON e.id=c.id WHERE c.id>? AND c.is_user=1 ORDER BY c.id LIMIT 200", cursor)
-	if err != nil {
-		return cursor, 0, err
-	}
-	for _, event := range batch {
-		if len(event.Raw) == 0 {
-			continue
-		}
-		doc, err := decodeDocument(event.Raw)
-		if err != nil {
-			return cursor, 0, err
-		}
-		if err = storeSessionFacts(ctx, tx, event, doc, describe(event, doc)); err != nil {
-			return cursor, 0, err
-		}
-	}
-	return updatePromptTitles(ctx, tx, batch, cursor)
-}
-
-func updatePromptTitles(ctx context.Context, tx *sql.Tx, batch []Event, cursor string) (string, int, error) {
-	sessions := map[string]bool{}
-	for _, event := range batch {
-		cursor = event.ID
-		if len(event.Raw) == 0 {
-			continue
-		}
-		doc, err := decodeDocument(event.Raw)
-		if err != nil {
-			return cursor, 0, err
-		}
-		title := promptTitle(event.Source, describe(event, doc))
-		if _, err = tx.ExecContext(ctx, "UPDATE event_cards SET prompt_title=? WHERE id=? AND prompt_title<>?", title, event.ID, title); err != nil {
-			return cursor, 0, err
-		}
-		sessions[event.Session] = true
-	}
-	for session := range sessions {
-		preview, err := catalogPreview(ctx, tx, session)
-		if err != nil {
-			return cursor, 0, err
-		}
-		if _, err = tx.ExecContext(ctx, "UPDATE session_catalog SET preview=? WHERE session=?", preview, session); err != nil {
-			return cursor, 0, err
-		}
-	}
-	// Title changes can alter cached preview metadata, so publish summaries in
-	// the same transaction without scanning unrelated session histories.
-	_, err := refreshFolderBatch(ctx, tx)
-	return cursor, len(batch), err
 }

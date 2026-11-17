@@ -1,8 +1,6 @@
 package app
 
 import (
-	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -195,7 +193,7 @@ func TestConversationSearchAndSourceIsolation(t *testing.T) {
 			t.Fatal("accepted cross-session or non-conversation boundary", path, w.Code)
 		}
 	}
-	if _, err := a.DB.Exec("INSERT INTO archives(id,status,created_at,cutoff) VALUES('fixture','ready','',''); INSERT INTO archive_locks VALUES('codex:chat','fixture')"); err != nil {
+	if _, err := a.DB.Exec("INSERT INTO archive_jobs(id,status,created_at,cutoff) VALUES('fixture','ready','',''); INSERT INTO archive_locks VALUES('codex:chat','fixture')"); err != nil {
 		t.Fatal(err)
 	}
 	if w := archiveReq(a, "GET", "/api/processing?session=codex:chat", ""); w.Code != 409 {
@@ -226,7 +224,7 @@ func TestConversationOmitsInjectedContextAndKeepsEmbeddedMessages(t *testing.T) 
 	}
 }
 
-func TestGuardianClassificationAndRepairOfOldFalseMerge(t *testing.T) {
+func TestGuardianClassificationKeepsToolPairsIndependent(t *testing.T) {
 	a := setup(t)
 	start := recorded(t, "start", "import", "codex", "guardian", "gen_ai.tool.start", map[string]any{"call_id": "call", "tool_name": "write_stdin", "arguments": "input"})
 	result := recorded(t, "result", "import", "codex", "guardian", "gen_ai.tool.result", map[string]any{"call_id": "call", "tool_name": "write_stdin", "output": "real output"})
@@ -248,41 +246,4 @@ func TestGuardianClassificationAndRepairOfOldFalseMerge(t *testing.T) {
 		}
 	}
 	check()
-	// Reproduce an old DB where the observation was merged into imported output.
-	doc, _ := decodeDocument(guardian.Raw)
-	old := describe(guardian, doc)
-	old.Kind, old.Diagnostic, old.ToolPhase = "tool", false, "tool.result"
-	old.Title = "write_stdin"
-	encoded, _ := json.Marshal(cardDetail(old))
-	err := inTransaction(context.Background(), a.DB, func(tx *sql.Tx) error {
-		_, err := tx.Exec("UPDATE event_cards SET kind='tool',activity=1,detail=? WHERE id='guardian'", encoded)
-		if err == nil {
-			_, err = tx.Exec("INSERT INTO event_keys VALUES('guardian','tool.call',?)", identityKey("", "tool.result", "tool.call", "call"))
-		}
-		if err == nil {
-			_, err = tx.Exec("INSERT OR IGNORE INTO read_model_dirty VALUES('codex:guardian','guardian'),('codex:guardian','import:result')")
-		}
-		if err == nil {
-			err = refreshProjections(context.Background(), tx)
-		}
-		return err
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if p := page(t, a, "codex:guardian", "", 0); p.Count != 2 {
-		t.Fatal("legacy false merge not reproduced", p.Count)
-	}
-	a.DB.Exec("UPDATE maintenance_jobs SET complete=0,cursor='',processed=0 WHERE name=?", conversationJob)
-	if err = a.runMaintenance(context.Background(), conversationJob, backfillConversation, 0); err != nil {
-		t.Fatal(err)
-	}
-	if p := page(t, a, "codex:guardian", "", 0); p.Count != 3 {
-		t.Fatal("legacy merged output not split", p.Count)
-	}
-	check()
-	var raw []byte
-	if err = a.DB.QueryRow("SELECT raw FROM events WHERE id='guardian'").Scan(&raw); err != nil || string(raw) != string(guardian.Raw) {
-		t.Fatal("original Guardian record changed", err)
-	}
 }
