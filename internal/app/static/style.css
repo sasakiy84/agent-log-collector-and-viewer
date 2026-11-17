@@ -1710,6 +1710,16 @@ html {
 /* Settings share the compact navigation and single-accent palette. */
 #settingspage {max-width:1200px;margin:0 auto;padding:24px 28px;}
 #settingspage h1 {font-size:22px;}
+.ingestion-panel {padding:4px 0 24px;margin-bottom:24px;border-bottom:1px solid var(--line);}
+.ingestion-metrics {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:16px 0;}
+.ingestion-metrics dt {font-size:12px;color:var(--muted);margin-bottom:6px;}
+.ingestion-metrics dd {font-size:22px;font-variant-numeric:tabular-nums;margin:0;overflow-wrap:anywhere;}
+.ingestion-panel>p {font-size:12px;line-height:1.6;}
+#ingestionerror {color:var(--failure);margin-top:8px;}
+#ingestionerror:empty {display:none;}
+@media(max-width:480px) {
+ .ingestion-metrics dt {line-height:1.4;min-height:2.8em;}
+}
 #settingspage input {border:1px solid var(--control-border);border-radius:5px;padding:8px 10px;min-height:var(--control-height);font-size:13px;background:var(--surface);color:var(--text);}
 #createapikey .primary {width:auto;margin:0;flex-shrink:0;}
 .settings-section-heading {display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:12px;}

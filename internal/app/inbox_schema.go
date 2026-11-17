@@ -1,5 +1,10 @@
 package app
 
+import _ "embed"
+
+//go:embed inbox_record_counts.sql
+var inboxRecordCountsSchema string
+
 // The inbox has its own small schema history. Append migrations without editing
 // released SQL, just as for the view database; queued ACKs must survive upgrades.
 var inboxMigrations = []migration{{1, "0001_durable_inbox", `
@@ -13,4 +18,4 @@ var inboxMigrations = []migration{{1, "0001_durable_inbox", `
  UPDATE ingest_size SET bytes=bytes+length(NEW.data),batches=batches+1 WHERE id=1; END;
  CREATE TRIGGER ingest_removed AFTER DELETE ON ingest_batches BEGIN
  UPDATE ingest_size SET bytes=bytes-length(OLD.data),batches=batches-1 WHERE id=1; END;
-`}}
+`}, {2, "0002_inbox_record_counts", inboxRecordCountsSchema}}

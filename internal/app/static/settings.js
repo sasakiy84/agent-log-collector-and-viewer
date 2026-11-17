@@ -1,5 +1,29 @@
 "use strict";
 let settingsKeys = [];
+let ingestionRequest = 0, ingestionLoading = false;
+async function refreshIngestion(signal) {
+  const serial = ++ingestionRequest;
+  ingestionLoading = true;
+  $("#refreshingestion").disabled = true;
+  try {
+    const metrics = await api("/api/metrics", signal);
+    if (signal?.aborted || serial !== ingestionRequest) return;
+    $("#serverversion").textContent = `Version ${metrics.version}`;
+    $("#pendingrecords").textContent = Number.isSafeInteger(metrics.pending_records) ? metrics.pending_records.toLocaleString() : "—";
+    $("#pendingbatches").textContent = Number.isSafeInteger(metrics.pending_batches) ? metrics.pending_batches.toLocaleString() : "—";
+    $("#pendingbytes").textContent = Number.isSafeInteger(metrics.pending_bytes) ? bytes(metrics.pending_bytes) : "—";
+    $("#ingestionerror").textContent = "";
+  } catch (error) {
+    if (signal?.aborted || serial !== ingestionRequest) return;
+    for (const id of ["pendingrecords", "pendingbatches", "pendingbytes"]) $("#" + id).textContent = "—";
+    $("#ingestionerror").textContent = `Unable to load ingestion status: ${error.message}`;
+  } finally {
+    if (serial === ingestionRequest) {
+      ingestionLoading = false;
+      $("#refreshingestion").disabled = false;
+    }
+  }
+}
 function renderAPIKeys() {
   $("#apikeycount").textContent = `${settingsKeys.length} ${settingsKeys.length === 1 ? "key" : "keys"}`;
   $("#apikeyrows").innerHTML = settingsKeys.length ? settingsKeys.map(key => `
@@ -54,14 +78,17 @@ async function settingsAction(action) {
   finally { $("#settingspage").querySelectorAll("button").forEach(button => { button.disabled = false; }); }
 }
 async function refreshSettings(signal) {
-  const [data, metrics] = await Promise.all([api("/api/settings/api-keys", signal), api("/api/metrics", signal)]);
+  const [data] = await Promise.all([api("/api/settings/api-keys", signal), refreshIngestion(signal)]);
   if (signal?.aborted) return;
   settingsKeys = data.keys;
-  $("#serverversion").textContent = `Version ${metrics.version}`;
   renderAPIKeys();
 }
 function setupSettings() {
   if (!settingsMode) return;
+  $("#refreshingestion").onclick = () => refreshIngestion();
+  setInterval(() => {
+    if (!document.hidden && !$("#workspace").hidden && !ingestionLoading) refreshIngestion();
+  }, 5000);
   $("#apireadmecurl").textContent = `curl -fsS -H 'Authorization: Bearer <API_KEY>' '${location.origin}/api/readme'`;
   $("#copyreadmecurl").onclick = () => settingsAction(async () => {
     await navigator.clipboard.writeText($("#apireadmecurl").textContent);

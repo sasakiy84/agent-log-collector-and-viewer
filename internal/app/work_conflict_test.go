@@ -72,7 +72,7 @@ func TestUpgradeDrainsRetainedBatchAndItsFollowingBatch(t *testing.T) {
 	if err = queue.accept(ctx, []Event{following}, false); err != nil {
 		t.Fatal(err)
 	}
-	if batches, _, err := queue.size(ctx); err != nil || batches != 2 {
+	if batches, _, _, err := queue.size(ctx); err != nil || batches != 2 {
 		t.Fatal(batches, err)
 	}
 	queue.close()
@@ -92,7 +92,7 @@ func TestUpgradeDrainsRetainedBatchAndItsFollowingBatch(t *testing.T) {
 	}
 	deadline := time.Now().Add(10 * time.Second)
 	for {
-		batches, _, err := upgraded.inbox.size(ctx)
+		batches, _, _, err := upgraded.inbox.size(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}

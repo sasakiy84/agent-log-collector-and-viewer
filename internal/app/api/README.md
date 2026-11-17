@@ -14,7 +14,7 @@ Replace `<BASE_URL>` with the server origin and `<API_KEY>` with the key. When `
 `GET /api/metrics`
 
 ```json
-{"version":"v0.23.0","started_at":"2026-11-17T00:00:00Z","uptime_seconds":3600,"counts_ready":true,"events":650962,"sessions":13085,"logical_events":640000,"raw_bytes":123456789,"state":"ready","pending_batches":0,"pending_bytes":0,"queue_capacity_bytes":268435456,"import_capacity_bytes":134217728}
+{"version":"v0.23.0","started_at":"2026-11-17T00:00:00Z","uptime_seconds":3600,"counts_ready":true,"events":650962,"sessions":13085,"logical_events":640000,"raw_bytes":123456789,"state":"ready","pending_batches":0,"pending_records":0,"pending_bytes":0,"queue_capacity_bytes":268435456,"import_capacity_bytes":134217728}
 ```
 
 - `events`: stored original records, including import/OTEL copies and all signals.
@@ -23,7 +23,8 @@ Replace `<BASE_URL>` with the server origin and `<API_KEY>` with the key. When `
 - `raw_bytes`: total original JSON payload bytes; not the database file size.
 - `counts_ready`: raw counters are complete. During initial preparation, incomplete counts are `null`; logical totals are `null` until views are ready.
 - `state`: `migrating`, `preparing`, `ready` or `failed`.
-- `pending_batches`, `pending_bytes`: telemetry durably accepted but waiting for projection. Queue values are sampled separately from the stored-data snapshot.
+- `pending_records`: original records durably accepted but waiting for processing, including the batch currently being processed. Includes logs, traces and metrics, and counts every queued record, including duplicates. Files that have not been sent to the server are outside this count.
+- `pending_batches`, `pending_bytes`: the number and encoded size of those queued batches. Queue values are sampled separately from the stored-data snapshot.
 - Version and uptime describe the running binary/process. Counts read incremental metadata; they do not scan raw JSON.
 
 `GET /api/status` returns just state and queue metrics. A successful OTLP POST confirms durable acceptance, not immediate indexing.

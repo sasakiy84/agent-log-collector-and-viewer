@@ -20,7 +20,7 @@ Inspired by graphite, the mineral in pencil leads, AGrahpite makes recording and
 - Read [conversations](docs/activity.md) first; load intermediate logs on expansion, with errors visible while collapsed. Guardian observations stay in Diagnostics.
 - Combine imported and OTEL events with shared IDs into one card while keeping both originals.
 - [Export and archive](docs/export.md) from the session list: download complete logs or archive inactive folders, confirm the download, then reclaim DB space.
-- Manage read-only agent API keys in **Settings**; fetch the [API README](internal/app/api/README.md) and server metrics through the API.
+- Monitor queued records and manage read-only agent API keys in **Settings**; fetch the [API README](internal/app/api/README.md) and server metrics through the API.
 - One Go binary with an embedded UI, SQLite storage and optional token authentication. No automatic log expiry.
 
 ## Setup

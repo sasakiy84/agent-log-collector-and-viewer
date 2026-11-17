@@ -98,6 +98,7 @@ func (a *App) serviceAvailable(w http.ResponseWriter, r *http.Request) bool {
 type serviceStatus struct {
 	State               string `json:"state"`
 	PendingBatches      int64  `json:"pending_batches"`
+	PendingRecords      int64  `json:"pending_records"`
 	PendingBytes        int64  `json:"pending_bytes"`
 	QueueCapacityBytes  int64  `json:"queue_capacity_bytes"`
 	ImportCapacityBytes int64  `json:"import_capacity_bytes"`
@@ -116,7 +117,7 @@ func (a *App) statusSnapshot(ctx context.Context) (serviceStatus, error) {
 	}
 	if a.inbox != nil {
 		var err error
-		s.PendingBatches, s.PendingBytes, err = a.inbox.size(ctx)
+		s.PendingBatches, s.PendingRecords, s.PendingBytes, err = a.inbox.size(ctx)
 		if err != nil {
 			return s, err
 		}
