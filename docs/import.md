@@ -92,7 +92,7 @@ AGENTLOG_TOKEN=YOUR_TOKEN ./agentlog import --all \
 
 ## Import behavior
 
-- Watching starts with existing files, then reparses only changed files. Missing folders are watched once created. Failed imports retry; unfinished final JSON lines are reconsidered on the next change. `Ctrl+C` stops watching. `--watch` and `--dry-run` cannot be combined.
+- Watching starts with existing files, then reparses changed files and sends only changed normalized records. Acknowledged record hashes persist across restarts; failed deliveries retry. Existing file checkpoints acquire record hashes on their next change. Missing folders are watched once created; unfinished final JSON lines are reconsidered on the next change. `Ctrl+C` stops watching. `--watch` and `--dry-run` cannot be combined.
 - Watching retains successful file fingerprints across restarts and skips unchanged transcripts. Collector-configured watchers store them in the durable inbox database; CLI `--watch` uses `--watch-state`. Fingerprints include file identity, size, modification/change metadata, import options and Copilot predecessor journals. Changed/replaced/truncated files are reparsed to preserve Codex message reconciliation and Copilot journal semantics. Failed deliveries never advance the checkpoint. Removing/truncating files does not delete stored events.
 - An OTLP success response confirms durable acceptance. Indexing may finish later; see [startup and ingestion](startup.md).
 - Converts messages, tool arguments/results and recorded usage into GenAI-style OTLP log attributes. JSON inspection shows the converted OTLP record. Unsupported record kinds are counted as skipped.

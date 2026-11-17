@@ -2,6 +2,8 @@
 
 Child sessions are hidden from the session list, including search results and pagination totals. Their logs remain accessible from the parent session.
 
+The related-agent header initially loads at most 20 child links. **Load more subagents** retrieves another 20 on demand, using the last session ID as its cursor. Large child lists do not inflate the initial session response or DOM.
+
 Click **Subagent: …** on a launch card or in the session's related agents to preview its logs without leaving the parent session. The panel opens at the latest entries, supports numbered pages and nested agents, and has **Open session**, **Event details** and **Latest** navigation. Its header stays fixed on desktop and mobile.
 
 ![Launch card and subagent preview](ui-subagent-preview.png)
