@@ -8,6 +8,8 @@ Browse `/skills`, select projects and a time range, then click a skill to open i
 
 Input/output records and imported/OTEL copies count once when explicit call identities establish the relationship. An outer `functions.exec` wrapper and its concrete tool count once when both export the same executor chunk ID for the same skill and executing agent. Repeated calls with distinct identities count separately. Same-turn invocation reports are deduplicated. A unique Copilot report and skill tool connected by an explicit parent/child span count once. Reports, injections and reads without a shared identity remain independent observations. A single tool call contributes at most one attempt per skill.
 
+**Weekly** and **Monthly** count attempts in the last 7 and 30 days, respectively. Each window is intersected with the selected event time range and applies the same project, agent and origin filters. Attempts are deduplicated within each window.
+
 **Sessions** counts sessions containing attempts. Equal names in different plugins remain separate.
 
 Attempt extraction parses structured file tools, literal shell commands (including `cd … && cat`, multiline commands and shell wrappers), and literal JavaScript tool calls inside `functions.exec`. Dedicated `skills.read` calls are recognized when the package/resource identifies a skill. Code is parsed, never executed. Available-skill lists, ordinary mentions, file writes and in-place edits are excluded. Conditional read requests count as attempts; dynamically computed paths that cannot identify a skill are excluded.

@@ -51,7 +51,14 @@ async function refreshSkills(signal) {
     ? data.skills
         .map(
           (row) =>
-            `<a class="skill-row" href="${esc(skillSessionURL(row.name, row.plugin))}"><div><h2>${esc(row.name)}</h2><small>${esc([row.plugin, ...row.scopes.filter(Boolean).slice(0, 16)].filter(Boolean).join(" · "))}</small></div><span class="skill-attempts" title="${esc(skillAttemptsTitle(row))}">${row.attempts.toLocaleString()}</span><span title="Sessions containing skill attempts">${row.sessions.toLocaleString()}</span><time>${esc(date(row.last))}</time></a>`,
+            `<a class="skill-row" href="${esc(skillSessionURL(row.name, row.plugin))}">
+              <div><h2>${esc(row.name)}</h2><small>${esc([row.plugin, ...row.scopes.filter(Boolean).slice(0, 16)].filter(Boolean).join(" · "))}</small></div>
+              <span class="skill-attempts" data-label="Attempts" title="${esc(skillAttemptsTitle(row))}">${row.attempts.toLocaleString()}</span>
+              <span class="skill-weekly" data-label="Weekly" title="Attempts in the last 7 days within the selected range">${row.weekly.toLocaleString()}</span>
+              <span class="skill-monthly" data-label="Monthly" title="Attempts in the last 30 days within the selected range">${row.monthly.toLocaleString()}</span>
+              <span class="skill-sessions" data-label="Sessions" title="Sessions containing skill attempts">${row.sessions.toLocaleString()}</span>
+              <time>${esc(date(row.last))}</time>
+            </a>`,
         )
         .join("")
     : '<p class="empty">No skills found</p>';

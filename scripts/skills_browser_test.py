@@ -11,7 +11,8 @@ with tempfile.TemporaryDirectory() as folder:
   for _ in range(100):
    try:settled_urlopen(base,timeout=1);break
    except OSError:time.sleep(.1)
-  def record(session,i,name,attrs):return {'eventName':name,'timeUnixNano':str(1780000000000000000+i*1000000000),'attributes':[{'key':k,'value':{'stringValue':str(v)}} for k,v in {'session.id':session,**attrs}.items()]}
+  start=time.time_ns()-3600*1000000000
+  def record(session,i,name,attrs):return {'eventName':name,'timeUnixNano':str(start+i*1000000000),'attributes':[{'key':k,'value':{'stringValue':str(v)}} for k,v in {'session.id':session,**attrs}.items()]}
   rows=[record('main',0,'gen_ai.user.message',{'cwd':'/work/shop','prompt':'Fix pagination'})]
   for i,turn in enumerate(['turn-1','turn-1','turn-2']):rows.append(record('main',i+1,'codex.skill_invocation',{'skill.name':'review-core','turn.id':turn,'skill.invocation_type':'explicit' if i<2 else 'implicit','skill.scope':'repo'}))
   rows += [record('legacy',5,'gen_ai.tool.start',{'cwd':'/work/legacy','tool_name':'exec_command','arguments':"{\"cmd\":\"cat /work/.codex/skills/review-core/SKILL.md\"}",'agentlog.origin':'import'}),record('legacy',6,'gen_ai.tool.start',{'cwd':'/work/legacy','tool_name':'Read','arguments':'{"file_path":"/work/skills/legacy-only/SKILL.md"}','agentlog.origin':'import'}),record('legacy',7,'gen_ai.tool.start',{'cwd':'/work/legacy','tool_name':'exec_command','arguments':'{"cmd":"cat /home/demo/.codex/skills/.system/skill-creator/SKILL.md"}','agentlog.origin':'import'}),record('mentioned',8,'gen_ai.user.message',{'cwd':'/work/mentions','prompt':'Available: review-core. Also /work/skills/not-used/SKILL.md'}),record('main',9,'gen_ai.tool.start',{'tool_name':'apply_patch','arguments':'{"input":"*** Add File: /work/skills/written-only/SKILL.md"}'}),record('jp',10,'codex.skill_invocation',{'cwd':'/work/docs','skill.name':'日本語ドキュメント','skill.plugin_id':'writing-tools','skill.scope':'user','turn.id':'jp-turn','skill.invocation_type':'implicit'})]
@@ -23,7 +24,7 @@ with tempfile.TemporaryDirectory() as folder:
   with sync_playwright() as p:
    browser=p.chromium.launch(executable_path=os.getenv('AGENTLOG_CHROMIUM', '/usr/bin/chromium'),headless=True,args=['--no-sandbox']);page=browser.new_page(viewport={'width':1440,'height':1000});errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
    page.goto(base+'/skills');page.locator('#token').fill(token);page.locator('#loginform button').click();expect(page.locator('.skill-row')).to_have_count(4);expect(page.locator('#skillcount')).to_have_text('4 skills · 8 attempts');expect(page.locator('.skill-row h2').first).to_have_text('review-core');expect(page.locator('#projectsidebar')).to_be_visible()
-   row=page.locator('.skill-row').filter(has=page.get_by_role('heading',name='review-core',exact=True));expect(row.locator('.skill-attempts')).to_have_text('3');expect(row.locator('span').nth(1)).to_have_text('2')
+   row=page.locator('.skill-row').filter(has=page.get_by_role('heading',name='review-core',exact=True));expect(row.locator('.skill-attempts')).to_have_text('3');expect(row.locator('.skill-sessions')).to_have_text('2');expect(row.locator('.skill-weekly')).to_have_text('3');expect(row.locator('.skill-monthly')).to_have_text('3')
    legacy=page.locator('.skill-row').filter(has=page.get_by_role('heading',name='legacy-only',exact=True));expect(legacy.locator('.skill-attempts')).to_have_text('3')
    if os.getenv('AGENTLOG_SCREENSHOT_DIR'):
     output=pathlib.Path(os.environ['AGENTLOG_SCREENSHOT_DIR']);output.mkdir(parents=True,exist_ok=True);page.screenshot(path=str(output/'ui-skills.png'))
