@@ -37,6 +37,57 @@ func setup(t *testing.T) (*app.App, *httptest.Server) {
 	t.Cleanup(func() { s.Close(); a.Close() })
 	return a, s
 }
+
+func TestCodexCommentaryComplementsLiveConversation(t *testing.T) {
+	db, server := setup(t)
+	transcript := file(t, t.TempDir(), "codex.jsonl", `{"type":"session_meta","payload":{"id":"progress","cwd":"/work/shop"}}
+{"type":"response_item","timestamp":"2026-11-01T00:00:01Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Check it"}]}}
+{"type":"event_msg","timestamp":"2026-11-01T00:00:02Z","payload":{"type":"agent_message","phase":"commentary","message":"Checking the logs"}}
+{"type":"response_item","timestamp":"2026-11-01T00:00:02Z","payload":{"type":"message","role":"assistant","phase":"commentary","id":"progress-one","content":[{"type":"output_text","text":"Checking the logs"}]}}
+{"type":"response_item","timestamp":"2026-11-01T00:00:03Z","payload":{"type":"reasoning","summary":[{"type":"summary_text","text":"Internal reasoning"}]}}
+{"type":"response_item","timestamp":"2026-11-01T00:00:04Z","payload":{"type":"message","role":"assistant","phase":"commentary","id":"progress-two","content":[{"type":"output_text","text":"The logs are clean"}]}}
+{"type":"response_item","timestamp":"2026-11-01T00:00:05Z","payload":{"type":"message","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"Done"}]}}
+`)
+	ctx := context.Background()
+	if err := db.Save(ctx, []app.Event{
+		{ID: "live-request", Session: "codex:progress", Source: "codex", Signal: "logs", Name: "codex.user_prompt", Time: "2026-11-01T00:00:01.000000000Z", Raw: json.RawMessage(`{"record":{"attributes":[{"key":"prompt","value":{"stringValue":"Check it"}}]}}`)},
+		{ID: "live-answer", Session: "codex:progress", Source: "codex", Signal: "logs", Name: "codex.agent_response", Time: "2026-11-01T00:00:05.000000000Z", Raw: json.RawMessage(`{"record":{"attributes":[{"key":"response","value":{"stringValue":"Done"}}]}}`)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	options := importer.Options{Files: []string{transcript}, Source: "codex", Endpoint: server.URL, Token: token, CodexCommentaryOnly: true}
+	for range 2 {
+		stats, err := importer.Run(ctx, options, io.Discard)
+		if err != nil || stats.Records != 2 {
+			t.Fatal(stats, err)
+		}
+	}
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/api/session?id=codex:progress&view=conversation", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	response, err := server.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	var page struct {
+		Events []struct{ Detail app.Detail }
+	}
+	if err = json.NewDecoder(response.Body).Decode(&page); err != nil || response.StatusCode != 200 {
+		t.Fatal(response.StatusCode, err)
+	}
+	want := []string{"Check it", "Checking the logs", "The logs are clean", "Done"}
+	if len(page.Events) != len(want) {
+		t.Fatalf("got %d conversation messages, want %d", len(page.Events), len(want))
+	}
+	for i, event := range page.Events {
+		if len(event.Detail.Blocks) != 1 || event.Detail.Blocks[0].Text != want[i] || i > 0 && event.Detail.Kind != "assistant" {
+			t.Fatal(i, event.Detail)
+		}
+	}
+}
 func TestThreeFormatsAndReplay(t *testing.T) {
 	db, server := setup(t)
 	dir := t.TempDir()

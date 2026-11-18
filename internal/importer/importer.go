@@ -26,6 +26,7 @@ import (
 type Options struct {
 	Dirs, Files, Tags                            []string
 	All, DryRun                                  bool
+	CodexCommentaryOnly                          bool
 	Source, Endpoint, Token, Project, WorkingDir string
 	Client                                       *http.Client
 	// Sink stores converted OTLP batches locally instead of sending HTTP.
@@ -312,6 +313,10 @@ func (p *state) output(event string, fields map[string]any, id string) error {
 		return nil
 	}
 	p.order++
+	if p.options.CodexCommentaryOnly && fields["codex.message.phase"] != "commentary" {
+		p.skipped++
+		return nil
+	}
 	if id == "" {
 		b, _ := json.Marshal(fields)
 		h := sha256.Sum256(append([]byte(event+"|"+p.stamp), b...))

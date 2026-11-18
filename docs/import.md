@@ -66,6 +66,7 @@ AGENTLOG_TOKEN=YOUR_TOKEN ./agentlog import \
 | `--all` | Scan the three CLIs' default transcript directories |
 | `--cwd` | Include only sessions whose recorded working directory matches this path or a descendant |
 | `--source` | `auto` (default), `codex`, `claude`, `copilot` |
+| `--codex-commentary-only` | Import Codex assistant progress messages. Use with `--source codex` and explicit `--dir` or `--file` paths |
 | `--endpoint` | Collector base URL or full `/v1/logs` URL |
 | `--project` | `service.namespace`; otherwise derived from the recorded working-directory name |
 | `--tag` | `project.tags`; repeatable |
@@ -89,6 +90,18 @@ AGENTLOG_TOKEN=YOUR_TOKEN ./agentlog import --all \
 | Codex | `~/.codex/sessions/`, `~/.codex/archived_sessions/` |
 | Claude | `~/.claude/projects/` |
 | Copilot | `~/.copilot/session-state/` |
+
+## Codex progress messages
+
+Codex's `otel.log_agent_responses` sends final answers. To also capture progress updates, run this on the machine with the Codex session files:
+
+```sh
+AGENTLOG_TOKEN=YOUR_TOKEN ./agentlog import --watch --source codex \
+  --codex-commentary-only --dir ~/.codex/sessions \
+  --endpoint https://agents.example.com
+```
+
+The watcher imports assistant messages explicitly marked `commentary`. In **Conversation**, they appear in timestamp order alongside the user messages and final answers received through OTEL. Omit `--watch` for a one-time import. A collector with access to the files can use a watch entry such as `{"dir":"~/.codex/sessions","source":"codex","codex_commentary_only":true}` in its JSON configuration. A full transcript import already includes these messages.
 
 ## Import behavior
 

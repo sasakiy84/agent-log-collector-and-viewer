@@ -14,6 +14,8 @@ exporter = { otlp-http = { endpoint = "https://agents.example.com/v1/logs", prot
 trace_exporter = { otlp-http = { endpoint = "https://agents.example.com/v1/traces", protocol = "binary", headers = { "Authorization" = "Bearer REPLACE_WITH_TOKEN" } } }
 ```
 
+`log_agent_responses` exports final answers. Use the [Codex progress message watcher](import.md#codex-progress-messages) to add work-in-progress messages to the same conversation.
+
 Optional project `shop`: use these URLs for `exporter` and `trace_exporter`, respectively:
 
 ```text
