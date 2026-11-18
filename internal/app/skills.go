@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 )
 
 type SkillEvidence struct {
@@ -30,15 +31,23 @@ type SkillSummary struct {
 	Event    string   `json:"event,omitempty"`
 }
 
+type skillCatalogRow struct {
+	SkillSummary
+	Weekly  int `json:"weekly"`
+	Monthly int `json:"monthly"`
+}
+
+const skillAttemptKey = `CASE WHEN k.evidence='injection' THEN
+ COALESCE((SELECT id FROM logical_events WHERE id=k.event_id AND session=k.session
+ UNION ALL SELECT id FROM logical_events WHERE otel_id=k.event_id
+ AND import_id<>'' AND otel_id<>'' AND session=k.session LIMIT 1),k.group_key)
+ ELSE k.group_key END`
+
 // Outcomes are evidence of the same attempt, not separate counters. A wrapper
 // is redundant only when a concrete tool exports the same execution identity.
 func skillRollup() string {
 	return `SELECT k.name,k.plugin,COUNT(DISTINCT k.session) AS sessions,
- COUNT(DISTINCT CASE WHEN k.evidence='injection' THEN
- COALESCE((SELECT id FROM logical_events WHERE id=k.event_id AND session=k.session
- UNION ALL SELECT id FROM logical_events WHERE otel_id=k.event_id
- AND import_id<>'' AND otel_id<>'' AND session=k.session LIMIT 1),k.group_key)
- ELSE k.group_key END) AS attempts,MAX(k.time) AS last,
+ COUNT(DISTINCT ` + skillAttemptKey + `) AS attempts,MAX(k.time) AS last,
  json_group_array(DISTINCT k.scope) AS scopes`
 }
 
@@ -168,6 +177,10 @@ func (a *App) skills(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		out, err = scanSkillRows(rows, &totals, false)
 	}
+	var catalog []skillCatalogRow
+	if err == nil {
+		catalog, err = skillCatalogPeriods(r.Context(), tx, scope, out, time.Now().UTC())
+	}
 	if err == nil {
 		err = tx.Commit()
 	}
@@ -175,7 +188,73 @@ func (a *App) skills(w http.ResponseWriter, r *http.Request) {
 		databaseError(w, r, err)
 		return
 	}
-	write(w, map[string]any{"skills": out, "total": total, "attempts": totals.Attempts, "sort": sort, "offset": off, "ready": true})
+	write(w, map[string]any{"skills": catalog, "total": total, "attempts": totals.Attempts, "sort": sort, "offset": off, "ready": true})
+}
+
+func skillCatalogPeriods(ctx context.Context, tx *sql.Tx, scope searchFacets, page []SkillSummary, now time.Time) ([]skillCatalogRow, error) {
+	result := make([]skillCatalogRow, len(page))
+	if len(page) == 0 {
+		return result, nil
+	}
+	type skillKey [2]string
+	keys := make([]skillKey, len(page))
+	positions := make(map[skillKey]int, len(page))
+	for i, skill := range page {
+		key := skillKey{skill.Name, skill.Plugin}
+		keys[i], positions[key] = key, i
+		result[i].SkillSummary = skill
+	}
+	encoded, err := json.Marshal(keys)
+	if err != nil {
+		return nil, err
+	}
+	// Deduplicate separately in each window: a concrete tool outside the
+	// window must not suppress its wrapper inside it.
+	const timestamp = "2006-01-02T15:04:05.000000000Z"
+	end := now.Format(timestamp)
+	if scope.To != "" {
+		end = min(end, scope.To)
+	}
+	sessionSQL, sessionArgs := scope.sessionSQL()
+	for _, days := range []int{7, 30} {
+		window := scope
+		window.From = max(scope.From, now.AddDate(0, 0, -days).Format(timestamp))
+		window.To = end
+		if window.From >= end {
+			continue
+		}
+		evidence, args := window.evidenceSQL("e")
+		query := `WITH scoped_skill_events AS NOT MATERIALIZED (SELECT e.* FROM main.skill_events e WHERE 1` + evidence + `) ` + skillAttemptsCTE + `
+ SELECT k.name,k.plugin,COUNT(DISTINCT ` + skillAttemptKey + `)
+ FROM skill_events k JOIN sessions s ON s.session=k.session
+ WHERE NOT EXISTS(SELECT 1 FROM archive_locks l WHERE l.session=k.session)` + sessionSQL + `
+ AND (k.name,k.plugin) IN(SELECT json_extract(value,'$[0]'),json_extract(value,'$[1]') FROM json_each(?))
+ GROUP BY k.name,k.plugin`
+		args = append(append(args, sessionArgs...), string(encoded))
+		rows, err := tx.QueryContext(ctx, query, args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var key skillKey
+			var count int
+			if err = rows.Scan(&key[0], &key[1], &count); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			skill := &result[positions[key]]
+			if days == 7 {
+				skill.Weekly = count
+			} else {
+				skill.Monthly = count
+			}
+		}
+		rows.Close()
+		if err = rows.Err(); err != nil {
+			return nil, err
+		}
+	}
+	return result, nil
 }
 func sessionSkills(ctx context.Context, tx *sql.Tx, session, origin string) ([]SkillSummary, error) {
 	cte := `WITH scoped_skill_events AS NOT MATERIALIZED (SELECT * FROM main.skill_events WHERE session=?`

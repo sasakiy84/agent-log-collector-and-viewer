@@ -63,7 +63,7 @@ with tempfile.TemporaryDirectory() as folder:
                         for box in page.locator('.archive-folder-row>span:last-child').all():
                             text_right=box.evaluate('(e)=>{const r=document.createRange();r.selectNodeContents(e);return r.getBoundingClientRect().right}');assert abs(text_right-edge)<2,(width,'archive size alignment')
                     if name=='skills' and width>720:
-                        for col in range(2,4):
+                        for col in range(2,6):
                             heading=page.locator(f'.skill-tablehead>span:nth-child({col})').bounding_box()
                             for cell in page.locator(f'.skill-row>span:nth-child({col})').all():
                                 text_right=cell.evaluate('(e)=>{const r=document.createRange();r.selectNodeContents(e);return r.getBoundingClientRect().right}');assert abs(text_right-heading['x']-heading['width'])<1,(width,'skill numeric alignment')

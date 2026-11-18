@@ -5,7 +5,48 @@ import (
 	"encoding/json"
 	"net/url"
 	"testing"
+	"time"
 )
+
+func TestSkillCatalogPeriodsDeduplicateWithinEachWindow(t *testing.T) {
+	a := setup(t)
+	now := time.Now().UTC()
+	at := func(days int) string { return now.AddDate(0, 0, -days).Format("2006-01-02T15:04:05.000000000Z") }
+	outer := recorded(t, "period-wrapper", "import", "codex", "root", "gen_ai.tool.start", map[string]any{"tool_name": "functions.exec", "call_id": "outer-call", "arguments": `text(await tools.exec_command({cmd:"cat /work/skills/review/SKILL.md"}));`})
+	result := recorded(t, "period-result", "import", "codex", "root", "gen_ai.tool.result", map[string]any{"call_id": "outer-call", "output": "Script completed\nOutput:\n{\"chunk_id\":\"period-chunk\",\"exit_code\":0,\"output\":\"content\"}"})
+	inner := recorded(t, "period-tool", "otel", "codex", "root", "codex.tool_result", map[string]any{"tool_name": "exec_command", "call_id": "inner-call", "arguments": `{"cmd":"cat /work/skills/review/SKILL.md"}`, "output": "Chunk ID: period-chunk\nProcess exited with code 0\nOutput:\ncontent"})
+	monthly := skillReport(t, "period-month", "otel", "root", "review", "monthly", "")
+	old := skillReport(t, "period-old", "otel", "root", "review", "old", "")
+	plugin := skillReport(t, "period-plugin", "otel", "root", "review", "plugin", "other")
+	outer.Time, result.Time, inner.Time = at(1), at(1), at(8)
+	monthly.Time, old.Time, plugin.Time = at(15), at(31), at(1)
+	save(t, a, outer, result, inner, monthly, old, plugin)
+	for _, test := range []struct {
+		query                     string
+		attempts, weekly, monthly int
+		plugins                   int
+	}{
+		{"", 3, 1, 2, 2},
+		{"&origin=import", 1, 1, 1, 1},
+		{"&to=" + url.QueryEscape(at(2)), 3, 0, 2, 1},
+		{"&to=" + url.QueryEscape(at(30)), 1, 0, 0, 1},
+	} {
+		var page struct{ Skills []skillCatalogRow }
+		getJSON(t, a, "/api/skills?q=review"+test.query, &page)
+		if len(page.Skills) != test.plugins {
+			t.Fatalf("%s: %+v", test.query, page.Skills)
+		}
+		for _, skill := range page.Skills {
+			if skill.Plugin == "other" {
+				if skill.Weekly != 1 || skill.Monthly != 1 {
+					t.Fatalf("plugin counts: %+v", skill)
+				}
+			} else if skill.Attempts != test.attempts || skill.Weekly != test.weekly || skill.Monthly != test.monthly {
+				t.Fatalf("%s: %+v", test.query, skill)
+			}
+		}
+	}
+}
 
 func TestSkillAttemptsDeduplicateWrapperAndConcreteExecution(t *testing.T) {
 	for _, reverse := range []bool{false, true} {
