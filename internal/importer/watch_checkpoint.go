@@ -20,7 +20,11 @@ func watchKey(o Options, file string) string {
 	tags := append([]string{}, o.Tags...)
 	sort.Strings(tags)
 	token := sha256.Sum256([]byte(o.Token))
-	data, _ := json.Marshal([]any{watchParserVersion, file, o.Source, o.WorkingDir, o.Project, tags, o.Endpoint, hex.EncodeToString(token[:])})
+	options := []any{watchParserVersion, file, o.Source, o.WorkingDir, o.Project, tags, o.Endpoint, hex.EncodeToString(token[:])}
+	if o.CodexCommentaryOnly {
+		options = append(options, "codex-commentary-only")
+	}
+	data, _ := json.Marshal(options)
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
 }

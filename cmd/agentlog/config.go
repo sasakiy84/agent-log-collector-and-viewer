@@ -13,11 +13,12 @@ import (
 )
 
 type watchFolder struct {
-	Dir     string   `json:"dir"`
-	Source  string   `json:"source,omitempty"`
-	Cwd     string   `json:"cwd,omitempty"`
-	Project string   `json:"project,omitempty"`
-	Tags    []string `json:"tags,omitempty"`
+	Dir                 string   `json:"dir"`
+	Source              string   `json:"source,omitempty"`
+	Cwd                 string   `json:"cwd,omitempty"`
+	Project             string   `json:"project,omitempty"`
+	Tags                []string `json:"tags,omitempty"`
+	CodexCommentaryOnly bool     `json:"codex_commentary_only,omitempty"`
 }
 type config struct {
 	Watch         []watchFolder `json:"watch"`
@@ -74,6 +75,9 @@ func loadWatchConfig(file string) ([]importer.Options, time.Duration, error) {
 		if w.Source != "" && w.Source != "auto" && w.Source != "codex" && w.Source != "claude" && w.Source != "copilot" {
 			return nil, 0, fmt.Errorf("watch[%d]: invalid source %q", i, w.Source)
 		}
+		if w.CodexCommentaryOnly && w.Source != "codex" {
+			return nil, 0, fmt.Errorf("watch[%d]: codex_commentary_only requires source codex", i)
+		}
 		dir, e := resolve(w.Dir)
 		if e != nil {
 			return nil, 0, e
@@ -85,7 +89,7 @@ func loadWatchConfig(file string) ([]importer.Options, time.Duration, error) {
 				return nil, 0, e
 			}
 		}
-		out = append(out, importer.Options{Dirs: []string{dir}, Source: w.Source, WorkingDir: cwd, Project: w.Project, Tags: w.Tags})
+		out = append(out, importer.Options{Dirs: []string{dir}, Source: w.Source, WorkingDir: cwd, Project: w.Project, Tags: w.Tags, CodexCommentaryOnly: w.CodexCommentaryOnly})
 	}
 	return out, interval, nil
 }
