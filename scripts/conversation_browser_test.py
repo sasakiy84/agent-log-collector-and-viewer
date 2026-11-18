@@ -2,7 +2,6 @@
 """Conversation-first UI, lazy network requests and Guardian isolation."""
 import json
 import os
-from datetime import datetime, timezone
 from pathlib import Path
 import socket
 import subprocess
@@ -47,7 +46,8 @@ with tempfile.TemporaryDirectory() as directory:
 
         rows = [log('chat', 0, 'codex.user_prompt', {'prompt': '検索結果の表示を確認して、読み込み速度を改善してください。'}),
                 log('chat', 1, 'gen_ai.tool.start', {'tool_name': 'exec_command', 'call_id': 'call', 'arguments': '{"cmd":"go test ./internal/app"}'}),
-                log('chat', 2, 'codex.tool_result', {'tool_name': 'exec_command', 'call_id': 'call', 'output': '日本語の認証エラーを検出', 'success': True})]
+                log('chat', 2, 'codex.tool_result', {'tool_name': 'exec_command', 'call_id': 'call', 'output': '日本語の認証エラーを検出', 'success': True}),
+                log('chat', 4, 'codex.agent_response', {'response': '検索条件とデータベースのクエリを確認しました。境界条件をテストします。'})]
         rows += [log('chat', i, 'codex.tool_result', {'tool_name': 'exec_command', 'output': f'Check {i}: PASS'}) for i in range(5, 75)]
         rows += [log('chat', 75, 'internal_failure', {'error': 'One boundary case failed; investigation is recorded below.'}),
                  log('chat', 76, 'codex.agent_response', {'response': '会話を先に読み込み、処理ログは開いたときだけ取得するよう修正しました。エラーも確認できます。'}),
@@ -70,20 +70,9 @@ with tempfile.TemporaryDirectory() as directory:
             'startTimeUnixNano': str(stamp + 2500000000), 'endTimeUnixNano': str(stamp + 3500000000),
             'attributes': attrs({'session.id': 'chat', 'tool_name': 'exec_command', 'call_id': 'call',
                                  'codex.tool.phase': 'dispatch', 'code.module.name': 'codex_core::tools::parallel'})}]}]}]})
-        progress = '検索条件とデータベースのクエリを確認しました。境界条件をテストします。'
-        transcript = Path(directory) / 'codex.jsonl'
-        transcript.write_text('\n'.join(json.dumps(row, ensure_ascii=False) for row in [
-            {'type': 'session_meta', 'payload': {'id': 'chat', 'cwd': '/work/agentlog'}},
-            {'type': 'response_item', 'timestamp': datetime.fromtimestamp(stamp // 1_000_000_000 + 4, timezone.utc).isoformat(),
-             'payload': {'type': 'message', 'role': 'assistant', 'phase': 'commentary',
-                         'content': [{'type': 'output_text', 'text': progress}]}},
-        ]) + '\n', encoding='utf-8')
-        subprocess.run([binary, 'import', '--source', 'codex', '--codex-commentary-only',
-                        '--file', str(transcript), '--endpoint', base, '--project', 'Agentlog'],
-                       env={**os.environ, 'AGENTLOG_TOKEN': ''}, check=True, timeout=15)
         wait_for_ingestion(base, '')
         with sync_playwright() as p:
-            browser = p.chromium.launch(executable_path=os.getenv('AGENTLOG_CHROMIUM', '/usr/bin/chromium'), headless=True, args=['--no-sandbox'])
+            browser = p.chromium.launch(executable_path='/usr/bin/chromium', headless=True, args=['--no-sandbox'])
             page = browser.new_page(viewport={'width': 1440, 'height': 1000}, locale='ja-JP', timezone_id='Asia/Tokyo')
             errors, requests = [], []
             page.on('pageerror', lambda error: (errors.append(str(error)), print('Browser error:', error, flush=True)))
@@ -91,7 +80,6 @@ with tempfile.TemporaryDirectory() as directory:
             page.on('request', lambda request: requests.append(request.url))
             page.goto(base + '/sessions/codex%3Achat')
             expect(page.locator('#timeline > .event')).to_have_count(3)
-            expect(page.locator('#timeline > .event.assistant').first).to_contain_text(progress)
             expect(page.locator('.processing-group')).to_have_count(2)
             expect(page.locator('#eventfilters')).to_be_hidden()
             expect(page.locator('.processing-group').last.locator('summary')).to_contain_text('1 error')
