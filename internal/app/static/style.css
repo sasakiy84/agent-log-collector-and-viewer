@@ -519,6 +519,7 @@ input[type=checkbox] {
 }
 .processing-group > summary::-webkit-details-marker { display: none; }
 .processing-group > summary::before { content: "▸"; color: var(--muted); }
+.processing-duration { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .processing-group[open] > summary::before { content: "▾"; }
 .processing-group > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .processing-body { padding: 0 12px 12px; }

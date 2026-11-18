@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"slices"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -58,6 +58,7 @@ func TestConversationGroupCountsUseLogicalPositionsAcrossPages(t *testing.T) {
 		}
 		var all []ProcessingGroup
 		g := ProcessingGroup{}
+		zeroSeconds := int64(0)
 		for _, e := range entries {
 			if e.conversation == 1 {
 				g.Before = e.id
@@ -67,6 +68,7 @@ func TestConversationGroupCountsUseLogicalPositionsAcrossPages(t *testing.T) {
 				g = ProcessingGroup{After: e.id}
 			} else {
 				g.Count++
+				g.DurationSeconds = &zeroSeconds
 				g.Activity += e.activity
 				g.Errors += e.errors
 			}
@@ -87,9 +89,41 @@ func TestConversationGroupCountsUseLogicalPositionsAcrossPages(t *testing.T) {
 					want = append(want, group)
 				}
 			}
-			if !slices.Equal(page.Processing, want) {
+			if len(page.Processing) != len(want) || len(want) > 0 && !reflect.DeepEqual(page.Processing, want) {
 				t.Fatalf("origin=%q %s: got %+v, want %+v", origin, paging, page.Processing, want)
 			}
+		}
+	}
+}
+
+func TestProcessingDurationUsesKnownLogTimesWithinOrigin(t *testing.T) {
+	a := setup(t)
+	add := func(id, origin, name, stamp string, attrs map[string]any) Event {
+		e := recorded(t, id, origin, "codex", "timing", name, attrs)
+		e.Time = stamp
+		return e
+	}
+	save(t, a,
+		add("unknown", "otel", "prepare_tools", "1970-01-01T00:00:00.000000000Z", nil),
+		add("question", "otel", "codex.user_prompt", "2026-11-15T00:00:00.000000000Z", map[string]any{"prompt": "Start"}),
+		add("first", "otel", "prepare_tools", "2026-11-15T00:01:00.000000000Z", nil),
+		add("second", "otel", "prepare_tools", "2026-11-15T00:02:00.000000000Z", nil),
+		add("imported", "import", "prepare_tools", "2026-11-16T02:06:00.000000000Z", nil),
+		add("answer", "otel", "codex.agent_response", "2026-11-16T02:10:00.000000000Z", map[string]any{"response": "Done"}),
+	)
+	for _, test := range []struct {
+		origin  string
+		seconds int64
+	}{{"", 26*3600 + 5*60}, {"otel", 60}} {
+		var page SessionPage
+		getJSON(t, a, "/api/session?id=codex:timing&view=conversation&limit=1&position=latest&origin="+test.origin, &page)
+		if len(page.Processing) != 1 || page.Processing[0].DurationSeconds == nil || *page.Processing[0].DurationSeconds != test.seconds {
+			t.Fatalf("origin %q: %+v", test.origin, page.Processing)
+		}
+		page = SessionPage{}
+		getJSON(t, a, "/api/session?id=codex:timing&view=conversation&limit=1&origin="+test.origin, &page)
+		if len(page.Processing) != 1 || page.Processing[0].DurationSeconds != nil {
+			t.Fatalf("unknown timestamps must not have a duration: %+v", page.Processing)
 		}
 	}
 }

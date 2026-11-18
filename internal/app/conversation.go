@@ -7,17 +7,19 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"time"
 )
 
 // A range describes chronological placement, not a causal relationship to a
 // turn. Sources without turn IDs therefore retain an honest, stable ordering.
 type ProcessingGroup struct {
-	After    string `json:"after"`
-	Before   string `json:"before"`
-	Count    int    `json:"count"`
-	Activity int    `json:"activity"`
-	Errors   int    `json:"errors"`
-	Matches  int    `json:"matches,omitempty"`
+	After           string `json:"after"`
+	Before          string `json:"before"`
+	Count           int    `json:"count"`
+	Activity        int    `json:"activity"`
+	Errors          int    `json:"errors"`
+	Matches         int    `json:"matches,omitempty"`
+	DurationSeconds *int64 `json:"duration_seconds,omitempty"`
 }
 
 type processingPage struct {
@@ -184,7 +186,7 @@ func conversationGroups(ctx context.Context, tx *sql.Tx, page SessionPage, origi
 			stmt.Close()
 		}
 	}()
-	count := func(query string, args []any, values ...any) error {
+	scan := func(query string, args []any, values ...any) error {
 		stmt := statements[query]
 		if stmt == nil {
 			var err error
@@ -224,15 +226,35 @@ func conversationGroups(ctx context.Context, tx *sql.Tx, page SessionPage, origi
 		}
 		from := " FROM " + timelineTable(origin) + " WHERE " + query
 		countSQL, countArgs := processingCountSQL(page.ID, origin, after, before)
-		err := count(countSQL, countArgs, &group.Count, &group.Activity, &group.Errors)
-		if err == nil && matchPredicate != "" && group.Count > 0 {
-			err = count("SELECT COUNT(*)"+from+matchPredicate, append(args, matchArgs...), &group.Matches)
-		}
-		if err == nil && group.Count > 0 {
-			groups = append(groups, group)
+		if err := scan(countSQL, countArgs, &group.Count, &group.Activity, &group.Errors); err != nil {
+			return err
 		}
 		after = before
-		return err
+		if group.Count == 0 {
+			return nil
+		}
+		if matchPredicate != "" {
+			if err := scan("SELECT COUNT(*)"+from+matchPredicate, append(args, matchArgs...), &group.Matches); err != nil {
+				return err
+			}
+		}
+		// The chronological indexes let both probes stop at the edge of the
+		// range. The count can still use minute buckets for the interior.
+		const knownTime = " AND time NOT IN ('','1970-01-01T00:00:00.000000000Z')"
+		selection := "SELECT time" + from + knownTime
+		bounds := "SELECT (" + selection + " ORDER BY time LIMIT 1),(" + selection + " ORDER BY time DESC LIMIT 1)"
+		var first, last sql.NullString
+		if err := scan(bounds, append(append([]any{}, args...), args...), &first, &last); err != nil {
+			return err
+		}
+		start, startErr := time.Parse(time.RFC3339Nano, first.String)
+		end, endErr := time.Parse(time.RFC3339Nano, last.String)
+		if startErr == nil && endErr == nil && !end.Before(start) {
+			seconds := int64(end.Sub(start) / time.Second)
+			group.DurationSeconds = &seconds
+		}
+		groups = append(groups, group)
+		return nil
 	}
 	for _, event := range page.Events {
 		before := positions[event.ID]

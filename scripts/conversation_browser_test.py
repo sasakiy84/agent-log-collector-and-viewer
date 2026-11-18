@@ -53,7 +53,9 @@ with tempfile.TemporaryDirectory() as directory:
                  log('chat', 76, 'codex.agent_response', {'response': '会話を先に読み込み、処理ログは開いたときだけ取得するよう修正しました。エラーも確認できます。'}),
                  log('no-reply', 0, 'codex.user_prompt', {'prompt': 'Run the failing check.'}),
                  log('no-reply', 1, 'codex.tool_result', {'tool_name': 'exec_command', 'error': 'Process interrupted', 'success': False}),
-                 log('no-text', 0, 'codex.tool_result', {'tool_name': 'exec_command', 'output': 'Tool-only telemetry'})]
+                 log('no-text', 0, 'codex.tool_result', {'tool_name': 'exec_command', 'output': 'Tool-only telemetry'}),
+                 log('long-diagnostics', 0, 'prepare_tools', {}),
+                 log('long-diagnostics', 26 * 3600 + 5 * 60, 'prepare_tools', {})]
         resource = {'attributes': attrs({'service.name': 'codex', 'service.namespace': 'Agentlog', 'cwd': '/work/agentlog'})}
 
         def send(signal, body):
@@ -72,7 +74,7 @@ with tempfile.TemporaryDirectory() as directory:
                                  'codex.tool.phase': 'dispatch', 'code.module.name': 'codex_core::tools::parallel'})}]}]}]})
         wait_for_ingestion(base, '')
         with sync_playwright() as p:
-            browser = p.chromium.launch(executable_path='/usr/bin/chromium', headless=True, args=['--no-sandbox'])
+            browser = p.chromium.launch(executable_path=os.getenv('AGENTLOG_CHROMIUM', '/usr/bin/chromium'), headless=True, args=['--no-sandbox'])
             page = browser.new_page(viewport={'width': 1440, 'height': 1000}, locale='ja-JP', timezone_id='Asia/Tokyo')
             errors, requests = [], []
             page.on('pageerror', lambda error: (errors.append(str(error)), print('Browser error:', error, flush=True)))
@@ -81,6 +83,7 @@ with tempfile.TemporaryDirectory() as directory:
             page.goto(base + '/sessions/codex%3Achat')
             expect(page.locator('#timeline > .event')).to_have_count(3)
             expect(page.locator('.processing-group')).to_have_count(2)
+            expect(page.locator('.processing-duration')).to_have_text(['· <1m', '· 1m'])
             expect(page.locator('#eventfilters')).to_be_hidden()
             expect(page.locator('.processing-group').last.locator('summary')).to_contain_text('1 error')
             assert not any('/api/processing?' in request or '/api/event?' in request for request in requests), requests
@@ -169,6 +172,13 @@ with tempfile.TemporaryDirectory() as directory:
             expect(page.locator('#timeline > .empty')).to_have_text('Conversation text was not recorded.')
             page.locator('.processing-group summary').click()
             expect(page.locator('.processing-events')).to_contain_text('Tool-only telemetry')
+            page.set_viewport_size({'width': 320, 'height': 900})
+            page.goto(base + '/sessions/codex%3Along-diagnostics')
+            expect(page.locator('.processing-group summary')).to_contain_text('Diagnostics')
+            expect(page.locator('.processing-duration')).to_have_text('· 1d 2h 5m')
+            assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+            page.screenshot(path=str(out / 'diagnostics-duration-320.png'), full_page=True)
+            page.set_viewport_size({'width': 1440, 'height': 1000})
             # An import may replace a boundary's ID between reading and opening.
             page.goto(base + '/sessions/codex%3Achat')
             expect(page.locator('#timeline > .event')).to_have_count(3)

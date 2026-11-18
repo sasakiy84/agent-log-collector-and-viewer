@@ -7,6 +7,15 @@ function resetProcessingGroups() {
   processingStates.clear();
 }
 
+function processingDuration(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return "";
+  if (seconds < 60) return "<1m";
+  const minutes = Math.floor(seconds / 60);
+  const days = Math.floor(minutes / 1440);
+  const hours = Math.floor(minutes / 60) % 24;
+  return [days ? `${days}d` : "", days || hours ? `${hours}h` : "", `${minutes % 60}m`].filter(Boolean).join(" ");
+}
+
 function conversationTimelineHTML(visible) {
   const groups = meta.processing || [];
   const byBefore = new Map(groups.map((group, index) => [group.before, index]));
@@ -16,7 +25,9 @@ function conversationTimelineHTML(visible) {
       group, count: 0, next: "", loaded: false, request: null,
       diagnostics: group.activity === 0, matches: false, errors: false,
     });
-    return `<details class="processing-group" data-processing="${index}"><summary><span>${group.activity ? "Processing details" : "Diagnostics"}<span class="muted processing-count" title="${group.count.toLocaleString()} total logs"> · ${(group.activity || group.count).toLocaleString()} logs</span></span>${group.errors ? `<button type="button" class="processing-error status failed">${group.errors.toLocaleString()} ${group.errors === 1 ? "error" : "errors"}</button>` : ""}${group.matches ? `<button type="button" class="processing-match">${group.matches.toLocaleString()} ${group.matches === 1 ? "log matches" : "logs match"}</button>` : ""}</summary><div class="processing-body"><div class="processing-options">${group.count > group.activity ? `<label><input type="checkbox" data-processing-diagnostics ${group.activity === 0 ? "checked" : ""}>Include diagnostics (${(group.count - group.activity).toLocaleString()})</label>` : ""}${group.matches ? '<label><input type="checkbox" data-processing-matches>Matching logs only</label>' : ""}${group.errors ? '<label><input type="checkbox" data-processing-errors>Errors only</label>' : ""}</div><p class="processing-status muted" role="status"></p><div class="processing-events"></div><button type="button" class="processing-more" hidden>Load more logs</button><button type="button" class="processing-retry" hidden>Retry</button></div></details>`;
+    const duration = processingDuration(group.duration_seconds);
+    const elapsed = duration ? `<span class="muted processing-duration" title="Elapsed time from the first to the last log in this group"> · ${esc(duration)}</span>` : "";
+    return `<details class="processing-group" data-processing="${index}"><summary><span>${group.activity ? "Processing details" : "Diagnostics"}<span class="muted processing-count" title="${group.count.toLocaleString()} total logs"> · ${(group.activity || group.count).toLocaleString()} logs</span>${elapsed}</span>${group.errors ? `<button type="button" class="processing-error status failed">${group.errors.toLocaleString()} ${group.errors === 1 ? "error" : "errors"}</button>` : ""}${group.matches ? `<button type="button" class="processing-match">${group.matches.toLocaleString()} ${group.matches === 1 ? "log matches" : "logs match"}</button>` : ""}</summary><div class="processing-body"><div class="processing-options">${group.count > group.activity ? `<label><input type="checkbox" data-processing-diagnostics ${group.activity === 0 ? "checked" : ""}>Include diagnostics (${(group.count - group.activity).toLocaleString()})</label>` : ""}${group.matches ? '<label><input type="checkbox" data-processing-matches>Matching logs only</label>' : ""}${group.errors ? '<label><input type="checkbox" data-processing-errors>Errors only</label>' : ""}</div><p class="processing-status muted" role="status"></p><div class="processing-events"></div><button type="button" class="processing-more" hidden>Load more logs</button><button type="button" class="processing-retry" hidden>Retry</button></div></details>`;
   };
   let html = visible.length ? "" : '<p class="empty">Conversation text was not recorded.</p>';
   for (const [event, detail] of visible) {

@@ -6,6 +6,8 @@ messages, including intermediate assistant explanations, in chronological order.
 up to 50 logs; **Load more logs** fetches the next batch. Closed groups show error
 counts, and clicking an error count opens just those errors. **Include diagnostics**
 adds internal telemetry. Reopening a loaded group reuses its loaded cards.
+Each group heading shows elapsed time from its first to last dated log, for
+example `1d 2h 5m` or `<1m`. This covers the whole group, including diagnostics.
 Group counts follow the diagnostics toggle; diagnostic-only records do not inflate
 the normal processing count.
 

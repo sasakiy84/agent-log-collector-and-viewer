@@ -87,7 +87,7 @@ Within a field values are ORed; fields are ANDed. Time/type/origin/text conditio
 
 Returns a session summary plus `total_count`, `count`, `offset`, `limit`, `view`, `events`, `processing`, `children`, `children_next` and `skills`. Conversation events are oldest to newest within the page. `position=latest` opens the newest page; use `offset=0` for the oldest page. `limit` is 1–200 (default 200). `origin=otel|import` selects one origin; omit it for merged entries.
 
-- `view=conversation`: user inputs and assistant replies only, at most 200 events. `processing` gives collapsed ranges and their counts/errors without loading log bodies.
+- `view=conversation`: user inputs and assistant replies only, at most 200 events. `processing` gives collapsed ranges, counts/errors and `duration_seconds` without loading log bodies. Duration spans the first and last known log timestamps in the group and is omitted for groups without a known time.
 - `view=activity`: useful conversation/tool/model/skill activity. `kind` optionally selects an event type.
 - `view=diagnostics`: every timeline entry. Non-conversation views can contain one lookahead event; use the first `limit` entries for paging.
 - Event entries include `id`, `time`, `detail`, `origins` and bounded `records` metadata. They do not contain full originals. Source-dependent missing content remains missing.
