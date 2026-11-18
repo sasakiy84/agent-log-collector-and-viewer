@@ -116,6 +116,8 @@ sudo systemctl enable --now nginx
 sudo systemctl reload nginx
 ```
 
+セッションの表示で HTTP 200 の後に `ERR_INCOMPLETE_CHUNKED_ENCODING` が出る場合は、`/var/log/nginx/error.log` で該当するリクエストを確認します。応答用の一時ファイルで `Permission denied` や `No space left on device` が出ている場合は、保存先の権限や空き容量を確認してください。セッション API は `X-Accel-Buffering: no` を返します。Nginx の `proxy_ignore_headers` でこのヘッダーを無視すると、応答バッファリングが有効な設定では再び一時ファイルが使われます。
+
 https://agents.example.com を開き、次のファイルの`AGENTLOG_TOKEN=`以降の値でログインします。
 
 ```sh

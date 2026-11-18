@@ -298,6 +298,9 @@ func (a *App) session(w http.ResponseWriter, r *http.Request) {
 		databaseError(w, r, err)
 		return
 	}
+	// Keep large timeline pages out of Nginx's response spool. Reply only after
+	// closing the database snapshot so a slow client cannot hold it open.
+	w.Header().Set("X-Accel-Buffering", "no")
 	write(w, page)
 }
 
