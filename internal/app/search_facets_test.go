@@ -88,6 +88,35 @@ func TestFacetedSessionSearchAndAnalysisUseTheSameRecords(t *testing.T) {
 			t.Fatal(g)
 		}
 	}
+	type counts struct {
+		Key                       string
+		Records, Sessions, Errors int
+	}
+	for _, tc := range []struct {
+		query string
+		want  []counts
+	}{
+		{"group=day", []counts{{"2026-11-15", 1, 1, 0}, {"2026-11-14", 3, 1, 1}, {"2026-11-13", 2, 2, 0}}},
+		{"group=day&" + window + "&origin=import", []counts{{"2026-11-14", 1, 1, 0}}},
+		{"group=day&from=2026-11-14T12%3A00%3A00Z&to=" + url.QueryEscape(end), []counts{{"2026-11-14", 1, 1, 1}}},
+		{"group=source&" + window, []counts{{"codex", 3, 1, 1}}},
+		{"group=project", []counts{{"name:A", 6, 2, 1}}},
+	} {
+		var result struct{ Groups []counts }
+		getJSON(t, a, "/api/search/summary?project=name:A&"+tc.query, &result)
+		if !slices.Equal(result.Groups, tc.want) {
+			t.Errorf("%s got %v, want %v", tc.query, result.Groups, tc.want)
+		}
+	}
+	// Kind is a stored presentation label. Compare the indexed path with
+	// the same events selected by an exclusion that matches no records.
+	var indexed, filtered struct{ Groups []counts }
+	getJSON(t, a, "/api/search/summary?project=name:A&group=kind&"+window, &indexed)
+	getJSON(t, a, "/api/search/summary?project=name:A&group=kind&exclude=absentterm&"+window, &filtered)
+	if len(indexed.Groups) < 2 || !slices.Equal(indexed.Groups, filtered.Groups) {
+		t.Fatalf("indexed kinds %v, filtered kinds %v", indexed.Groups, filtered.Groups)
+	}
+
 	var projects struct{ Projects []ProjectSummary }
 	getJSON(t, a, "/api/projects?"+window+"&session_q=認証", &projects)
 	if len(projects.Projects) != 2 {
