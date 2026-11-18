@@ -14,9 +14,6 @@ import (
 )
 
 func validate(o Options) error {
-	if o.CodexCommentaryOnly && (o.Source != "codex" || o.All) {
-		return errors.New("codex commentary-only import requires source codex and explicit directories or files")
-	}
 	if o.Source != "" && o.Source != "auto" && o.Source != "codex" && o.Source != "claude" && o.Source != "copilot" {
 		return errors.New("source must be auto, codex, claude or copilot")
 	}

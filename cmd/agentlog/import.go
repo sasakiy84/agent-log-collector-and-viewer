@@ -25,7 +25,6 @@ func importMain(args []string) error {
 	fs.Var(&tags, "tag", "Project tag (repeatable)")
 	all := fs.Bool("all", false, "Scan default session folders for all three CLIs")
 	source := fs.String("source", "auto", "auto, codex, claude or copilot")
-	commentary := fs.Bool("codex-commentary-only", false, "Import only Codex assistant messages marked commentary (requires --source codex and --dir or --file)")
 	cwd := fs.String("cwd", "", "Only sessions from this working directory (including descendants)")
 	project := fs.String("project", "", "Project namespace; defaults to session working-directory name")
 	endpoint := fs.String("endpoint", "http://127.0.0.1:4318", "Collector base URL or /v1/logs URL")
@@ -44,7 +43,7 @@ func importMain(args []string) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	o := importer.Options{Dirs: dirs, Files: files, Tags: tags, All: *all, Source: *source, Project: *project, WorkingDir: *cwd, Endpoint: *endpoint, Token: os.Getenv("AGENTLOG_TOKEN"), DryRun: *dry, CodexCommentaryOnly: *commentary}
+	o := importer.Options{Dirs: dirs, Files: files, Tags: tags, All: *all, Source: *source, Project: *project, WorkingDir: *cwd, Endpoint: *endpoint, Token: os.Getenv("AGENTLOG_TOKEN"), DryRun: *dry}
 	if *watch {
 		if *dry {
 			return fmt.Errorf("--watch cannot be combined with --dry-run")
