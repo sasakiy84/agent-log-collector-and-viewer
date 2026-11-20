@@ -96,6 +96,7 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("GET /api/archives/{id}/events", a.archiveEvents)
 	mux.HandleFunc("GET /api/archives/{id}/download", a.archiveDownload)
 	mux.HandleFunc("POST /api/archives/{id}/delete", a.archiveDelete)
+	mux.HandleFunc("POST /api/archives/{id}/retry-delete", a.archiveRetryDelete)
 	mux.HandleFunc("POST /api/archives/{id}/cancel", a.archiveCancel)
 	mux.HandleFunc("POST /api/archives/{id}/compact", a.archiveCompact)
 	mux.HandleFunc("GET /archive", redirectSessionAction)

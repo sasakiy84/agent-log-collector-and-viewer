@@ -18,9 +18,9 @@ const bytes = (n) => {
   return `${n.toFixed(i ? 1 : 0)} ${units[i]}`;
 };
 const archiveBusy = (job) =>
-  job && ["preparing", "deleting", "compacting"].includes(job.status);
+  job && (job.status === "preparing" || job.status === "compacting" || (job.status === "deleting" && !job.error));
 const archiveActive = (job) =>
-  job && (archiveBusy(job) || job.status === "ready");
+  job && (archiveBusy(job) || job.status === "ready" || job.status === "deleting");
 async function archivePost(path, body) {
   const r = await fetch(path, {
     method: "POST",
@@ -94,7 +94,7 @@ async function refreshArchive(signal) {
   watchArchive(data.job);
 }
 function renderArchiveJob(job) {
-  const key = job ? `${job.id}:${job.status}:${job.compaction_error}` : "";
+  const key = job ? `${job.id}:${job.status}:${job.error}:${job.compaction_error}` : "";
   if ($("#archivejob").dataset.key === key) {
     const progress = $("#archiveprogress");
     if (progress) progress.textContent = archiveProgress(job);
@@ -114,11 +114,13 @@ function renderArchiveJob(job) {
   if (job.status === "ready")
     content = `<h2>Ready to download</h2><p>${job.session_count} sessions · ${job.record_count.toLocaleString()} records · ${bytes(job.archive_bytes)}</p><a id="archivedownload" class="button primary" href="/api/archives/${encodeURIComponent(job.id)}/download" download>Download ZIP</a> ${cancel}<details><summary>SHA-256</summary><code class="archivehash">${esc(job.sha256)}</code></details><form id="archivedeleteform"><label><span>Type <strong>DOWNLOADED</strong> after checking the ZIP</span><input id="archiveconfirmation" autocomplete="off" spellcheck="false" required placeholder="DOWNLOADED"></label><button id="archivedelete" class="danger" disabled>Delete archived data</button></form><p id="archiveactionerror" role="alert"></p>`;
   if (job.status === "deleting")
-    content = `<h2>Deleting archived records</h2><p id="archiveprogress">${esc(archiveProgress(job))}</p>`;
+    content = job.error
+      ? `<h2>Deletion paused</h2><p id="archiveprogress">${esc(archiveProgress(job))}</p><p class="failure-detail">${esc(job.error)}</p><button id="archiveretrydelete" class="primary">Retry deletion</button><p id="archiveactionerror" role="alert"></p>`
+      : `<h2>Deleting archived records</h2><p id="archiveprogress">${esc(archiveProgress(job))}</p>`;
   if (job.status === "compacting")
     content = "<h2>Reclaiming database space</h2>";
   if (job.status === "deleted")
-    content = `<h2>Archive complete</h2><p>${job.deleted_records.toLocaleString()} records deleted · ${bytes(job.reclaimed_bytes)} reclaimed</p>${job.compaction_error ? `<p class="failure-detail">${esc(job.compaction_error)}</p><button id="archivecompact">${job.rebuild_required ? "Rebuild database · pauses ingestion" : "Retry compaction"}</button>` : ""}`;
+    content = `<h2>${job.compaction_error ? "Records deleted" : "Archive complete"}</h2><p>${job.deleted_records.toLocaleString()} records deleted · ${bytes(job.reclaimed_bytes)} reclaimed</p>${job.compaction_error ? `<p class="failure-detail">${esc(job.compaction_error)}</p><button id="archivecompact">${job.rebuild_required ? "Rebuild database · pauses ingestion" : "Retry compaction"}</button>` : ""}`;
   if (job.status === "failed")
     content = `<h2 class="failure-detail">Archive failed</h2><p>${esc(job.error)}</p>${job.deleted_records ? `<p>${job.deleted_records} records already deleted.</p>` : ""}`;
   if (job.status === "canceled") content = "<p>Archive canceled</p>";
@@ -126,6 +128,17 @@ function renderArchiveJob(job) {
   if ($("#archivecancel"))
     $("#archivecancel").onclick = () =>
       archiveAction("/api/archives/" + job.id + "/cancel", {});
+  const retryDelete = $("#archiveretrydelete");
+  if (retryDelete) {
+    retryDelete.onclick = async () => {
+      retryDelete.disabled = true;
+      try {
+        await archiveAction("/api/archives/" + job.id + "/retry-delete", {});
+      } finally {
+        retryDelete.disabled = false;
+      }
+    };
+  }
   if ($("#archivecompact"))
     $("#archivecompact").onclick = () =>
       archiveAction("/api/archives/" + job.id + "/compact", {

@@ -197,7 +197,7 @@ func TestCodexBackgroundSessionMigrationReclassifiesStoredEvents(t *testing.T) {
 		" DELETE FROM session_evidence WHERE prewarm=1; ALTER TABLE session_evidence DROP COLUMN prewarm;" +
 		" UPDATE session_evidence SET automatic=0,human=1 WHERE event_id='review';" +
 		" UPDATE record_facts SET prompt_title='The following is the Codex agent history added since your last approval assessment. Continue the same review conversation.',conversation=1 WHERE id='review';" +
-		" UPDATE sessions SET internal=0; DELETE FROM work_items; DELETE FROM schema_migrations WHERE version=5;")
+		" UPDATE sessions SET internal=0; DELETE FROM work_items; DELETE FROM schema_migrations WHERE version>=5;")
 	a.Close()
 	if err != nil {
 		t.Fatal(err)

@@ -6,37 +6,47 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"time"
 )
 
-func (a *App) deleteArchive(ctx context.Context, job ArchiveJob) error {
-	defer a.notifyArchive()
-	// Verification is persisted before unlinking so interrupted, confirmed deletions can resume.
+var errArchiveIntegrity = errors.New("archive is missing or failed integrity verification")
+
+func (a *App) verifyArchive(ctx context.Context, job ArchiveJob) error {
 	var verified string
 	if err := a.DB.QueryRowContext(ctx, "SELECT verified_at FROM archive_jobs WHERE id=?", job.ID).Scan(&verified); err != nil {
 		return err
 	}
-	if file, err := os.Open(a.archivePath(job.ID, false)); err == nil {
-		digest := sha256.New()
-		size, err := io.Copy(digest, archiveReader{ctx: ctx, reader: file})
-		file.Close()
-		if err != nil {
-			return err
-		}
-		if size != job.ArchiveBytes || hex.EncodeToString(digest.Sum(nil)) != job.SHA256 {
-			return fmt.Errorf("archive integrity verification failed")
-		}
-		if _, err = a.DB.ExecContext(ctx, "UPDATE archive_jobs SET verified_at=? WHERE id=?", timestamp(time.Now()), job.ID); err != nil {
-			return err
-		}
-		if err = os.Remove(a.archivePath(job.ID, false)); err != nil {
-			return err
-		}
-	} else if !errors.Is(err, os.ErrNotExist) || verified == "" {
-		return fmt.Errorf("verified archive is missing: %w", err)
+	// Confirmed jobs can resume even if the ZIP was already removed by a
+	// previous attempt or by an older version of the service.
+	if verified != "" {
+		return nil
+	}
+	file, err := os.Open(a.archivePath(job.ID, false))
+	if errors.Is(err, os.ErrNotExist) {
+		return errArchiveIntegrity
+	}
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	digest := sha256.New()
+	size, err := io.Copy(digest, archiveReader{ctx: ctx, reader: file})
+	if err != nil {
+		return err
+	}
+	if size != job.ArchiveBytes || hex.EncodeToString(digest.Sum(nil)) != job.SHA256 {
+		return errArchiveIntegrity
+	}
+	_, err = a.DB.ExecContext(ctx, "UPDATE archive_jobs SET verified_at=? WHERE id=?", timestamp(time.Now()), job.ID)
+	return err
+}
+
+func (a *App) deleteArchive(ctx context.Context, job ArchiveJob) error {
+	defer a.notifyArchive()
+	if err := a.verifyArchive(ctx, job); err != nil {
+		return err
 	}
 
 	for {
@@ -129,6 +139,9 @@ func (a *App) deleteArchive(ctx context.Context, job ArchiveJob) error {
 			return err
 		}
 	}
+	if err := os.Remove(a.archivePath(job.ID, false)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	tx, err := a.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -140,12 +153,16 @@ func (a *App) deleteArchive(ctx context.Context, job ArchiveJob) error {
 	if err = refreshProjections(ctx, tx); err != nil {
 		return err
 	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM session_versions WHERE session IN
+		(SELECT session FROM archive_sessions WHERE archive_id=?)
+		AND NOT EXISTS (SELECT 1 FROM records WHERE session=session_versions.session)`, job.ID); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, "DELETE FROM archive_sessions WHERE archive_id=?", job.ID); err != nil {
+		return err
+	}
 	if _, err = tx.ExecContext(ctx, "UPDATE archive_jobs SET status='compacting' WHERE id=?", job.ID); err != nil {
 		return err
 	}
-	if err = tx.Commit(); err != nil {
-		return err
-	}
-	a.notifyArchive()
-	return a.compactArchive(ctx, job)
+	return tx.Commit()
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"os"
+	"time"
 )
 
 func (a *App) archiveWorker() {
@@ -17,7 +18,7 @@ func (a *App) archiveWorker() {
 		case <-a.archiveWake:
 		}
 		for a.ctx.Err() == nil {
-			job, err := scanArchive(a.DB.QueryRowContext(a.ctx, "SELECT "+archiveColumns+" FROM archive_jobs WHERE status IN ('preparing','deleting','compacting') ORDER BY created_at LIMIT 1"))
+			job, err := scanArchive(a.DB.QueryRowContext(a.ctx, "SELECT "+archiveColumns+" FROM archive_jobs WHERE status IN ('preparing','compacting') OR (status='deleting' AND error='') ORDER BY created_at LIMIT 1"))
 			if errors.Is(err, sql.ErrNoRows) {
 				break
 			}
@@ -47,11 +48,26 @@ func (a *App) archiveWorker() {
 			a.taskMu.Unlock()
 			if err != nil && a.ctx.Err() == nil {
 				log.Printf("archive %s %s: %v", job.ID, job.Status, err)
+				if job.Status == "deleting" && !errors.Is(err, errArchiveIntegrity) {
+					// Keep the confirmed selection locked until the user retries.
+					if _, e := a.DB.ExecContext(a.ctx, "UPDATE archive_jobs SET error=? WHERE id=? AND status='deleting'",
+						"Check the server log and resolve the error before retrying.", job.ID); e != nil {
+						log.Printf("archive pause state: %v", e)
+						// A write failure can also prevent saving the pause state.
+						time.AfterFunc(5*time.Second, a.wakeArchive)
+						break
+					}
+					a.notifyArchive()
+					continue
+				}
 				e := inTransaction(a.ctx, a.DB, func(tx *sql.Tx) error {
 					if _, err := tx.ExecContext(a.ctx, "DELETE FROM archive_locks WHERE archive_id=?", job.ID); err != nil {
 						return err
 					}
 					if _, err := tx.ExecContext(a.ctx, "UPDATE archive_jobs SET status='failed',error=? WHERE id=? AND status IN ('preparing','deleting','compacting')", archiveFailure(err), job.ID); err != nil {
+						return err
+					}
+					if _, err := tx.ExecContext(a.ctx, "DELETE FROM archive_sessions WHERE archive_id=?", job.ID); err != nil {
 						return err
 					}
 					return refreshProjections(a.ctx, tx)
@@ -87,6 +103,9 @@ func (a *App) archiveConnection(ctx context.Context, readOnly bool) (*sql.DB, er
 func archiveFailure(err error) string {
 	if errors.Is(err, errArchiveStale) {
 		return errArchiveStale.Error()
+	}
+	if errors.Is(err, errArchiveIntegrity) {
+		return "Archive is missing or failed integrity verification. Create a new archive."
 	}
 	return "Operation failed. Check the server log and available disk space."
 }

@@ -153,7 +153,7 @@ func TestStorageGenerationAndMigrationHistory(t *testing.T) {
 	a.DB.QueryRow("PRAGMA application_id").Scan(&id)
 	a.DB.QueryRow("PRAGMA user_version").Scan(&version)
 	a.DB.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&history)
-	if id != storageApplicationID || version != 1 || history != 5 {
+	if id != storageApplicationID || version != 1 || history != 6 {
 		t.Fatal(id, version, history)
 	}
 	a.DB.Exec("PRAGMA user_version=99")
@@ -161,5 +161,46 @@ func TestStorageGenerationAndMigrationHistory(t *testing.T) {
 	if app, err := Open(context.Background(), path, token); err == nil {
 		app.Close()
 		t.Fatal("future storage generation accepted")
+	}
+}
+
+func TestArchiveCleanupMigrationPreservesLiveRevisionsAndActiveSnapshots(t *testing.T) {
+	db := migrationDB(t, filepath.Join(t.TempDir(), "archive.db"))
+	ctx := context.Background()
+	plan, err := migrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = migrate(ctx, db, plan[:5]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Exec(`
+		INSERT INTO archive_jobs(id,status,created_at,cutoff)
+		VALUES ('history','deleted','',''),('running','deleting','','');
+		INSERT INTO records(id,session,parent,source,signal,time,name,trace,span,parent_span,raw,origin,kind,tool_name)
+		VALUES ('record','reimported','','codex','','','','','','','{}','import','user','');
+		INSERT INTO session_versions VALUES ('removed',2),('locked',3);
+		INSERT INTO archive_sessions(archive_id,session,source,revision,records,raw_bytes,last_activity) VALUES
+		('history','removed','codex',1,1,1,''),('history','reimported','codex',1,1,1,''),
+		('history','locked','codex',1,1,1,''),('running','locked','codex',2,1,1,'');
+		INSERT INTO archive_locks VALUES ('locked','running');`); err != nil {
+		t.Fatal(err)
+	}
+	if err = migrate(ctx, db, plan); err != nil {
+		t.Fatal(err)
+	}
+	for query, expected := range map[string]int{
+		"SELECT COUNT(*) FROM archive_jobs":                                2,
+		"SELECT COUNT(*) FROM archive_sessions WHERE archive_id='history'": 0,
+		"SELECT COUNT(*) FROM archive_sessions WHERE archive_id='running'": 1,
+		"SELECT COUNT(*) FROM archive_locks WHERE archive_id='running'":    1,
+		"SELECT COUNT(*) FROM session_versions WHERE session='removed'":    0,
+		"SELECT revision FROM session_versions WHERE session='locked'":     3,
+		"SELECT revision FROM session_versions WHERE session='reimported'": 1,
+	} {
+		var actual int
+		if err := db.QueryRow(query).Scan(&actual); err != nil || actual != expected {
+			t.Fatalf("%s: got %d, want %d, error %v", query, actual, expected, err)
+		}
 	}
 }

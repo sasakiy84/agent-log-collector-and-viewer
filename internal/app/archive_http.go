@@ -64,7 +64,7 @@ func (a *App) archiveList(w http.ResponseWriter, r *http.Request) {
 	}
 	query := inactiveSessions
 	args := []any{cutoff}
-	if current != nil && activeArchive(job.Status) {
+	if current != nil && archiveHasSnapshot(job.Status) {
 		query = "SELECT session,source,last_activity,records,raw_bytes,folder FROM archive_sessions WHERE archive_id=?"
 		args = []any{job.ID}
 		cutoff = job.Cutoff
@@ -266,20 +266,56 @@ func (a *App) archiveDelete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(202)
 	write(w, map[string]bool{"accepted": true})
 }
+func (a *App) archiveRetryDelete(w http.ResponseWriter, r *http.Request) {
+	if !archiveJSON(w, r, &struct{}{}) {
+		return
+	}
+	result, err := a.DB.ExecContext(r.Context(), "UPDATE archive_jobs SET error='' WHERE id=? AND status='deleting' AND confirmed_at<>'' AND error<>''", r.PathValue("id"))
+	if err != nil {
+		archiveError(w, r, err)
+		return
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		http.Error(w, "Archive deletion is not paused", http.StatusConflict)
+		return
+	}
+	a.notifyArchive()
+	a.wakeArchive()
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	write(w, map[string]bool{"accepted": true})
+}
+
+var errArchiveNotCancelable = errors.New("Archive cannot be canceled")
+
 func (a *App) archiveCancel(w http.ResponseWriter, r *http.Request) {
 	defer a.notifyArchive()
 	if !archiveJSON(w, r, &struct{}{}) {
 		return
 	}
 	id := r.PathValue("id")
-	result, err := a.DB.ExecContext(r.Context(), "UPDATE archive_jobs SET status='canceled' WHERE id=? AND status IN ('preparing','ready')", id)
-	if err != nil {
-		databaseError(w, r, err)
+	err := inTransaction(r.Context(), a.DB, func(tx *sql.Tx) error {
+		result, err := tx.ExecContext(r.Context(), "UPDATE archive_jobs SET status='canceled' WHERE id=? AND status IN ('preparing','ready')", id)
+		if err != nil {
+			return err
+		}
+		n, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return errArchiveNotCancelable
+		}
+		_, err = tx.ExecContext(r.Context(), "DELETE FROM archive_sessions WHERE archive_id=?", id)
+		return err
+	})
+	if errors.Is(err, errArchiveNotCancelable) {
+		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
-	n, _ := result.RowsAffected()
-	if n == 0 {
-		http.Error(w, "Archive cannot be canceled", 409)
+	if err != nil {
+		archiveError(w, r, err)
 		return
 	}
 	a.taskMu.Lock()

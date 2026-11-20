@@ -55,7 +55,7 @@ func (a *App) archiveEvents(w http.ResponseWriter, r *http.Request) {
 			}
 			previous = string(payload)
 		}
-		if job.Status != "preparing" && job.Status != "deleting" && job.Status != "compacting" {
+		if job.Status != "preparing" && job.Status != "compacting" && (job.Status != "deleting" || job.Error != "") {
 			return
 		}
 		select {
