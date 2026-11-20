@@ -1067,7 +1067,7 @@ $("#eventpagination").addEventListener("click", (event) => {
 const archivePager = new Pagination($("#archivepagination"), {
   noun: "folders",
   onChange: (page) => {
-    archiveOffset = (page - 1) * 200;
+    archiveOffset = (page - 1) * archivePageSize;
     loadArchive("top");
   },
 });
