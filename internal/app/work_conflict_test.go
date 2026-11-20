@@ -44,6 +44,11 @@ func TestUpgradeDrainsRetainedBatchAndItsFollowingBatch(t *testing.T) {
 	if err = migrate(ctx, db, plan[:3]); err != nil {
 		t.Fatal(err)
 	}
+	// Make the fixture writable by the current projections while retaining
+	// the old skill triggers that cause the batch failure.
+	if _, err = db.Exec("ALTER TABLE session_evidence ADD COLUMN prewarm INTEGER NOT NULL DEFAULT 0"); err != nil {
+		t.Fatal(err)
+	}
 	legacy, err := newApp(ctx, token)
 	if err != nil {
 		t.Fatal(err)
@@ -76,6 +81,9 @@ func TestUpgradeDrainsRetainedBatchAndItsFollowingBatch(t *testing.T) {
 		t.Fatal(batches, err)
 	}
 	queue.close()
+	if _, err = db.Exec("ALTER TABLE session_evidence DROP COLUMN prewarm"); err != nil {
+		t.Fatal(err)
+	}
 	legacy.Close()
 	upgraded, err := Start(ctx, path, token)
 	if err != nil {

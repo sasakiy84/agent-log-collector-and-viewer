@@ -151,3 +151,75 @@ func TestInternalSessionVisibilityFollowsReconciledTraceOwner(t *testing.T) {
 		t.Fatal("trace ownership split the session", sessions)
 	}
 }
+
+func TestPrewarmedEphemeralCodexThreadBecomesVisibleWithConversation(t *testing.T) {
+	a := setup(t)
+	const session = "warm"
+	prewarm := modelSpan(t, "prewarm", session, "warm", "", "startup_prewarm", map[string]any{"prewarm.input": "base"})
+	ephemeral := recorded(t, "init", "otel", "codex", session, "session_init.thread_persistence", map[string]any{"session_init.ephemeral": true})
+	save(t, a, prewarm, ephemeral)
+	var sessions []SessionSummary
+	getJSON(t, a, "/api/sessions", &sessions)
+	if len(sessions) != 0 {
+		t.Fatalf("prewarmed thread visible by default: %v", sessions)
+	}
+	getJSON(t, a, "/api/sessions?diagnostics=1", &sessions)
+	if len(sessions) != 1 || sessions[0].ID != prewarm.Session {
+		t.Fatalf("prewarmed thread missing from diagnostics: %v", sessions)
+	}
+
+	// The user prompt's text can be disabled in OTEL.
+	prompt := recorded(t, "prompt", "otel", "codex", session, "codex.user_prompt", nil)
+	save(t, a, prompt)
+	getJSON(t, a, "/api/sessions", &sessions)
+	if len(sessions) != 1 || sessions[0].ID != prewarm.Session {
+		t.Fatalf("thread with a user prompt missing from default list: %v", sessions)
+	}
+}
+
+func TestCodexBackgroundSessionMigrationReclassifiesStoredEvents(t *testing.T) {
+	ctx := context.Background()
+	path := t.TempDir() + "/upgrade.db"
+	a, err := Open(ctx, path, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	review := recorded(t, "review", "otel", "codex", "review", "codex.user_prompt", map[string]any{
+		"model": "codex-auto-review", "prompt": automaticReviewDelta + guardianToolDescriptions,
+	})
+	prewarm := modelSpan(t, "prewarm", "warm", "warm", "", "startup_prewarm", map[string]any{"prewarm.input": "base"})
+	ephemeral := recorded(t, "init", "otel", "codex", "warm", "session_init.thread_persistence", map[string]any{"session_init.ephemeral": true})
+	human := recorded(t, "human", "otel", "codex", "normal", "codex.user_prompt", map[string]any{"prompt": "hello"})
+	save(t, a, review, prewarm, ephemeral, human)
+
+	// Recreate the visibility data left by the previous release.
+	_, err = a.DB.Exec("DROP TRIGGER session_visibility_conversation; DROP INDEX codex_session_prewarm;" +
+		" DELETE FROM session_evidence WHERE prewarm=1; ALTER TABLE session_evidence DROP COLUMN prewarm;" +
+		" UPDATE session_evidence SET automatic=0,human=1 WHERE event_id='review';" +
+		" UPDATE record_facts SET prompt_title='The following is the Codex agent history added since your last approval assessment. Continue the same review conversation.',conversation=1 WHERE id='review';" +
+		" UPDATE sessions SET internal=0; DELETE FROM work_items; DELETE FROM schema_migrations WHERE version=5;")
+	a.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err = Open(ctx, path, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+
+	var sessions []SessionSummary
+	getJSON(t, a, "/api/sessions", &sessions)
+	if len(sessions) != 1 || sessions[0].ID != human.Session {
+		t.Fatalf("default list after upgrade: %v", sessions)
+	}
+	getJSON(t, a, "/api/sessions?diagnostics=1", &sessions)
+	if len(sessions) != 3 {
+		t.Fatalf("diagnostic list after upgrade: %v", sessions)
+	}
+	var originals []Event
+	getJSON(t, a, "/api/export?session=codex:review", &originals)
+	if len(originals) != 1 || string(originals[0].Raw) != string(review.Raw) {
+		t.Fatal("approval review's original record changed")
+	}
+}

@@ -122,6 +122,8 @@ func TestSkillAttemptMigrationRebuildsExistingEvidenceWithoutChangingOriginals(t
 	// Simulate the preceding generation-2 release, including its stored outcome.
 	if _, err = a.DB.Exec(`UPDATE skill_events SET evidence='failed';
  DROP TRIGGER skill_attempt_changed; DROP TABLE skill_attempt_links;
+ DROP TRIGGER session_visibility_conversation; DROP INDEX codex_session_prewarm;
+ ALTER TABLE session_evidence DROP COLUMN prewarm;
  DELETE FROM schema_migrations WHERE version>=3;`); err != nil {
 		t.Fatal(err)
 	}

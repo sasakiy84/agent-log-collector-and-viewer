@@ -223,9 +223,11 @@ function titleFor(id, p) {
     if (prompt && prompt.text !== "Content not exported")
       return prompt.text.split("\n")[0].slice(0, 150);
   }
-  return id.includes("/agent:")
-    ? "Subagent · " + id.split("/agent:").pop()
-    : id.replace(/^(codex|claude|copilot|other):/, "");
+  if (id.includes("/agent:")) return "Subagent · " + id.split("/agent:").pop();
+  const name = id.replace(/^(codex|claude|copilot|other):/, "");
+  return /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(name)
+    ? "Untitled session"
+    : name;
 }
 function listParameters() {
   const p = new URLSearchParams();
