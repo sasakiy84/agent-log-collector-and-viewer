@@ -14,7 +14,7 @@ Replace `<BASE_URL>` with the server origin and `<API_KEY>` with the key. When `
 `GET /api/version` returns the running binary's version:
 
 ```json
-{"version":"v0.24.2"}
+{"version":"v0.24.3"}
 ```
 
 Use the same bearer API key as other read endpoints:
@@ -23,7 +23,7 @@ Use the same bearer API key as other read endpoints:
 curl -fsS -H 'Authorization: Bearer <API_KEY>' '<BASE_URL>/api/version'
 ```
 
-Release binaries report their release tag. Source builds use Go’s embedded module version, which can include the commit and a `+dirty` marker for local changes. Without embedded release or module version information, the value is `dev`. Docker builds accept `VERSION`; Docker Compose passes `AGENTLOG_VERSION` to it. Build from a Git checkout with `AGENTLOG_VERSION="$(git describe --tags --always --dirty)" docker compose up -d --build` to identify that deployment. The same value is returned in `/api/metrics` and shown in Settings.
+The application reports the version defined in `cmd/agentlog/version.go` in release binaries, Docker images and local builds. The same value is returned in `/api/metrics` and shown in Settings.
 
 Owner credentials can retrieve the version while the database is initializing. Read-only API keys become available once their database has initialized, as for other read endpoints.
 

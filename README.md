@@ -35,7 +35,7 @@ Requires Docker with Compose v2.
 git clone https://github.com/sasakiy84/agent-log-collector-and-viewer.git
 cd agent-log-collector-and-viewer
 cp .env.example .env
-AGENTLOG_VERSION="$(git describe --tags --always --dirty)" docker compose up -d --build
+docker compose up -d --build
 ```
 
 Existing v0.23.0 databases require the offline [Python migration](docs/storage-migration.md) before starting this version. New-schema databases start without rebuilding historical indexes.

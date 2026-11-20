@@ -3,8 +3,6 @@ services:
     image: agentlog:local
     build:
       context: .
-      args:
-        VERSION: ${AGENTLOG_VERSION:-dev}
     environment:
       AGENTLOG_TOKEN: ${AGENTLOG_TOKEN:-}
       SQLITE_TMPDIR: /data
