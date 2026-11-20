@@ -7,9 +7,11 @@ import (
 )
 
 func storeSessionFacts(ctx context.Context, tx *sql.Tx, e Event, doc document, detail Detail) error {
-	var ephemeral, persistent, temporary, automatic, human bool
+	var ephemeral, persistent, temporary, automatic, human, prewarm bool
 	if e.Source == "codex" {
 		automatic, human = codexPromptFacts(detail)
+		prewarm = e.Signal == "traces" && e.Name == "startup_prewarm" &&
+			decodedAttributes(doc.Record["attributes"])["prewarm.input"] == "base"
 		objects := []map[string]any{doc.Resource, doc.Scope, doc.Record}
 		for _, event := range arr(doc.Record["events"]) {
 			objects = append(objects, obj(event))
@@ -25,13 +27,13 @@ func storeSessionFacts(ctx context.Context, tx *sql.Tx, e Event, doc document, d
 			temporary = temporary || strings.HasPrefix(str(attrs["rpc.request_id"]), "temporary-structured-")
 		}
 	}
-	if !ephemeral && !persistent && !temporary && !automatic && !human {
+	if !ephemeral && !persistent && !temporary && !automatic && !human && !prewarm {
 		_, err := execRecord(ctx, tx, "DELETE FROM session_evidence WHERE event_id=?", e.ID)
 		return err
 	}
-	_, err := execRecord(ctx, tx, `INSERT INTO session_evidence(event_id,session,ephemeral,persistent,temporary,automatic,human) VALUES(?,?,?,?,?,?,?) ON CONFLICT(event_id) DO UPDATE SET
- session=excluded.session,ephemeral=excluded.ephemeral,persistent=excluded.persistent,temporary=excluded.temporary,automatic=excluded.automatic,human=excluded.human`,
-		e.ID, e.Session, ephemeral, persistent, temporary, automatic, human)
+	_, err := execRecord(ctx, tx, `INSERT INTO session_evidence(event_id,session,ephemeral,persistent,temporary,automatic,human,prewarm) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(event_id) DO UPDATE SET
+ session=excluded.session,ephemeral=excluded.ephemeral,persistent=excluded.persistent,temporary=excluded.temporary,automatic=excluded.automatic,human=excluded.human,prewarm=excluded.prewarm`,
+		e.ID, e.Session, ephemeral, persistent, temporary, automatic, human, prewarm)
 	return err
 }
 
@@ -48,8 +50,12 @@ func refreshSessionVisibilityBatch(ctx context.Context, tx *sql.Tx) (int, error)
 	// Evidence can arrive out of order, move during trace reconciliation, or be
 	// replaced/deleted. Recompute only affected sessions, including reversals.
 	_, err := tx.ExecContext(ctx, `WITH flags AS MATERIALIZED (
- SELECT d.session,(COALESCE(MAX(f.ephemeral),0) AND COALESCE(MAX(f.temporary),0)
- AND NOT COALESCE(MAX(f.persistent),0))
+ SELECT d.session,(COALESCE(MAX(f.ephemeral),0) AND NOT COALESCE(MAX(f.persistent),0)
+ AND (COALESCE(MAX(f.temporary),0) OR (
+   EXISTS(SELECT 1 FROM session_evidence p WHERE p.session=d.session AND p.prewarm=1)
+   AND NOT EXISTS(SELECT 1 FROM record_facts c WHERE c.session=d.session AND c.conversation=1)
+   AND NOT EXISTS(SELECT 1 FROM record_facts c WHERE c.session=d.session AND c.origin IN('otel','import') AND c.is_user=1)
+ )))
  OR (EXISTS(SELECT 1 FROM session_evidence a WHERE a.session=d.session AND a.automatic<>0)
  AND NOT EXISTS(SELECT 1 FROM session_evidence h WHERE h.session=d.session AND h.human<>0)) AS internal
  FROM (SELECT session FROM pending_visibility LIMIT 200) d

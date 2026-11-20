@@ -16,8 +16,25 @@ func codexAutomaticPrompt(text string, model any) bool {
 	}
 	review := strings.HasPrefix(text, "The following is the Codex agent history whose request action you are assessing. ")
 	delta := strings.HasPrefix(text, "The following is the Codex agent history added since your last approval assessment. Continue the same review conversation. ")
-	return (review || delta) && strings.Contains(text, "\n>>> APPROVAL REQUEST START\n") &&
-		strings.HasSuffix(text, ">>> APPROVAL REQUEST END")
+	if !review && !delta {
+		return false
+	}
+	_, request, ok := strings.Cut(text, "\n>>> APPROVAL REQUEST START\n")
+	if !ok {
+		return false
+	}
+	end := strings.LastIndex(request, "\n>>> APPROVAL REQUEST END")
+	if end < 0 {
+		return false
+	}
+	trailer := strings.TrimSpace(request[end+len("\n>>> APPROVAL REQUEST END"):])
+	if trailer == "" {
+		return true
+	}
+	// The desktop app can append tool descriptions after the request.
+	body, ok := strings.CutPrefix(trailer, "<guardian_tool_descriptions>")
+	_, tail, closed := strings.Cut(body, "</guardian_tool_descriptions>")
+	return ok && closed && tail == ""
 }
 
 func codexPromptFacts(d Detail) (automatic, human bool) {
