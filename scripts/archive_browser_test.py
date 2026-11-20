@@ -67,7 +67,7 @@ with tempfile.TemporaryDirectory() as folder:
    select_all=page.get_by_role('button',name='Select all',exact=True)
    expect(page.locator('.archive-row')).to_have_count(200)
    select_all.focus();page.keyboard.press('Enter')
-   expect(page.locator('#archiveselected')).to_have_text('All 201 folders selected')
+   expect(page.locator('#archiveselected')).to_have_text('201 folders selected')
    expect(page.locator('[data-archive-folder]:checked')).to_have_count(200)
    page.get_by_role('button',name='Next page',exact=True).click()
    expect(page.locator('[data-archive-folder]:checked')).to_have_count(1)
@@ -75,18 +75,21 @@ with tempfile.TemporaryDirectory() as folder:
    expect(page.locator('[data-archive-folder]:checked')).to_have_count(0)
    expect(page.locator('#archivecreate')).to_be_disabled()
    select_all.click()
+   last_folder=page.locator('[data-archive-folder]').first
+   expect(last_folder).to_be_checked()
+   last_folder.uncheck()
+   expect(page.locator('#archiveselected')).to_have_text('200 folders selected')
    if os.getenv('AGENTLOG_SCREENSHOT'):
     page.screenshot(path=str(pathlib.Path(os.environ['AGENTLOG_SCREENSHOT']).with_name('ui-archive-select-all.png')))
    page.locator('#archivecreate').click()
    expect(page.locator('#archivedownload')).to_be_visible(timeout=30000)
-   assert api('/api/archive')['job']['session_count']==201
+   assert api('/api/archive')['job']['session_count']==200
    with page.expect_download() as capture:page.locator('#archivedownload').click()
    capture.value.save_as(pathlib.Path(folder)/'second.zip');page.locator('#archiveconfirmation').fill('DOWNLOADED');page.locator('#archivedelete').click()
-   expect(page.locator('#archivejob h2')).to_have_text('Archive complete',timeout=30000);expect(page.get_by_text('No inactive folders',exact=True)).to_be_visible()
-   expect(select_all).to_be_disabled()
-   assert api('/api/stats')['events']==1
-   api('/v1/logs',{'resourceLogs':logs});assert api('/api/stats')['events']==1
-   page.keyboard.press('Escape');expect(page.locator('#archivepanel')).not_to_be_visible();page.goto(base+'/archive');expect(page.locator('#archivepanel')).to_be_visible();page.keyboard.press('Escape');page.goto(base);expect(page.locator('.session')).to_have_count(1);assert page.locator('[data-source]').count()==0;assert page.locator('#refresh').count()==0
+   expect(page.locator('#archivejob h2')).to_have_text('Archive complete',timeout=30000);expect(page.locator('.archive-row')).to_have_count(1)
+   assert api('/api/stats')['events']==2
+   api('/v1/logs',{'resourceLogs':logs});assert api('/api/stats')['events']==2
+   page.keyboard.press('Escape');expect(page.locator('#archivepanel')).not_to_be_visible();page.goto(base+'/archive');expect(page.locator('#archivepanel')).to_be_visible();page.keyboard.press('Escape');page.goto(base);expect(page.locator('.session')).to_have_count(2);assert page.locator('[data-source]').count()==0;assert page.locator('#refresh').count()==0
    assert not errors,errors;browser.close()
  finally:server.terminate();server.wait(timeout=20)
 print('PASS: folder/mixed-agent/multiple/unassigned selection, active-session protection, pushed progress, no refresh/polling, ZIP SHA/CRC, explicit deletion, replay suppression and mobile')

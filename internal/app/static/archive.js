@@ -5,7 +5,8 @@ let archiveOffset = 0,
   archiveStream = null,
   archiveStreamJob = "";
 let archiveRequest = null;
-let archiveAllSelected = false;
+const archivePageSize = 200;
+let archiveSelectRequest = null;
 let archiveCreating = false;
 const bytes = (n) => {
   const units = ["B", "KiB", "MiB", "GiB", "TiB"];
@@ -37,19 +38,19 @@ async function archivePost(path, body) {
   return r.json();
 }
 function updateArchiveSelection() {
-  const total = archiveData?.total_folders ?? 0;
-  const n = archiveAllSelected ? total : archiveSelection.size;
+  const n = archiveSelection.size;
   const active = archiveActive(archiveData?.job);
-  $("#archiveselected").textContent = n
-    ? `${archiveAllSelected ? "All " : ""}${n.toLocaleString()} ${n === 1 ? "folder" : "folders"} selected`
-    : "";
-  $("#archivecreate").disabled = !n || archiveCreating;
-  $("#archiveselectall").disabled = !total || archiveAllSelected || archiveCreating;
-  $("#archiveclear").hidden = !n && !archiveAllSelected;
-  $("#archiveclear").disabled = archiveCreating;
+  const busy = archiveCreating || !!archiveSelectRequest;
+  $("#archiveselected").textContent = archiveSelectRequest
+    ? "Selecting folders…"
+    : n ? `${n.toLocaleString()} ${n === 1 ? "folder" : "folders"} selected` : "";
+  $("#archivecreate").disabled = !n || busy;
+  $("#archiveselectall").disabled = !archiveData?.total_folders || busy;
+  $("#archiveclear").hidden = !n;
+  $("#archiveclear").disabled = busy;
   document.querySelectorAll("[data-archive-folder]").forEach((el) => {
-    el.checked = !!active || archiveAllSelected || archiveSelection.has(el.dataset.archiveFolder);
-    el.disabled = !!active || archiveAllSelected || archiveCreating;
+    el.checked = !!active || archiveSelection.has(el.dataset.archiveFolder);
+    el.disabled = !!active || busy;
   });
 }
 async function refreshArchive(signal) {
@@ -86,7 +87,7 @@ async function refreshArchive(signal) {
   archivePager.update({
     total: data.total_folders,
     offset: data.offset,
-    size: 200,
+    size: archivePageSize,
   });
   $("#archivepagination").hidden = !!archiveActive(data.job);
   renderArchiveJob(data.job);
@@ -186,7 +187,6 @@ async function archiveAction(path, body) {
   try {
     await archivePost(path, body);
     archiveSelection.clear();
-    archiveAllSelected = false;
     await loadArchive();
     await refresh();
   } catch (e) {
@@ -224,6 +224,8 @@ function setupArchive() {
   $("#closearchive").onclick = () => $("#archivepanel").close();
   $("#archivepanel").addEventListener("close", () => {
     archiveRequest?.abort();
+    archiveSelectRequest?.abort();
+    archiveSelectRequest = null;
     archiveStream?.close();
     archiveStream = null;
     archiveStreamJob = "";
@@ -231,14 +233,39 @@ function setupArchive() {
     if (!selected && !skillsMode) listState();
     if ($("#login").hidden) $("#dataoptions summary").focus({ preventScroll: true });
   });
-  $("#archiveselectall").onclick = () => {
-    archiveSelection.clear();
-    archiveAllSelected = true;
+  $("#archiveselectall").onclick = async () => {
+    const controller = new AbortController();
+    const initial = archiveData;
+    archiveSelectRequest = controller;
+    $("#archiveerror").textContent = "";
     updateArchiveSelection();
-    $("#archiveclear").focus();
+    try {
+      const paths = new Set();
+      for (let offset = 0; offset < initial.total_folders; offset += archivePageSize) {
+        const page = offset === initial.offset
+          ? initial
+          : await api("/api/archive?group=folders&offset=" + offset, controller.signal);
+        if (page.offset !== offset || archiveActive(page.job)) {
+          throw Error("Archive folders changed. Reopen this panel and try again.");
+        }
+        page.folders.forEach((folder) => paths.add(folder.path));
+      }
+      if (!controller.signal.aborted) {
+        paths.forEach((path) => archiveSelection.add(path));
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) $("#archiveerror").textContent = error.message;
+    } finally {
+      if (archiveSelectRequest === controller) {
+        archiveSelectRequest = null;
+        updateArchiveSelection();
+        if (document.activeElement === document.body && $("#archivepanel").open) {
+          $("#archiveselectall").focus();
+        }
+      }
+    }
   };
   $("#archiveclear").onclick = () => {
-    archiveAllSelected = false;
     archiveSelection.clear();
     updateArchiveSelection();
     $("#archiveselectall").focus();
@@ -249,7 +276,7 @@ function setupArchive() {
     try {
       await archiveAction("/api/archives", {
         cutoff: archiveData.cutoff,
-        ...(archiveAllSelected ? { all: true } : { folders: [...archiveSelection] }),
+        folders: [...archiveSelection],
       });
     } finally {
       archiveCreating = false;
