@@ -5,6 +5,8 @@ let archiveOffset = 0,
   archiveStream = null,
   archiveStreamJob = "";
 let archiveRequest = null;
+let archiveAllSelected = false;
+let archiveCreating = false;
 const bytes = (n) => {
   const units = ["B", "KiB", "MiB", "GiB", "TiB"];
   let i = 0;
@@ -35,18 +37,20 @@ async function archivePost(path, body) {
   return r.json();
 }
 function updateArchiveSelection() {
-  const n = archiveSelection.size;
+  const total = archiveData?.total_folders ?? 0;
+  const n = archiveAllSelected ? total : archiveSelection.size;
+  const active = archiveActive(archiveData?.job);
   $("#archiveselected").textContent = n
-    ? `${n} ${n === 1 ? "folder" : "folders"} selected`
+    ? `${archiveAllSelected ? "All " : ""}${n.toLocaleString()} ${n === 1 ? "folder" : "folders"} selected`
     : "";
-  $("#archivecreate").disabled = !n;
-  $("#archiveclear").hidden = !n;
-  document
-    .querySelectorAll("[data-archive-folder]")
-    .forEach(
-      (el) =>
-        (el.checked = archiveSelection.has(el.dataset.archiveFolder)),
-    );
+  $("#archivecreate").disabled = !n || archiveCreating;
+  $("#archiveselectall").disabled = !total || archiveAllSelected || archiveCreating;
+  $("#archiveclear").hidden = !n && !archiveAllSelected;
+  $("#archiveclear").disabled = archiveCreating;
+  document.querySelectorAll("[data-archive-folder]").forEach((el) => {
+    el.checked = !!active || archiveAllSelected || archiveSelection.has(el.dataset.archiveFolder);
+    el.disabled = !!active || archiveAllSelected || archiveCreating;
+  });
 }
 async function refreshArchive(signal) {
   const data = await api(
@@ -182,6 +186,7 @@ async function archiveAction(path, body) {
   try {
     await archivePost(path, body);
     archiveSelection.clear();
+    archiveAllSelected = false;
     await loadArchive();
     await refresh();
   } catch (e) {
@@ -226,16 +231,30 @@ function setupArchive() {
     if (!selected && !skillsMode) listState();
     if ($("#login").hidden) $("#dataoptions summary").focus({ preventScroll: true });
   });
+  $("#archiveselectall").onclick = () => {
+    archiveSelection.clear();
+    archiveAllSelected = true;
+    updateArchiveSelection();
+    $("#archiveclear").focus();
+  };
   $("#archiveclear").onclick = () => {
+    archiveAllSelected = false;
     archiveSelection.clear();
     updateArchiveSelection();
+    $("#archiveselectall").focus();
   };
   $("#archivecreate").onclick = async () => {
-    $("#archivecreate").disabled = true;
-    await archiveAction("/api/archives", {
-      cutoff: archiveData.cutoff,
-      folders: [...archiveSelection],
-    });
+    archiveCreating = true;
+    updateArchiveSelection();
+    try {
+      await archiveAction("/api/archives", {
+        cutoff: archiveData.cutoff,
+        ...(archiveAllSelected ? { all: true } : { folders: [...archiveSelection] }),
+      });
+    } finally {
+      archiveCreating = false;
+      updateArchiveSelection();
+    }
   };
   addEventListener("pagehide", () => archiveStream?.close());
 }

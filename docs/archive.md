@@ -3,7 +3,7 @@
 ![Archive download and confirmation, using synthetic sessions](ui-archive.png)
 
 1. In **Sessions**, open the menu beside **Export ZIP** and choose **Archive inactive sessions…**. The panel covers all projects; the list’s search stays unchanged. Folders containing sessions inactive for over one calendar month appear here. Sessions with unknown timestamps are excluded.
-2. Select one or more folders, then **Create ZIP**. Only inactive sessions in those folders are included, across all agents. Job progress is pushed while the operation runs.
+2. Select one or more folders, then **Create ZIP**. Only inactive sessions in those folders are included, across all agents. Use **Select all** to include every eligible folder across all pages. Use **Clear** to reset the selection before picking individual folders again. Job progress is pushed while the operation runs.
 3. **Download ZIP**, check the local file, then type **DOWNLOADED** and choose **Delete archived data**.
 
 Downloading alone never deletes records. Updated sessions require a new archive. Canceling keeps DB records. Source files stay in place; identical archived records are ignored on reimport, while new or changed records can be imported.
