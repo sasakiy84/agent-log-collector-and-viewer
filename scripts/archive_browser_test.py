@@ -53,7 +53,18 @@ with tempfile.TemporaryDirectory() as folder:
    assert abs(field['x']+field['width']-delete['x']-delete['width'])<1,'confirmation and delete action right edges differ'
    assert field['height']>=32,'confirmation field too short'
    if os.getenv('AGENTLOG_SCREENSHOT'):page.screenshot(path=str(pathlib.Path(os.environ['AGENTLOG_SCREENSHOT']).with_name('ui-archive-mobile.png')))
-   page.locator('#archivedelete').click();expect(page.locator('#archivejob h2')).to_have_text('Archive complete',timeout=30000)
+   with sqlite3.connect(folder+'/test.db') as db:
+    db.execute("CREATE TRIGGER interrupt_archive BEFORE DELETE ON records BEGIN SELECT RAISE(ABORT,'test interruption'); END")
+   page.locator('#archivedelete').click()
+   expect(page.get_by_role('heading',name='Deletion paused')).to_be_visible()
+   expect(page.locator('#archiveselection')).to_be_hidden()
+   assert api('/api/stats')['events']==5
+   if os.getenv('AGENTLOG_SCREENSHOT'):
+    page.screenshot(path=str(pathlib.Path(os.environ['AGENTLOG_SCREENSHOT']).with_name('ui-archive-retry.png')))
+   with sqlite3.connect(folder+'/test.db') as db:
+    db.execute('DROP TRIGGER interrupt_archive')
+   page.get_by_role('button',name='Retry deletion').click()
+   expect(page.locator('#archivejob h2')).to_have_text('Archive complete',timeout=30000)
    expect(page.locator('.archive-row')).to_have_count(2);assert api('/api/stats')['events']==3
    extra_logs=[]
    for i in range(199):
@@ -92,4 +103,4 @@ with tempfile.TemporaryDirectory() as folder:
    page.keyboard.press('Escape');expect(page.locator('#archivepanel')).not_to_be_visible();page.goto(base+'/archive');expect(page.locator('#archivepanel')).to_be_visible();page.keyboard.press('Escape');page.goto(base);expect(page.locator('.session')).to_have_count(2);assert page.locator('[data-source]').count()==0;assert page.locator('#refresh').count()==0
    assert not errors,errors;browser.close()
  finally:server.terminate();server.wait(timeout=20)
-print('PASS: folder/mixed-agent/multiple/unassigned selection, active-session protection, pushed progress, no refresh/polling, ZIP SHA/CRC, explicit deletion, replay suppression and mobile')
+print('PASS: folder/mixed-agent/multiple/unassigned selection, active-session protection, pushed progress, no refresh/polling, ZIP SHA/CRC, explicit deletion, pause and retry, replay suppression and mobile')

@@ -147,6 +147,15 @@ func TestArchiveDownloadConfirmDeleteAndReplay(t *testing.T) {
 	if countEvents(t, a) != 3 {
 		t.Fatal("download deleted records")
 	}
+	var searchRowID int
+	if err = a.DB.QueryRow("SELECT rowid FROM search_documents WHERE event_id=?", old.ID).Scan(&searchRowID); err != nil {
+		t.Fatal(err)
+	}
+	const matchArchiveRecord = "SELECT COUNT(*) FROM event_search WHERE event_search MATCH 'synthetic' AND rowid=?"
+	var matches int
+	if err = a.DB.QueryRow(matchArchiveRecord, searchRowID).Scan(&matches); err != nil || matches != 1 {
+		t.Fatalf("archived event was missing from the original FTS index: %d, %v", matches, err)
+	}
 	if w := archiveReq(a, "POST", url+"/delete", `{"confirmation":"DOWNLOADED"}`); w.Code != 202 {
 		t.Fatal(w.Code, w.Body)
 	}
@@ -156,6 +165,21 @@ func TestArchiveDownloadConfirmDeleteAndReplay(t *testing.T) {
 	}
 	if _, err = os.Stat(a.archivePath(job.ID, false)); !os.IsNotExist(err) {
 		t.Fatal("retained downloaded server ZIP")
+	}
+	for query, arg := range map[string]string{
+		"SELECT COUNT(*) FROM archive_sessions WHERE archive_id=?": job.ID,
+		"SELECT COUNT(*) FROM archive_locks WHERE archive_id=?":    job.ID,
+		"SELECT COUNT(*) FROM session_versions WHERE session=?":    old.Session,
+		"SELECT COUNT(*) FROM logical_events WHERE session=?":      old.Session,
+		"SELECT COUNT(*) FROM search_documents WHERE session=?":    old.Session,
+	} {
+		var count int
+		if err = a.DB.QueryRow(query, arg).Scan(&count); err != nil || count != 0 {
+			t.Fatalf("retained derived data: %s: %d, %v", query, count, err)
+		}
+	}
+	if err = a.DB.QueryRow(matchArchiveRecord, searchRowID).Scan(&matches); err != nil || matches != 0 {
+		t.Fatalf("archived event remained in FTS: %d, %v", matches, err)
 	}
 	save(t, a, old)
 	if countEvents(t, a) != 2 {

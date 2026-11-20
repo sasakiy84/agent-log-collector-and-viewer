@@ -49,8 +49,9 @@ func (a *App) compactArchive(ctx context.Context, job ArchiveJob) error {
 	if err == nil {
 		err = a.reclaimPages(ctx)
 	}
+	var checkpointBusy, walPages, checkpointedPages int
 	if err == nil {
-		_, err = a.DB.ExecContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)")
+		err = a.DB.QueryRowContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)").Scan(&checkpointBusy, &walPages, &checkpointedPages)
 	}
 	if ctx.Err() != nil {
 		return ctx.Err()
@@ -59,6 +60,8 @@ func (a *App) compactArchive(ctx context.Context, job ArchiveJob) error {
 	if err != nil {
 		log.Printf("archive %s compact: %v", job.ID, err)
 		warning = "Records were deleted, but database compaction failed. Free disk space and retry compaction."
+	} else if checkpointBusy != 0 {
+		warning = "Records were deleted, but another database operation prevented WAL truncation. Retry compaction after it finishes."
 	}
 	var before int64
 	if e := a.DB.QueryRowContext(ctx, "SELECT database_bytes_before FROM archive_jobs WHERE id=?", job.ID).Scan(&before); e != nil {

@@ -757,6 +757,9 @@ input[type=checkbox] {
   font-size:16px;
   margin:0 0 8px;
 }
+#archivejob .failure-detail {
+  margin:8px 0;
+}
 #archivejob details {
   margin:12px 0;
 }

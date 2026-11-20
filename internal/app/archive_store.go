@@ -54,8 +54,8 @@ func scanArchive(row scanner) (ArchiveJob, error) {
 func (a *App) archiveJob(ctx context.Context, id string) (ArchiveJob, error) {
 	return scanArchive(a.readers.QueryRowContext(ctx, "SELECT "+archiveColumns+" FROM archive_jobs WHERE id=?", id))
 }
-func activeArchive(status string) bool {
-	return status == "preparing" || status == "ready" || status == "deleting" || status == "compacting"
+func archiveHasSnapshot(status string) bool {
+	return status == "preparing" || status == "ready" || status == "deleting"
 }
 func archiveCutoff(now time.Time) time.Time {
 	now = now.UTC()
@@ -112,8 +112,17 @@ func (a *App) initArchives(path string) error {
 	if err != nil || rowErr != nil {
 		return errors.Join(err, rowErr)
 	}
-	if _, err = a.DB.ExecContext(a.ctx, "UPDATE archive_jobs SET status='failed',error='Archive creation was interrupted; create a new archive.' WHERE status='preparing'"); err != nil {
-		return err
+	if len(interrupted) > 0 {
+		err = inTransaction(a.ctx, a.DB, func(tx *sql.Tx) error {
+			if _, err := tx.ExecContext(a.ctx, "DELETE FROM archive_sessions WHERE archive_id IN (SELECT id FROM archive_jobs WHERE status='preparing')"); err != nil {
+				return err
+			}
+			_, err := tx.ExecContext(a.ctx, "UPDATE archive_jobs SET status='failed',error='Archive creation was interrupted; create a new archive.' WHERE status='preparing'")
+			return err
+		})
+		if err != nil {
+			return err
+		}
 	}
 	for _, id := range interrupted {
 		os.Remove(a.archivePath(id, true))
