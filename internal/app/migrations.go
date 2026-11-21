@@ -27,6 +27,9 @@ var codexBackgroundSessionsSchema string
 //go:embed archive_cleanup.sql
 var archiveCleanupSchema string
 
+//go:embed codex_transport_cleanup.sql
+var codexTransportCleanupSchema string
+
 const storageApplicationID = 1095518002 // ALG2
 
 // Generation 2 starts with one complete baseline. Future changes append migrations;
@@ -39,6 +42,7 @@ func migrations() ([]migration, error) {
 		{4, "0004_work_conflict", workConflictSchema},
 		{5, "0005_codex_background_sessions", codexBackgroundSessionsSchema},
 		{6, "0006_archive_cleanup", archiveCleanupSchema},
+		{7, "0007_codex_transport_cleanup", codexTransportCleanupSchema},
 	}, nil
 }
 
