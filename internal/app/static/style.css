@@ -737,7 +737,9 @@ input[type=checkbox] {
 .archive-folder-row > span:last-child {text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums;}
 .archive-row time, #archivecutoff time {display:inline-block; white-space:nowrap;}
 .archive-row small {line-height:1.5;}
-#archivecutoff {line-height:1.5; margin-bottom:12px;}
+#archivecutoff, #archivestorage {line-height:1.5;}
+#archivecutoff {margin-bottom:4px;}
+#archivestorage {margin-bottom:12px;}
 .archive-folder-path {overflow-wrap:anywhere;}
 .archive-row span {
   min-width:0;
