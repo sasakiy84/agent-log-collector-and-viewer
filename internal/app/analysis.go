@@ -29,7 +29,7 @@ func analyzeRecord(ctx context.Context, e Event) (recordAnalysis, error) {
 	if detail.Attributes["agentlog.origin"] == "import" {
 		e.Origin = "import"
 	}
-	search, err := analyzeSearch(ctx, e, doc)
+	search, err := analyzeSearch(ctx, e, doc, detail)
 	if err != nil {
 		return recordAnalysis{}, err
 	}

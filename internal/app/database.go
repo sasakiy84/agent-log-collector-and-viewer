@@ -75,11 +75,15 @@ func (a *App) openDatabase(ctx context.Context, path string) error {
 	return nil
 }
 
-// prepareDatabase recovers only persisted invalidations. New-schema databases
-// are fully materialized by the Python converter; normal restarts never scan
-// originals or run historical format upgrades.
+// prepareDatabase recovers persisted invalidations and any pending search
+// upgrade. Ordinary restarts only read dirty records.
 func (a *App) prepareDatabase(ctx context.Context) error {
-	return inTransaction(ctx, a.DB, func(tx *sql.Tx) error { return refreshProjections(ctx, tx) })
+	return inTransaction(ctx, a.DB, func(tx *sql.Tx) error {
+		if err := rebuildSearchContent(ctx, tx); err != nil {
+			return err
+		}
+		return refreshProjections(ctx, tx)
+	})
 }
 
 // Open prepares a database synchronously for embedded callers and maintenance tools.

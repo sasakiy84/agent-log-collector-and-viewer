@@ -39,7 +39,7 @@ func (p *state) codex(v map[string]any, line int) error {
 		case "message":
 			role := s(d["role"])
 			if role == "user" || role == "assistant" {
-				return p.codexMessage(role, content(d["content"]), false, s(d["id"]))
+				return p.codexMessage(role, content(d["content"]), false, s(d["id"]), s(d["phase"]))
 			}
 		case "function_call", "custom_tool_call":
 			return p.tool(s(d["call_id"]), s(d["name"]), first(d["arguments"], d["input"]), nil, false, false)
@@ -55,7 +55,7 @@ func (p *state) codex(v map[string]any, line int) error {
 			if s(d["type"]) == "agent_message" {
 				role = "assistant"
 			}
-			return p.codexMessage(role, first(d["message"], d["text"]), true, "")
+			return p.codexMessage(role, first(d["message"], d["text"]), true, "", s(d["phase"]))
 		case "token_count":
 			u := m(m(d["info"])["last_token_usage"])
 			if len(u) > 0 {
@@ -87,7 +87,7 @@ func (p *state) codex(v map[string]any, line int) error {
 
 // Content and occurrence identify both Codex message projections, including when
 // a canonical response_item arrives after its event_msg was already imported.
-func (p *state) codexMessage(role, text string, fallback bool, nativeID string) error {
+func (p *state) codexMessage(role, text string, fallback bool, nativeID, phase string) error {
 	key := role + "\x00" + text
 	counts := p.messageCounts
 	if fallback {
@@ -98,7 +98,11 @@ func (p *state) codexMessage(role, text string, fallback bool, nativeID string) 
 	if fallback && n <= p.canonicalMessages[key] {
 		return nil
 	}
-	return p.messageWithIDs(role, text, fmt.Sprintf("message:%x:%d", sha256.Sum256([]byte(key)), n), map[string]any{"gen_ai.message.id": nativeID})
+	fields := map[string]any{"gen_ai.message.id": nativeID}
+	if role == "assistant" && phase != "" {
+		fields["gen_ai.message.phase"] = phase
+	}
+	return p.messageWithIDs(role, text, fmt.Sprintf("message:%x:%d", sha256.Sum256([]byte(key)), n), fields)
 }
 
 func (p *state) claude(v map[string]any, line int) error {

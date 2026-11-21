@@ -287,6 +287,7 @@ func TestSubsecondOrderingAndAtomicRejection(t *testing.T) {
 func TestSessionPageMetadataAndSearch(t *testing.T) {
 	a := setup(t)
 	for _, body := range []string{logBody("claude", "parent", "", ""), logBody("claude", "parent", "child", "")} {
+		body = strings.Replace(body, `"body":`, `"severityText":"ERROR","body":`, 1)
 		if w := request(a, "/v1/logs", body, token); w.Code != 200 {
 			t.Fatal(w.Code, w.Body.String())
 		}

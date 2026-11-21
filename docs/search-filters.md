@@ -12,6 +12,10 @@ The layout follows the [Datadog Log Explorer](https://docs.datadoghq.com/logs/ex
 - **Text match**: AND (default) or OR over analyzed Japanese/English words. **Exclude words** removes records containing any analyzed exclusion term. These fields stay outside the ordinary text box. Skills instead searches the skill name/plugin/scope/path strings; exclusions remove matching skills.
 - **Exact ID** in **Search options** (Sessions): an exact ID field/value, combined with the text and event filters. When combined, the ID and text/time/type/origin must belong to the same stored record. The panel closes after applying; its Active label remains visible.
 
+Full-text search indexes complete user messages and assistant answers, tool names and input/output, and error details. Assistant messages with an explicit commentary or partial-answer phase are omitted. Answers without phase metadata are searchable. Model input history, system messages, transport attributes and usage counters are omitted. Project names and project tags remain searchable on matching content. Exact ID and structured filters continue to use their own indexes.
+
+When upgrading an existing database, the service rebuilds the full-text index on its first start. The previous index stays readable until the replacement commits. The ingest inbox continues to accept records during preparation.
+
 The session list shows sessions containing a matching record. Time is **event time**, not the session's start or last activity; nested skill filters use their invocation time, and day grouping uses the first matching invocation in each stored record; a continuing session can therefore match an earlier range. Session titles, last activity, event counts and **Session usage** describe the full session. Internal and child sessions remain hidden by default.
 
 ![Second-resolution event time picker](ui-search-time.png)
