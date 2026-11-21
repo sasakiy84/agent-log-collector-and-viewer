@@ -11,6 +11,7 @@ func (a *App) Save(ctx context.Context, events []Event) error {
 	if a.compacting.Load() {
 		return fmt.Errorf("database compaction is in progress")
 	}
+	events = withoutCodeModeTransport(events)
 	// Decode and tokenize before reserving SQLite's single writer. Database
 	// publication remains atomic; malformed batches never publish partial facts.
 	analyzed := make([]recordAnalysis, len(events))

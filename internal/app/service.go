@@ -56,7 +56,7 @@ func (a *App) accept(ctx context.Context, events []Event, wait bool) error {
 	if a.inbox == nil {
 		return a.Save(ctx, events)
 	}
-	return a.inbox.accept(ctx, events, wait)
+	return a.inbox.accept(ctx, withoutCodeModeTransport(events), wait)
 }
 
 func closed(channel <-chan struct{}) bool {
