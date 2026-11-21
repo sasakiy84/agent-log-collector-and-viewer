@@ -254,3 +254,24 @@ func TestImportWithoutTokenOmitsAuthorization(t *testing.T) {
 		t.Fatal("configured short token accepted")
 	}
 }
+
+func TestCodexImportSearchUsesFinalAnswerPhase(t *testing.T) {
+	db, server := setup(t)
+	dir := t.TempDir()
+	file(t, dir, "codex.jsonl", `{"type":"session_meta","timestamp":"2026-11-01T00:00:00Z","payload":{"id":"phases","cwd":"/work"}}
+{"type":"response_item","timestamp":"2026-11-01T00:00:01Z","payload":{"type":"message","role":"assistant","phase":"commentary","content":[{"type":"output_text","text":"progressmarker"}]}}
+{"type":"event_msg","timestamp":"2026-11-01T00:00:02Z","payload":{"type":"agent_message","phase":"partial_answer","message":"partialmarker"}}
+{"type":"response_item","timestamp":"2026-11-01T00:00:03Z","payload":{"type":"message","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"finalmarker"}]}}
+`)
+	stats, err := importer.Run(context.Background(), importer.Options{Dirs: []string{dir}, Endpoint: server.URL, Token: token}, io.Discard)
+	if err != nil || stats.Records != 3 {
+		t.Fatal(stats, err)
+	}
+	for term, want := range map[string]int{"progressmarker": 0, "partialmarker": 0, "finalmarker": 1} {
+		var count int
+		err := db.DB.QueryRow("SELECT COUNT(*) FROM event_search WHERE event_search MATCH ?", term).Scan(&count)
+		if err != nil || count != want {
+			t.Fatalf("%q: got %d, want %d: %v", term, count, want, err)
+		}
+	}
+}

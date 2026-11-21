@@ -44,7 +44,7 @@ func TestJapaneseFullTextSearch(t *testing.T) {
 func TestSearchIndexesFullDecodedContent(t *testing.T) {
 	a := setup(t)
 	payload := strings.Repeat("uninteresting output ", 10000) + "最後の診断結果"
-	e := recorded(t, "large", "import", "claude", "large", "gen_ai.tool.result", map[string]any{"output": payload, "nested": `{"report":"\u8a8d\u8a3c\u5931\u6557","README.md":"updated","設定項目":"有効"}`})
+	e := recorded(t, "large", "import", "claude", "large", "gen_ai.tool.result", map[string]any{"output": payload, "arguments": `{"report":"\u8a8d\u8a3c\u5931\u6557","README.md":"updated","設定項目":"有効"}`})
 	save(t, a, e)
 	for _, query := range []string{"診断", "認証", "失敗", "updated", "有効"} {
 		if len(searchSessions(t, a, query)) != 1 {

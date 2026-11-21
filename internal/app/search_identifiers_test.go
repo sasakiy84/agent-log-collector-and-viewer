@@ -16,12 +16,13 @@ func identifierSessions(t *testing.T, a *App, key, value string) []SessionSummar
 	return rows
 }
 
-func TestSearchIndexesStringValuesAndExactIdentifiersSeparately(t *testing.T) {
+func TestSearchIndexesMessageValuesAndExactIdentifiersSeparately(t *testing.T) {
 	a := setup(t)
 	e := recorded(t, "event-private-id", "import", "codex", "session-private-id", "user_prompt", map[string]any{
-		"prompt": "日本語の認証を調査", "gen_ai.tool.call.id": "Call-識別子専用-Ａ", "gen_ai.message.id": "Message-Case",
+		"prompt":              `{"request":"日本語の認証を調査","説明":"検索の診断結果","detail":{"count":"概数","enabled":"有効化"}}`,
+		"gen_ai.tool.call.id": "Call-識別子専用-Ａ", "gen_ai.message.id": "Message-Case",
 		"counter": 987654321, "success": true, "build_uuid": "Build-UUID-Value",
-		"nested": `{"request_id":"Nested-ID","count":765432198,"enabled":false,"説明":"検索の診断結果","detail":{"count":"概数","enabled":"有効化"}}`,
+		"nested": `{"request_id":"Nested-ID","count":765432198,"enabled":false,"description":"metadataonly"}`,
 	})
 	e.Trace, e.Span = "Trace-Case", "Span-Case"
 	doc, _ := decodeDocument(e.Raw)
@@ -37,7 +38,7 @@ func TestSearchIndexesStringValuesAndExactIdentifiersSeparately(t *testing.T) {
 			t.Fatal("string value not indexed", query)
 		}
 	}
-	for _, query := range []string{"987654321", "765432198", "9007199254740993", "1794328119866000000", "654321987", "543219876", "432198765", "true", "false", "識別子専用", "Nested-ID", "Trace-Case", "session-private-id", "Build-UUID-Value", "counter", "説明", "stringValue"} {
+	for _, query := range []string{"987654321", "765432198", "9007199254740993", "1794328119866000000", "654321987", "543219876", "432198765", "true", "false", "識別子専用", "Nested-ID", "Trace-Case", "session-private-id", "Build-UUID-Value", "counter", "説明", "stringValue", "metadataonly"} {
 		if len(searchSessions(t, a, query)) != 0 {
 			t.Fatal("non-content value entered full-text index", query)
 		}

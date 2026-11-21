@@ -186,7 +186,9 @@ func searchableValues(ctx context.Context, value any, emit func(string) error, i
 				return searchableValues(ctx, nested, emit, identifier)
 			}
 		}
-		return emit(v)
+		if emit != nil {
+			return emit(v)
+		}
 	case map[string]any:
 		// OTLP AnyValue preserves numeric/boolean types even though protobuf
 		// JSON encodes int64 as strings. Never feed wire wrappers to the FTS.
@@ -198,7 +200,9 @@ func searchableValues(ctx context.Context, value any, emit func(string) error, i
 		if key, ok := v["key"].(string); ok {
 			if item, exists := v["value"]; exists && len(v) == 2 {
 				if identifierKey(key) {
-					identifier(key, item)
+					if identifier != nil {
+						identifier(key, item)
+					}
 					return nil
 				}
 				return searchableValues(ctx, item, emit, identifier)
@@ -211,7 +215,9 @@ func searchableValues(ctx context.Context, value any, emit func(string) error, i
 		slices.Sort(keys)
 		for _, key := range keys {
 			if identifierKey(key) {
-				identifier(key, v[key])
+				if identifier != nil {
+					identifier(key, v[key])
+				}
 				continue
 			}
 			if err := searchableValues(ctx, v[key], emit, identifier); err != nil {
@@ -234,8 +240,7 @@ type searchDocument struct {
 	identifiers map[searchIdentifier]bool
 }
 
-func analyzeSearch(ctx context.Context, event Event, doc document) (searchDocument, error) {
-	var text strings.Builder
+func analyzeSearch(ctx context.Context, event Event, doc document, detail Detail) (searchDocument, error) {
 	identifiers := map[searchIdentifier]bool{}
 	identifier := func(key string, value any) {
 		identifierStrings(value, func(s string) {
@@ -246,14 +251,6 @@ func analyzeSearch(ctx context.Context, event Event, doc document) (searchDocume
 	for key, value := range map[string]string{"event.id": event.ID, "session.id": event.Session, "parent.session.id": event.Parent, "trace.id": event.Trace, "span.id": event.Span, "parent.span.id": event.ParentSpan} {
 		identifier(key, value)
 	}
-	emit := func(value string) error {
-		return searchTokens(ctx, value, func(term string) { text.WriteString(term); text.WriteByte(' ') })
-	}
-	for _, value := range []string{event.Source, event.Name} {
-		if err := emit(value); err != nil {
-			return searchDocument{}, err
-		}
-	}
 	// These are numeric OTLP wire fields, not arbitrary string-valued keys
 	// inside a tool's JSON output. Do not mutate the original document.
 	record := maps.Clone(doc.Record)
@@ -261,15 +258,41 @@ func analyzeSearch(ctx context.Context, event Event, doc document) (searchDocume
 		delete(record, key)
 	}
 	for _, scope := range []map[string]any{doc.Resource, doc.Scope, record} {
-		if err := searchableValues(ctx, scope, emit, identifier); err != nil {
+		if err := searchableValues(ctx, scope, nil, identifier); err != nil {
 			return searchDocument{}, err
 		}
 	}
-	return searchDocument{text: text.String(), identifiers: identifiers}, nil
+	text, err := analyzeSearchText(ctx, event, doc, detail)
+	return searchDocument{text: text, identifiers: identifiers}, err
+}
+
+func analyzeSearchText(ctx context.Context, event Event, doc document, detail Detail) (string, error) {
+	var text strings.Builder
+	emit := func(value string) error {
+		if value == "<REDACTED>" || value == "[REDACTED]" || value == "Content not exported" {
+			return nil
+		}
+		return searchTokens(ctx, value, func(term string) { text.WriteString(term); text.WriteByte(' ') })
+	}
+	for _, value := range searchContent(event, doc, detail) {
+		if err := searchableValues(ctx, value, emit, nil); err != nil {
+			return "", err
+		}
+	}
+	if text.Len() > 0 {
+		// Preserve project-name queries for events with searchable content.
+		_, project := sessionProject(detail)
+		for _, value := range []any{strings.TrimPrefix(project, "name:"), detail.Tags} {
+			if err := searchableValues(ctx, value, emit, nil); err != nil {
+				return "", err
+			}
+		}
+	}
+	return text.String(), nil
 }
 
 func storeSearch(ctx context.Context, tx *sql.Tx, event Event, doc document) error {
-	index, err := analyzeSearch(ctx, event, doc)
+	index, err := analyzeSearch(ctx, event, doc, describe(event, doc))
 	if err != nil {
 		return err
 	}
@@ -288,8 +311,10 @@ func storeSearchDocument(ctx context.Context, tx *sql.Tx, event Event, index sea
 	if _, err = execRecord(ctx, tx, "DELETE FROM event_search WHERE rowid=?", rowid); err != nil {
 		return err
 	}
-	if _, err = execRecord(ctx, tx, "INSERT INTO event_search(rowid,text) VALUES(?,?)", rowid, index.text); err != nil {
-		return err
+	if index.text != "" {
+		if _, err = execRecord(ctx, tx, "INSERT INTO event_search(rowid,text) VALUES(?,?)", rowid, index.text); err != nil {
+			return err
+		}
 	}
 	_, err = execRecord(ctx, tx, "DELETE FROM work_items WHERE kind='search' AND (scope,key) IN(SELECT event_id,'' FROM pending_search WHERE event_id=?)", event.ID)
 	return err
