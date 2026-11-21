@@ -65,6 +65,9 @@ async function refreshArchive(signal) {
     `${data.total_folders.toLocaleString()} ${data.total_folders === 1 ? "folder" : "folders"} · ${data.total_sessions.toLocaleString()} ${data.total_sessions === 1 ? "session" : "sessions"} · ${bytes(data.total_bytes)}`;
   $("#archivecutoff").innerHTML =
     `All projects · Last activity before <time datetime="${esc(data.cutoff)}">${esc(new Date(data.cutoff).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }))}</time>`;
+  $("#archivestorage").textContent = data.available_bytes == null
+    ? "Storage availability unknown"
+    : `Storage available: ${bytes(data.available_bytes)}`;
   $("#archiveselection").hidden = !!archiveActive(data.job);
   $("#archiveitems").hidden = !!archiveActive(data.job);
   $("#archiveitems").innerHTML = data.folders.length

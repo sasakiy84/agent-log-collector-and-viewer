@@ -45,5 +45,5 @@ func (a *App) archiveFolderList(w http.ResponseWriter, r *http.Request, tx *sql.
 		databaseError(w, r, err)
 		return
 	}
-	write(w, map[string]any{"folders": folders, "total_folders": total, "total_sessions": sessions, "total_records": records, "total_bytes": rawBytes, "offset": off, "cutoff": cutoff, "job": job})
+	write(w, map[string]any{"folders": folders, "total_folders": total, "total_sessions": sessions, "total_records": records, "total_bytes": rawBytes, "offset": off, "cutoff": cutoff, "job": job, "available_bytes": a.archiveAvailableBytes()})
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Folder archive selection, pushed progress, ZIP and explicit deletion. Synthetic data."""
 from test_support import settled_urlopen
-import datetime,hashlib,json,os,pathlib,socket,sqlite3,subprocess,tempfile,time,urllib.request,zipfile
+import datetime,hashlib,json,os,pathlib,re,socket,sqlite3,subprocess,tempfile,time,urllib.request,zipfile
 from playwright.sync_api import sync_playwright,expect
 binary=os.environ.get('AGENTLOG_BIN',str(pathlib.Path(__file__).resolve().parents[1]/'agentlog'))
 token='synthetic-archive-test-token'
@@ -29,6 +29,9 @@ with tempfile.TemporaryDirectory() as folder:
    page.goto(base);archive_requests=[];page.on('request',lambda r:archive_requests.append(r.url) if '/api/archive' in r.url else None);page.locator('#token').fill(token);page.locator('#loginform button').click();expect(page.locator('.session')).to_have_count(5);assert not archive_requests;page.locator('#dataoptions summary').click()
    if os.getenv('AGENTLOG_SCREENSHOT'):page.screenshot(path=str(pathlib.Path(os.environ['AGENTLOG_SCREENSHOT']).with_name('ui-data-actions.png')),full_page=True)
    page.locator('#openarchive').click();expect(page.locator('#archivepanel')).to_be_visible();expect(page.locator('.archive-row')).to_have_count(3)
+   storage=page.locator('#archivestorage')
+   expect(storage).to_have_text(re.compile(r'^Storage available: [\d.]+ [KMGT]?i?B$'))
+   assert isinstance(api('/api/archive?group=folders')['available_bytes'],int)
    assert page.locator('#refresh,#subagentrefresh,#archiveall,[data-source]').count()==0
    assert 'DB data only' not in page.locator('body').inner_text()
    expect(page.locator('.archive-row').filter(has=page.locator('[data-archive-folder="/work/alpha"]'))).to_contain_text('2 sessions')
@@ -98,9 +101,20 @@ with tempfile.TemporaryDirectory() as folder:
    with page.expect_download() as capture:page.locator('#archivedownload').click()
    capture.value.save_as(pathlib.Path(folder)/'second.zip');page.locator('#archiveconfirmation').fill('DOWNLOADED');page.locator('#archivedelete').click()
    expect(page.locator('#archivejob h2')).to_have_text('Archive complete',timeout=30000);expect(page.locator('.archive-row')).to_have_count(1)
+   expect(storage).to_have_text(re.compile(r'^Storage available: [\d.]+ [KMGT]?i?B$'))
    assert api('/api/stats')['events']==2
    api('/v1/logs',{'resourceLogs':logs});assert api('/api/stats')['events']==2
    page.keyboard.press('Escape');expect(page.locator('#archivepanel')).not_to_be_visible();page.goto(base+'/archive');expect(page.locator('#archivepanel')).to_be_visible();page.keyboard.press('Escape');page.goto(base);expect(page.locator('.session')).to_have_count(2);assert page.locator('[data-source]').count()==0;assert page.locator('#refresh').count()==0
+   def storage_unavailable(route):
+    response=route.fetch()
+    payload=response.json()
+    payload['available_bytes']=None
+    route.fulfill(response=response,json=payload)
+   page.route(re.compile(r'/api/archive\?group=folders'), storage_unavailable)
+   page.locator('#dataoptions summary').click()
+   page.locator('#openarchive').click()
+   expect(storage).to_have_text('Storage availability unknown')
+   expect(page.locator('.archive-row')).to_have_count(1)
    assert not errors,errors;browser.close()
  finally:server.terminate();server.wait(timeout=20)
-print('PASS: folder/mixed-agent/multiple/unassigned selection, active-session protection, pushed progress, no refresh/polling, ZIP SHA/CRC, explicit deletion, pause and retry, replay suppression and mobile')
+print('PASS: folder/mixed-agent/multiple/unassigned selection, active-session protection, pushed progress, no refresh/polling, ZIP SHA/CRC, explicit deletion, pause and retry, replay suppression, available storage and mobile')
