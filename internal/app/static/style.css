@@ -1754,3 +1754,27 @@ html {
  .settings-section-heading {gap:8px;flex-wrap:wrap;}
  .api-key-panel {margin-top:16px;}
 }
+
+#deletefilters:not([hidden]) {
+  display:flex;
+  flex-direction:row;
+  flex-wrap:wrap;
+  align-items:end;
+  gap:8px;
+  margin-bottom:8px;
+}
+#deletefilters label {
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+#deletefilters :is(input,select) {
+  min-height:var(--control-height);
+  padding:6px 8px;
+  border:1px solid var(--control-border);
+  border-radius:4px;
+  background:var(--surface);
+  color:var(--text);
+}
+#deleteage { width:8rem; max-width:100%; }
+.archive-folder-row b { overflow-wrap:anywhere; }

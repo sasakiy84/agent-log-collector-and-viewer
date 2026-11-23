@@ -11,6 +11,9 @@ import (
 	"testing"
 )
 
+// Fixtures that rewind migration history also undo the newer DDL.
+const undoDirectDeleteMigration = "DROP INDEX maintenance_jobs_latest; ALTER TABLE archive_jobs DROP COLUMN direct_delete; "
+
 func migrationDB(t *testing.T, path string) *sql.DB {
 	t.Helper()
 	uri, err := databaseURI(path, false)
@@ -153,7 +156,7 @@ func TestStorageGenerationAndMigrationHistory(t *testing.T) {
 	a.DB.QueryRow("PRAGMA application_id").Scan(&id)
 	a.DB.QueryRow("PRAGMA user_version").Scan(&version)
 	a.DB.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&history)
-	if id != storageApplicationID || version != 1 || history != 8 {
+	if id != storageApplicationID || version != 1 || history != 9 {
 		t.Fatal(id, version, history)
 	}
 	a.DB.Exec("PRAGMA user_version=99")

@@ -55,7 +55,7 @@ func TestFullTextSearchUpgradeReplacesOldPostings(t *testing.T) {
 	if rows := searchSessions(t, a, "legacytransport"); len(rows) != 1 {
 		t.Fatal("legacy index fixture is missing")
 	}
-	if _, err := a.DB.Exec("DELETE FROM schema_migrations WHERE version=8"); err != nil {
+	if _, err := a.DB.Exec(undoDirectDeleteMigration + "DELETE FROM schema_migrations WHERE version>=8"); err != nil {
 		t.Fatal(err)
 	}
 	plan, err := migrations()

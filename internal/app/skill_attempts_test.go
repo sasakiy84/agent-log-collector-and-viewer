@@ -120,7 +120,7 @@ func TestSkillAttemptMigrationRebuildsExistingEvidenceWithoutChangingOriginals(t
 	input, output := skillReadEvents(t, "existing", "import", "codex", "root", "exec_command", `{"cmd":"cat /work/skills/review/SKILL.md"}`, map[string]any{"output": "Chunk ID: existing-chunk\nProcess exited with code 1\nOutput:\nmissing"})
 	save(t, a, input, output)
 	// Simulate the preceding generation-2 release, including its stored outcome.
-	if _, err = a.DB.Exec(`UPDATE skill_events SET evidence='failed';
+	if _, err = a.DB.Exec(undoDirectDeleteMigration + `UPDATE skill_events SET evidence='failed';
  DROP TRIGGER skill_attempt_changed; DROP TABLE skill_attempt_links;
  DROP TRIGGER session_visibility_conversation; DROP INDEX codex_session_prewarm;
  ALTER TABLE session_evidence DROP COLUMN prewarm;

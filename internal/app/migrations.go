@@ -33,6 +33,9 @@ var codexTransportCleanupSchema string
 //go:embed search_content_rebuild.sql
 var searchContentRebuildSchema string
 
+//go:embed direct_delete.sql
+var directDeleteSchema string
+
 const storageApplicationID = 1095518002 // ALG2
 
 // Generation 2 starts with one complete baseline. Future changes append migrations;
@@ -47,6 +50,7 @@ func migrations() ([]migration, error) {
 		{6, "0006_archive_cleanup", archiveCleanupSchema},
 		{7, "0007_codex_transport_cleanup", codexTransportCleanupSchema},
 		{8, "0008_search_content_rebuild", searchContentRebuildSchema},
+		{9, "0009_direct_delete", directDeleteSchema},
 	}, nil
 }
 

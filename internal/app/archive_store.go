@@ -17,6 +17,7 @@ const archiveConfirmation = "DOWNLOADED"
 
 type ArchiveJob struct {
 	ID               string `json:"id"`
+	DirectDelete     bool   `json:"direct_delete,omitempty"`
 	Status           string `json:"status"`
 	CreatedAt        string `json:"created_at"`
 	Cutoff           string `json:"cutoff"`
@@ -44,11 +45,11 @@ type ArchiveSession struct {
 	Folder       string `json:"folder,omitempty"`
 }
 
-const archiveColumns = "id,status,created_at,cutoff,session_count,record_count,raw_bytes,processed_records,archive_bytes,sha256,download_at,confirmed_at,deleted_records,reclaimed_bytes,error,compaction_error,rebuild_required"
+const archiveColumns = "id,status,created_at,cutoff,session_count,record_count,raw_bytes,processed_records,archive_bytes,sha256,download_at,confirmed_at,deleted_records,reclaimed_bytes,error,compaction_error,rebuild_required,direct_delete"
 
 func scanArchive(row scanner) (ArchiveJob, error) {
 	var j ArchiveJob
-	err := row.Scan(&j.ID, &j.Status, &j.CreatedAt, &j.Cutoff, &j.SessionCount, &j.RecordCount, &j.RawBytes, &j.ProcessedRecords, &j.ArchiveBytes, &j.SHA256, &j.DownloadAt, &j.ConfirmedAt, &j.DeletedRecords, &j.ReclaimedBytes, &j.Error, &j.CompactionError, &j.RebuildRequired)
+	err := row.Scan(&j.ID, &j.Status, &j.CreatedAt, &j.Cutoff, &j.SessionCount, &j.RecordCount, &j.RawBytes, &j.ProcessedRecords, &j.ArchiveBytes, &j.SHA256, &j.DownloadAt, &j.ConfirmedAt, &j.DeletedRecords, &j.ReclaimedBytes, &j.Error, &j.CompactionError, &j.RebuildRequired, &j.DirectDelete)
 	return j, err
 }
 func (a *App) archiveJob(ctx context.Context, id string) (ArchiveJob, error) {
@@ -140,22 +141,17 @@ func (a *App) createFolderArchive(ctx context.Context, cutoff string, all bool, 
 	if err := os.MkdirAll(a.archiveDir, 0700); err != nil {
 		return ArchiveJob{}, err
 	}
-	bytes := make([]byte, 16)
-	if _, err := rand.Read(bytes); err != nil {
+	id, err := newMaintenanceJobID()
+	if err != nil {
 		return ArchiveJob{}, err
 	}
-	id := hex.EncodeToString(bytes)
 	tx, err := a.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return ArchiveJob{}, err
 	}
 	defer tx.Rollback()
-	var active int
-	if err = tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM archive_jobs WHERE status IN ('preparing','ready','deleting','compacting')").Scan(&active); err != nil {
+	if err = availableMaintenanceSlot(ctx, tx); err != nil {
 		return ArchiveJob{}, err
-	}
-	if active > 0 {
-		return ArchiveJob{}, errArchiveConflict
 	}
 	_, err = tx.ExecContext(ctx, "INSERT INTO archive_jobs(id,status,created_at,cutoff) VALUES(?,'preparing',?,?)", id, timestamp(time.Now()), cutoff)
 	if err != nil {
@@ -213,7 +209,24 @@ func (a *App) createFolderArchive(ctx context.Context, cutoff string, all bool, 
 	return job, err
 }
 
-var errArchiveConflict = errors.New("another archive operation is in progress")
+func newMaintenanceJobID() (string, error) {
+	var value [16]byte
+	_, err := rand.Read(value[:])
+	return hex.EncodeToString(value[:]), err
+}
+
+func availableMaintenanceSlot(ctx context.Context, tx *sql.Tx) error {
+	var active bool
+	if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM archive_jobs WHERE status IN ('preparing','ready','deleting','compacting'))").Scan(&active); err != nil {
+		return err
+	}
+	if active {
+		return errArchiveConflict
+	}
+	return nil
+}
+
+var errArchiveConflict = errors.New("another archive or deletion operation is in progress")
 var errArchiveStale = errors.New("selected sessions changed; refresh the list and create a new archive")
 
 func snapshotsCurrent(ctx context.Context, tx *sql.Tx, id string) (bool, error) {

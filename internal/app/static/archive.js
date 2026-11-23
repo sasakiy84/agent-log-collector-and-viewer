@@ -1,5 +1,9 @@
 "use strict";
-const archiveSelection = new Set();
+const archiveSelection = new Map();
+let archiveMode = "inactive";
+let deletionDays = "";
+let deletionOrder = "largest";
+let archiveLoading = false;
 let archiveOffset = 0,
   archiveData = null,
   archiveStream = null,
@@ -39,38 +43,63 @@ async function archivePost(path, body) {
 }
 function updateArchiveSelection() {
   const n = archiveSelection.size;
+  const deleting = archiveMode === "delete";
   const active = archiveActive(archiveData?.job);
-  const busy = archiveCreating || !!archiveSelectRequest;
-  $("#archiveselected").textContent = archiveSelectRequest
-    ? "Selecting folders…"
-    : n ? `${n.toLocaleString()} ${n === 1 ? "folder" : "folders"} selected` : "";
-  $("#archivecreate").disabled = !n || busy;
-  $("#archiveselectall").disabled = !archiveData?.total_folders || busy;
+  const busy = archiveCreating || archiveLoading || !!archiveSelectRequest;
+  const noun = deleting ? "session" : "folder";
+  let summary = n ? `${n.toLocaleString()} ${noun}${n === 1 ? "" : "s"} selected` : "";
+  if (n && deleting) {
+    let selectedBytes = 0;
+    for (const session of archiveSelection.values()) selectedBytes += session.raw_bytes;
+    summary += ` · ${bytes(selectedBytes)} raw logs`;
+    if (n > 2000) summary += " · Select up to 2,000 sessions";
+  }
+  $("#archiveselected").textContent = archiveSelectRequest ? "Selecting folders…" : summary;
+  $("#archivecreate").disabled = !n || busy || !!active || deleting && n > 2000;
+  $("#archiveselectall").disabled = busy || !(deleting ? archiveData?.sessions?.length : archiveData?.total_folders);
   $("#archiveclear").hidden = !n;
   $("#archiveclear").disabled = busy;
-  document.querySelectorAll("[data-archive-folder]").forEach((el) => {
-    el.checked = !!active || archiveSelection.has(el.dataset.archiveFolder);
+  $("#deletefilters button").disabled = busy;
+  document.querySelectorAll("[data-archive-folder],[data-delete-session]").forEach((el) => {
+    el.checked = archiveSelection.has(el.dataset.deleteSession ?? el.dataset.archiveFolder);
     el.disabled = !!active || busy;
   });
 }
+
+function deletionRows(sessions) {
+  return sessions.map((session) => {
+    const date = session.last_activity
+      ? `<time datetime="${esc(session.last_activity)}">${esc(new Date(session.last_activity).toLocaleDateString())}</time>`
+      : "Activity date unknown";
+    return `<label class="archive-row archive-folder-row"><input type="checkbox" data-delete-session="${esc(session.id)}"><span><b>${esc(session.title || session.id)}</b>${session.title ? `<small class="archive-folder-path">${esc(session.id)}</small>` : ""}${session.folder ? `<small class="archive-folder-path">${esc(session.folder)}</small>` : ""}<small>${esc(label(session.source))} · ${date} · ${session.records.toLocaleString()} ${session.records === 1 ? "record" : "records"}</small></span><span>${bytes(session.raw_bytes)}</span></label>`;
+  }).join("");
+}
+
 async function refreshArchive(signal) {
-  const data = await api(
-    "/api/archive?group=folders&offset=" + archiveOffset,
-    signal,
-  );
+  const deleting = archiveMode === "delete";
+  const path = deleting
+    ? "/api/archive/purge?" + new URLSearchParams({ offset: archiveOffset, days: deletionDays, sort: deletionOrder })
+    : "/api/archive?group=folders&offset=" + archiveOffset;
+  const data = await api(path, signal);
   if (signal?.aborted) return;
   archiveData = data;
   archiveOffset = data.offset;
-  $("#archivetotal").textContent =
-    `${data.total_folders.toLocaleString()} ${data.total_folders === 1 ? "folder" : "folders"} · ${data.total_sessions.toLocaleString()} ${data.total_sessions === 1 ? "session" : "sessions"} · ${bytes(data.total_bytes)}`;
-  $("#archivecutoff").innerHTML =
+  const active = !!archiveActive(data.job);
+  $("#archivetotal").hidden = deleting && active;
+  $("#archivetotal").textContent = deleting
+    ? `${data.total_sessions.toLocaleString()} ${data.total_sessions === 1 ? "session" : "sessions"} · ${bytes(data.total_bytes)} raw logs`
+    : `${data.total_folders.toLocaleString()} ${data.total_folders === 1 ? "folder" : "folders"} · ${data.total_sessions.toLocaleString()} ${data.total_sessions === 1 ? "session" : "sessions"} · ${bytes(data.total_bytes)}`;
+  $("#archivecutoff").innerHTML = deleting ? "All projects" :
     `All projects · Last activity before <time datetime="${esc(data.cutoff)}">${esc(new Date(data.cutoff).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }))}</time>`;
   $("#archivestorage").textContent = data.available_bytes == null
     ? "Storage availability unknown"
     : `Storage available: ${bytes(data.available_bytes)}`;
-  $("#archiveselection").hidden = !!archiveActive(data.job);
-  $("#archiveitems").hidden = !!archiveActive(data.job);
-  $("#archiveitems").innerHTML = data.folders.length
+  $("#deletefilters").hidden = !deleting || active;
+  $("#archiveselection").hidden = active;
+  $("#archiveitems").hidden = active;
+  $("#archiveitems").innerHTML = deleting
+    ? deletionRows(data.sessions) || '<p class="empty">No matching sessions</p>'
+    : data.folders.length
     ? data.folders
         .map(
           (f) =>
@@ -78,17 +107,17 @@ async function refreshArchive(signal) {
         )
         .join("")
     : '<p class="empty">No inactive folders</p>';
-  document.querySelectorAll("[data-archive-folder]").forEach(
-    (el) =>
-      (el.onchange = () => {
-        if (el.checked) archiveSelection.add(el.dataset.archiveFolder);
-        else archiveSelection.delete(el.dataset.archiveFolder);
-        updateArchiveSelection();
-      }),
-  );
+  document.querySelectorAll("[data-archive-folder],[data-delete-session]").forEach((el, i) => {
+    const key = el.dataset.deleteSession ?? el.dataset.archiveFolder;
+    el.onchange = () => {
+      if (el.checked) archiveSelection.set(key, deleting ? data.sessions[i] : null);
+      else archiveSelection.delete(key);
+      updateArchiveSelection();
+    };
+  });
   updateArchiveSelection();
   archivePager.update({
-    total: data.total_folders,
+    total: deleting ? data.total_sessions : data.total_folders,
     offset: data.offset,
     size: archivePageSize,
   });
@@ -119,13 +148,13 @@ function renderArchiveJob(job) {
   if (job.status === "deleting")
     content = job.error
       ? `<h2>Deletion paused</h2><p id="archiveprogress">${esc(archiveProgress(job))}</p><p class="failure-detail">${esc(job.error)}</p><button id="archiveretrydelete" class="primary">Retry deletion</button><p id="archiveactionerror" role="alert"></p>`
-      : `<h2>Deleting archived records</h2><p id="archiveprogress">${esc(archiveProgress(job))}</p>`;
+      : `<h2>${job.direct_delete ? "Deleting records" : "Deleting archived records"}</h2><p id="archiveprogress">${esc(archiveProgress(job))}</p>`;
   if (job.status === "compacting")
     content = "<h2>Reclaiming database space</h2>";
   if (job.status === "deleted")
-    content = `<h2>${job.compaction_error ? "Records deleted" : "Archive complete"}</h2><p>${job.deleted_records.toLocaleString()} records deleted · ${bytes(job.reclaimed_bytes)} reclaimed</p>${job.compaction_error ? `<p class="failure-detail">${esc(job.compaction_error)}</p><button id="archivecompact">${job.rebuild_required ? "Rebuild database · pauses ingestion" : "Retry compaction"}</button>` : ""}`;
+    content = `<h2>${job.compaction_error ? "Records deleted" : job.direct_delete ? "Deletion complete" : "Archive complete"}</h2><p>${job.deleted_records.toLocaleString()} records deleted · ${bytes(job.reclaimed_bytes)} reclaimed</p>${job.compaction_error ? `<p class="failure-detail">${esc(job.compaction_error)}</p><button id="archivecompact">${job.rebuild_required ? "Rebuild database · pauses ingestion" : "Retry compaction"}</button>` : ""}`;
   if (job.status === "failed")
-    content = `<h2 class="failure-detail">Archive failed</h2><p>${esc(job.error)}</p>${job.deleted_records ? `<p>${job.deleted_records} records already deleted.</p>` : ""}`;
+    content = `<h2 class="failure-detail">${job.direct_delete ? "Deletion failed" : "Archive failed"}</h2><p>${esc(job.error)}</p>${job.deleted_records ? `<p>${job.deleted_records} records already deleted.</p>` : ""}`;
   if (job.status === "canceled") content = "<p>Archive canceled</p>";
   $("#archivejob").innerHTML = content;
   if ($("#archivecancel"))
@@ -218,6 +247,8 @@ async function loadArchive(scrollMode) {
   const controller = new AbortController();
   archiveRequest = controller;
   archivePager.setLoading(true);
+  archiveLoading = true;
+  updateArchiveSelection();
   $("#archiveerror").textContent = "";
   try {
     await refreshArchive(controller.signal);
@@ -227,29 +258,71 @@ async function loadArchive(scrollMode) {
       if (archiveData) archiveOffset = archiveData.offset;
       $("#archiveerror").textContent = error.message;
     }
-  } finally { if (archiveRequest === controller) archivePager.setLoading(false); }
+  } finally {
+    if (archiveRequest === controller) {
+      archiveLoading = false;
+      archivePager.setLoading(false);
+      updateArchiveSelection();
+    }
+  }
 }
-function openArchive() {
+function openArchive(mode = "inactive") {
+  if (mode !== archiveMode) {
+    archiveMode = mode;
+    watchArchive(null);
+    archiveOffset = 0;
+    archiveSelection.clear();
+    archiveData = null;
+    $("#archiveitems").innerHTML = "";
+    $("#archivecutoff").textContent = "";
+    $("#archivestorage").textContent = "";
+    $("#archivetotal").textContent = "";
+    renderArchiveJob(null);
+  }
+  const deleting = mode === "delete";
+  $("#archivetitle").textContent = deleting ? "Delete sessions" : "Archive inactive sessions";
+  $("#archivecreate").textContent = deleting ? "Delete selected sessions" : "Create ZIP";
+  $("#archivecreate").className = deleting ? "danger" : "primary";
+  $("#archiveselectall").textContent = deleting ? "Select page" : "Select all";
+  archivePager.noun = deleting ? "sessions" : "folders";
+  $("#archivepagination").setAttribute("aria-label", deleting ? "Deletion session pages" : "Archive folder pages");
+  $("#deletefilters").hidden = !deleting;
   $("#dataoptions").open = false;
   if (!$("#archivepanel").open) $("#archivepanel").showModal();
   listState();
   loadArchive();
 }
 function setupArchive() {
-  $("#openarchive").onclick = openArchive;
+  $("#openarchive").onclick = () => openArchive();
+  $("#opendeletesessions").onclick = () => openArchive("delete");
+  $("#deletefilters").onsubmit = (event) => {
+    event.preventDefault();
+    const days = $("#deleteage").value;
+    if (days !== deletionDays) archiveSelection.clear();
+    deletionDays = days;
+    deletionOrder = $("#deletesort").value;
+    archiveOffset = 0;
+    loadArchive("top");
+  };
   $("#closearchive").onclick = () => $("#archivepanel").close();
   $("#archivepanel").addEventListener("close", () => {
+    if ($("#archivepanel").open) return;
     archiveRequest?.abort();
     archiveSelectRequest?.abort();
     archiveSelectRequest = null;
     archiveStream?.close();
     archiveStream = null;
     archiveStreamJob = "";
-    archiveRequested = false;
+    archiveRequested = "";
     if (!selected && !skillsMode) listState();
     if ($("#login").hidden) $("#dataoptions summary").focus({ preventScroll: true });
   });
   $("#archiveselectall").onclick = async () => {
+    if (archiveMode === "delete") {
+      for (const session of archiveData.sessions) archiveSelection.set(session.id, session);
+      updateArchiveSelection();
+      return;
+    }
     const controller = new AbortController();
     const initial = archiveData;
     archiveSelectRequest = controller;
@@ -267,7 +340,7 @@ function setupArchive() {
         page.folders.forEach((folder) => paths.add(folder.path));
       }
       if (!controller.signal.aborted) {
-        paths.forEach((path) => archiveSelection.add(path));
+        paths.forEach((path) => archiveSelection.set(path, null));
       }
     } catch (error) {
       if (!controller.signal.aborted) $("#archiveerror").textContent = error.message;
@@ -287,13 +360,21 @@ function setupArchive() {
     $("#archiveselectall").focus();
   };
   $("#archivecreate").onclick = async () => {
+    const direct = archiveMode === "delete";
+    const count = archiveSelection.size;
+    if (direct && !confirm(`Permanently delete ${count.toLocaleString()} selected ${count === 1 ? "session" : "sessions"}?`)) return;
     archiveCreating = true;
     updateArchiveSelection();
     try {
-      await archiveAction("/api/archives", {
-        cutoff: archiveData.cutoff,
-        folders: [...archiveSelection],
-      });
+      if (direct) {
+        const sessions = [...archiveSelection.values()].map(({ id, revision }) => ({ id, revision }));
+        await archiveAction("/api/archive/purge", { sessions, confirmation: true });
+      } else {
+        await archiveAction("/api/archives", {
+          cutoff: archiveData.cutoff,
+          folders: [...archiveSelection.keys()],
+        });
+      }
     } finally {
       archiveCreating = false;
       updateArchiveSelection();
