@@ -53,7 +53,7 @@ func (a *App) archiveList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
-	job, e := scanArchive(tx.QueryRowContext(r.Context(), "SELECT "+archiveColumns+" FROM archive_jobs ORDER BY created_at DESC,id DESC LIMIT 1"))
+	job, e := scanArchive(tx.QueryRowContext(r.Context(), "SELECT "+archiveColumns+" FROM archive_jobs WHERE direct_delete=0 ORDER BY created_at DESC,id DESC LIMIT 1"))
 	if e != nil && !errors.Is(e, sql.ErrNoRows) {
 		databaseError(w, r, e)
 		return

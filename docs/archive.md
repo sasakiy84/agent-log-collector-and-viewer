@@ -17,3 +17,11 @@ New databases return free pages to disk automatically in small batches, allowing
 Existing databases first keep freed pages available for reuse. To return this space to disk, choose **Rebuild database · pauses ingestion**. This one-time SQLite rebuild can require up to twice the database size in free space; clients should retry ingestion until it finishes. Subsequent archives use incremental reclamation.
 
 Archive listings read indexed session summaries and incrementally maintained record/byte counts. They do not scan original event payloads. The offline migration preserves and verifies existing counts. No Refresh button or periodic browser polling is used.
+
+## Delete sessions directly
+
+Open **Delete sessions…** beside **Export ZIP**. The panel shows sessions across all projects, including internal and child sessions. It starts with the largest stored logs first. Enter a minimum age in days to filter by last activity, or sort by oldest or newest activity. An empty age includes sessions whose activity date is unknown.
+
+Select the sessions you want to remove, then choose **Delete selected sessions** and confirm. **Select page** checks the visible rows and the selection carries across pages. The displayed size measures stored log data. The result shows the disk space actually reclaimed.
+
+Direct deletion removes the records, search entries and session projections and then reclaims database space. It creates no ZIP or replay fingerprints. Source files remain available for explicit reimport. The same retry controls apply if deletion or capacity recovery is interrupted.

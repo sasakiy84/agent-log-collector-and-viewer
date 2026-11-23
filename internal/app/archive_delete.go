@@ -45,8 +45,10 @@ func (a *App) verifyArchive(ctx context.Context, job ArchiveJob) error {
 
 func (a *App) deleteArchive(ctx context.Context, job ArchiveJob) error {
 	defer a.notifyArchive()
-	if err := a.verifyArchive(ctx, job); err != nil {
-		return err
+	if !job.DirectDelete {
+		if err := a.verifyArchive(ctx, job); err != nil {
+			return err
+		}
 	}
 
 	for {
@@ -58,77 +60,24 @@ func (a *App) deleteArchive(ctx context.Context, job ArchiveJob) error {
 		if err != nil {
 			return err
 		}
-		tx, err := a.DB.BeginTx(ctx, nil)
-		if err != nil {
+		err = inTransaction(ctx, a.DB, func(tx *sql.Tx) error {
+			var deleted int64
+			var err error
+			if job.DirectDelete {
+				deleted, err = deleteDirectBatch(ctx, tx, session)
+			} else {
+				deleted, err = deleteArchivedBatch(ctx, tx, session)
+			}
+			if err != nil {
+				return err
+			}
+			if deleted == 0 {
+				return errors.New("deletion batch did not delete any records")
+			}
+			_, err = tx.ExecContext(ctx, "UPDATE archive_jobs SET deleted_records=deleted_records+? WHERE id=?", deleted, job.ID)
 			return err
-		}
-		rows, err := tx.QueryContext(ctx, "SELECT id,raw,name,origin,source FROM records WHERE session=? LIMIT 200", session)
+		})
 		if err != nil {
-			tx.Rollback()
-			return err
-		}
-		type fingerprint struct {
-			id              string
-			idHash, rawHash [32]byte
-			legacyHash      []byte
-		}
-		records := []fingerprint{}
-		var bytes int
-		for rows.Next() {
-			var id string
-			var name, origin, source string
-			var raw []byte
-			if err = rows.Scan(&id, &raw, &name, &origin, &source); err != nil {
-				break
-			}
-			record := fingerprint{id: id, idHash: sha256.Sum256([]byte(id)), rawHash: sha256.Sum256(raw)}
-			if origin == "import" && name == "gen_ai.client.operation" && (source == "codex" || source == "claude") {
-				if doc, e := decodeDocument(raw); e == nil {
-					if legacy, ok := legacyUsageRaw(doc); ok {
-						hash := sha256.Sum256(legacy)
-						record.legacyHash = append([]byte(nil), hash[:]...)
-					}
-				}
-			}
-			records = append(records, record)
-			bytes += len(raw)
-			if bytes >= 8<<20 {
-				break
-			}
-		}
-		rowErr := rows.Err()
-		rows.Close()
-		if err != nil || rowErr != nil {
-			tx.Rollback()
-			return errors.Join(err, rowErr)
-		}
-		for _, record := range records {
-			if _, err = tx.ExecContext(ctx, "INSERT OR IGNORE INTO record_tombstones(id_hash,raw_hash) VALUES(?,?)", record.idHash[:], record.rawHash[:]); err != nil {
-				break
-			}
-			if record.legacyHash != nil {
-				if _, err = tx.ExecContext(ctx, "INSERT OR IGNORE INTO record_tombstones(id_hash,raw_hash) VALUES(?,?)", record.idHash[:], record.legacyHash); err != nil {
-					break
-				}
-				// Legacy projections from usage-aware archives only suppress an
-				// exact old-format replay. New-format counter/response-ID edits
-				// are compared against their complete current-format hash.
-				if _, err = tx.ExecContext(ctx, "INSERT OR IGNORE INTO usage_tombstones VALUES(?,?),(?,?)", record.idHash[:], record.rawHash[:], record.idHash[:], record.legacyHash); err != nil {
-					break
-				}
-			}
-			if _, err = tx.ExecContext(ctx, "DELETE FROM records WHERE id=?", record.id); err != nil {
-				break
-			}
-		}
-		if err == nil {
-			_, err = tx.ExecContext(ctx, "UPDATE archive_jobs SET deleted_records=deleted_records+? WHERE id=?", len(records), job.ID)
-		}
-		if err != nil {
-			tx.Rollback()
-			return err
-		}
-		if err = tx.Commit(); err != nil {
 			return err
 		}
 		a.notifyArchive()
@@ -139,8 +88,10 @@ func (a *App) deleteArchive(ctx context.Context, job ArchiveJob) error {
 			return err
 		}
 	}
-	if err := os.Remove(a.archivePath(job.ID, false)); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
+	if !job.DirectDelete {
+		if err := os.Remove(a.archivePath(job.ID, false)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
 	}
 	tx, err := a.DB.BeginTx(ctx, nil)
 	if err != nil {
@@ -165,4 +116,77 @@ func (a *App) deleteArchive(ctx context.Context, job ArchiveJob) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+func deleteDirectBatch(ctx context.Context, tx *sql.Tx, session string) (int64, error) {
+	// Limit each transaction by both record count and payload volume.
+	result, err := tx.ExecContext(ctx, `WITH batch AS (
+		SELECT id,SUM(size) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS preceding_bytes
+		FROM (SELECT id,length(raw) AS size FROM records WHERE session=? LIMIT 200)
+	) DELETE FROM records WHERE id IN (SELECT id FROM batch WHERE COALESCE(preceding_bytes,0)<8388608)`, session)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+func deleteArchivedBatch(ctx context.Context, tx *sql.Tx, session string) (int64, error) {
+	rows, err := tx.QueryContext(ctx, "SELECT id,raw,name,origin,source FROM records WHERE session=? LIMIT 200", session)
+	if err != nil {
+		return 0, err
+	}
+	type fingerprint struct {
+		id              string
+		idHash, rawHash [32]byte
+		legacyHash      []byte
+	}
+	records := []fingerprint{}
+	var bytes int
+	for rows.Next() {
+		var id string
+		var name, origin, source string
+		var raw []byte
+		if err = rows.Scan(&id, &raw, &name, &origin, &source); err != nil {
+			break
+		}
+		record := fingerprint{id: id, idHash: sha256.Sum256([]byte(id)), rawHash: sha256.Sum256(raw)}
+		if origin == "import" && name == "gen_ai.client.operation" && (source == "codex" || source == "claude") {
+			if doc, e := decodeDocument(raw); e == nil {
+				if legacy, ok := legacyUsageRaw(doc); ok {
+					hash := sha256.Sum256(legacy)
+					record.legacyHash = append([]byte(nil), hash[:]...)
+				}
+			}
+		}
+		records = append(records, record)
+		bytes += len(raw)
+		if bytes >= 8<<20 {
+			break
+		}
+	}
+	rowErr := rows.Err()
+	rows.Close()
+	if err != nil || rowErr != nil {
+		return 0, errors.Join(err, rowErr)
+	}
+	for _, record := range records {
+		if _, err = tx.ExecContext(ctx, "INSERT OR IGNORE INTO record_tombstones(id_hash,raw_hash) VALUES(?,?)", record.idHash[:], record.rawHash[:]); err != nil {
+			break
+		}
+		if record.legacyHash != nil {
+			if _, err = tx.ExecContext(ctx, "INSERT OR IGNORE INTO record_tombstones(id_hash,raw_hash) VALUES(?,?)", record.idHash[:], record.legacyHash); err != nil {
+				break
+			}
+			// Legacy projections from usage-aware archives only suppress an
+			// exact old-format replay. New-format counter/response-ID edits
+			// are compared against their complete current-format hash.
+			if _, err = tx.ExecContext(ctx, "INSERT OR IGNORE INTO usage_tombstones VALUES(?,?),(?,?)", record.idHash[:], record.rawHash[:], record.idHash[:], record.legacyHash); err != nil {
+				break
+			}
+		}
+		if _, err = tx.ExecContext(ctx, "DELETE FROM records WHERE id=?", record.id); err != nil {
+			break
+		}
+	}
+	return int64(len(records)), err
 }

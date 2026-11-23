@@ -193,7 +193,7 @@ func TestCodexBackgroundSessionMigrationReclassifiesStoredEvents(t *testing.T) {
 	save(t, a, review, prewarm, ephemeral, human)
 
 	// Recreate the visibility data left by the previous release.
-	_, err = a.DB.Exec("DROP TRIGGER session_visibility_conversation; DROP INDEX codex_session_prewarm;" +
+	_, err = a.DB.Exec(undoDirectDeleteMigration + "DROP TRIGGER session_visibility_conversation; DROP INDEX codex_session_prewarm;" +
 		" DELETE FROM session_evidence WHERE prewarm=1; ALTER TABLE session_evidence DROP COLUMN prewarm;" +
 		" UPDATE session_evidence SET automatic=0,human=1 WHERE event_id='review';" +
 		" UPDATE record_facts SET prompt_title='The following is the Codex agent history added since your last approval assessment. Continue the same review conversation.',conversation=1 WHERE id='review';" +

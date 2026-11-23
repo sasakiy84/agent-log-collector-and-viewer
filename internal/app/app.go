@@ -91,6 +91,8 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("GET /api/version", a.apiVersion)
 	mux.HandleFunc("GET /settings", serveShell)
 	mux.HandleFunc("GET /api/archive", a.archiveList)
+	mux.HandleFunc("GET /api/archive/purge", a.directDeleteList)
+	mux.Handle("POST /api/archive/purge", crossOrigin.Handler(http.HandlerFunc(a.directDeleteCreate)))
 	mux.HandleFunc("POST /api/archives", a.archiveCreate)
 	mux.HandleFunc("GET /api/archives/{id}", a.archiveStatus)
 	mux.HandleFunc("GET /api/archives/{id}/events", a.archiveEvents)

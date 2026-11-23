@@ -102,7 +102,7 @@ func TestCodeModeTransportCleanupRemovesStoredSpansAndProjections(t *testing.T) 
 		events[i].Signal = "logs"
 	}
 	save(t, a, events...)
-	if _, err := a.DB.Exec("UPDATE records SET signal='traces' WHERE name LIKE 'code_mode.grpc.%'; DELETE FROM schema_migrations WHERE version>=7"); err != nil {
+	if _, err := a.DB.Exec(undoDirectDeleteMigration + "UPDATE records SET signal='traces' WHERE name LIKE 'code_mode.grpc.%'; DELETE FROM schema_migrations WHERE version>=7"); err != nil {
 		t.Fatal(err)
 	}
 	plan, err := migrations()

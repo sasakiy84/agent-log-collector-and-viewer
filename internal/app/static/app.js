@@ -115,7 +115,8 @@ let selected = location.pathname.startsWith("/sessions/")
 const skillsMode = location.pathname === "/skills";
 const settingsMode=location.pathname==="/settings";
 let exportQueryPending = false;
-let archiveRequested = new URL(location.href).searchParams.get("manage") === "inactive";
+let archiveRequested = new URL(location.href).searchParams.get("manage");
+if (!["inactive", "delete"].includes(archiveRequested)) archiveRequested = "";
 const listURL = new URL(location.href);
 let searchScope = readSearchScope(listURL.searchParams);
 let projectSelections = [...new Set(listURL.searchParams.getAll("project").map(canonicalProjectID))];
@@ -248,7 +249,7 @@ function listState() {
   const p = listParameters();
   if (folder !== null) p.set("folder", folder);
   if (sessionOffset) p.set("offset", sessionOffset);
-  if (archiveRequested || $("#archivepanel").open) p.set("manage", "inactive");
+  if (archiveRequested || $("#archivepanel").open) p.set("manage", archiveRequested || archiveMode);
   history.replaceState(null, "", "/" + (p.size ? "?" + p : ""));
   sessionStorage.setItem("sessionsURL", location.pathname + location.search);
 }
@@ -828,7 +829,11 @@ async function refresh(scrollMode) {
     updateDocumentTitle();
     $("#error").textContent = "";
     if (selected) placeTimeline(scrollMode, anchor, serial);
-    if (archiveRequested && !selected && !skillsMode) { archiveRequested = false; openArchive(); }
+    if (archiveRequested && !selected && !skillsMode) {
+      const mode = archiveRequested;
+      archiveRequested = "";
+      openArchive(mode);
+    }
   } catch (e) {
     if (controller.signal.aborted || serial !== requestSerial || e.name === "AbortError") return;
     if (selected && meta) {

@@ -20,3 +20,14 @@ func (a *App) archiveAvailableBytes() *uint64 {
 	}
 	return &available
 }
+
+func (a *App) databaseAvailableBytes() *uint64 {
+	if a.dbPath == ":memory:" {
+		return nil
+	}
+	available, err := filesystemAvailableBytes(filepath.Dir(a.dbPath))
+	if err != nil {
+		return nil
+	}
+	return &available
+}
